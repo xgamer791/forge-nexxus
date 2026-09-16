@@ -4,7 +4,7 @@ html[data-theme=light]{color-scheme:light;--bg:#f2f2f7;--text:#1c1c1e;--muted:#3
 body:has(.reference){width:430px;min-height:932px}.app.reference{width:430px;height:932px;margin:0}
 /* Optical corrections from independent reference review. */
 .greeting h1{transform:scaleX(.965)}
-.connect{width:92px;gap:5px}.connect svg{width:14px}
+.connect{width:auto;height:34px;padding:0 14px;gap:7px;white-space:nowrap}.connect svg{width:14px;height:16px}
 .destinations button>svg:first-child:has(use[href="#cloud"]){width:20px;margin-left:-1px;margin-right:-2px}
 .model-list small{margin-top:5px}
 .attachments{bottom:calc(var(--composer-bottom) + 136px);padding-top:9px;padding-bottom:7px}
