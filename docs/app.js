@@ -206,3 +206,72 @@ if (query.get('menu') === 'theme') {
   document.querySelector('.theme-menu').hidden = false;
   document.querySelector('.theme-select').setAttribute('aria-expanded', 'true');
 }
+
+// Opt-in, device-local measurements. No viewport correction is applied here:
+// agreeing with visualViewport alone does not prove the physical strip is gone.
+if (query.get('viewport-debug') === '1') {
+  const makeProbe = (styles) => {
+    const probe = document.createElement('div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText = `position:fixed;visibility:hidden;pointer-events:none;${styles}`;
+    document.body.append(probe);
+    return probe;
+  };
+  const safeAreaProbe = makeProbe('top:0;left:0;width:0;height:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)');
+  const fixedProbe = makeProbe('inset:0');
+  const dynamicProbe = makeProbe('top:0;left:0;width:0;height:100dvh');
+  const smallProbe = makeProbe('top:0;left:0;width:0;height:100svh');
+  const largeProbe = makeProbe('top:0;left:0;width:0;height:100lvh');
+  const report = document.createElement('pre');
+  report.setAttribute('aria-hidden', 'true');
+  report.dataset.viewportDiagnostics = '';
+  report.style.cssText = 'position:fixed;z-index:2147483647;top:calc(env(safe-area-inset-top,0px) + 100px);left:12px;max-width:calc(100% - 24px);margin:0;padding:10px 12px;border:1px solid #7b83ff;border-radius:8px;background:#151521;color:#fff;font:11px/1.45 ui-monospace,monospace;white-space:pre-wrap;pointer-events:none;text-align:left';
+  document.body.append(report);
+  const number = value => Number.isFinite(value) ? String(Math.round(value * 10) / 10) : 'n/a';
+  const bounds = selector => {
+    const element = document.querySelector(selector);
+    if (!element || element.closest('[hidden]')) return null;
+    return element.getBoundingClientRect();
+  };
+  const bottom = selector => {
+    const rect = bounds(selector);
+    return rect ? number(rect.bottom) : 'closed';
+  };
+  const updateViewportReport = () => {
+    if (document.hidden) return;
+    const viewport = window.visualViewport;
+    const rect = app.getBoundingClientRect();
+    const safe = getComputedStyle(safeAreaProbe);
+    const footer = document.querySelector('.nav-footer');
+    const footerStyle = getComputedStyle(footer);
+    const visibleBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+    const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+    report.textContent = [
+      `VIEWPORT DIAGNOSTICS · ${loadedVersion?.slice(0, 8)}`,
+      `CSS px · ${standalone ? 'standalone' : 'browser/webview'} · ${currentTheme()}`,
+      `screen ${screen.width}×${screen.height}  DPR ${devicePixelRatio}`,
+      `inner ${innerWidth}×${innerHeight}  clientH ${document.documentElement.clientHeight}`,
+      `VV H ${number(viewport?.height)}  top ${number(viewport?.offsetTop)}  scale ${number(viewport?.scale)}`,
+      `VV bottom ${number(visibleBottom)}  scrollY ${number(scrollY)}`,
+      `safe top ${safe.paddingTop}  bottom ${safe.paddingBottom}`,
+      `100dvh ${number(dynamicProbe.getBoundingClientRect().height)}  svh ${number(smallProbe.getBoundingClientRect().height)}  lvh ${number(largeProbe.getBoundingClientRect().height)}`,
+      `fixed bottom ${number(fixedProbe.getBoundingClientRect().bottom)}`,
+      `app top ${number(rect.top)}  H ${number(rect.height)}  bottom ${number(rect.bottom)}`,
+      `navigation ${bottom('.navigation')}  footer ${bottom('.nav-footer')}`,
+      `footer H ${number(bounds('.nav-footer')?.height)}  pad ${footerStyle.paddingTop}/${footerStyle.paddingBottom}`,
+      `composer ${bottom('.composer-area')}  VV gap ${number(visibleBottom - bounds('.composer-area').bottom)}`,
+      `sheets C/M/A ${bottom('.connections')}/${bottom('.models')}/${bottom('.attachments')}`,
+      `appearance ${bottom('.appearance')}  content ${bottom('.appearance-scroll')}`,
+      `status mode ${statusBar?.content || 'unset'}`,
+      'Screen height is not the browser viewport.',
+      'Screenshot this panel AND the bottom strip.'
+    ].join('\n');
+  };
+  updateViewportReport();
+  // Also sample after drawer transitions and Safari chrome changes settle.
+  setInterval(updateViewportReport, 250);
+  window.addEventListener('resize', updateViewportReport);
+  window.addEventListener('pageshow', updateViewportReport);
+  window.visualViewport?.addEventListener('resize', updateViewportReport);
+  window.visualViewport?.addEventListener('scroll', updateViewportReport);
+}
