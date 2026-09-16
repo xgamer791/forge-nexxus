@@ -29,37 +29,80 @@ window.addEventListener('focus', checkRelease);
 document.addEventListener('visibilitychange', checkRelease);
 setInterval(checkRelease, 60000);
 const app = document.querySelector('.app');
-function dockToVisualViewport() {
-  if (!app || app.classList.contains('reference')) return;
-  const vv = window.visualViewport;
-  const width = vv ? vv.width : window.innerWidth;
-  const height = vv ? vv.height : window.innerHeight;
-  const top = vv ? vv.offsetTop : 0;
-  const left = vv ? vv.offsetLeft : 0;
-  const appWidth = Math.min(640, width);
-  const root = document.documentElement;
-  root.style.setProperty('--vv-top', `${top}px`);
-  root.style.setProperty('--vv-left', `${left + (width - appWidth) / 2}px`);
-  root.style.setProperty('--vv-width', `${appWidth}px`);
-  root.style.setProperty('--vv-height', `${height}px`);
-}
-dockToVisualViewport();
-window.visualViewport?.addEventListener('resize', dockToVisualViewport);
-window.visualViewport?.addEventListener('scroll', dockToVisualViewport);
-window.addEventListener('orientationchange', dockToVisualViewport);
-window.addEventListener('resize', dockToVisualViewport);
-// Home Screen apps can resume without a visualViewport resize event.
-// Read again after the document is visible and its viewport has settled.
-function refreshViewportDock() {
-  if (!document.hidden) requestAnimationFrame(dockToVisualViewport);
-}
-window.addEventListener('pageshow', refreshViewportDock);
-window.addEventListener('load', refreshViewportDock);
-document.addEventListener('visibilitychange', refreshViewportDock);
 const backdrop = document.querySelector('.backdrop');
 const appearance = document.querySelector('.appearance');
 const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel => panel !== appearance);
 const navigation = document.querySelector('.navigation');
+const composerArea = document.querySelector('.composer-area');
+function bruteForceDock() {
+  if (!app || app.classList.contains('reference')) return;
+  const vv = window.visualViewport;
+  const mobile = window.innerWidth <= 640 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const height = Math.max(
+    mobile ? (window.screen?.height || 0) : 0,
+    mobile ? (window.screen?.availHeight || 0) : 0,
+    mobile ? (window.outerHeight || 0) : 0,
+    window.innerHeight || 0,
+    document.documentElement.clientHeight || 0,
+    vv ? vv.height : 0,
+    vv ? vv.offsetTop + vv.height : 0
+  );
+  const viewWidth = vv ? vv.width : window.innerWidth;
+  const width = Math.min(640, viewWidth);
+  const left = Math.max(0, (viewWidth - width) / 2);
+
+  app.style.position = 'fixed';
+  app.style.top = '0px';
+  app.style.left = `${left}px`;
+  app.style.width = `${width}px`;
+  app.style.height = `${height}px`;
+  app.style.bottom = '0px';
+  app.style.right = 'auto';
+  app.style.margin = '0';
+  app.style.maxWidth = 'none';
+
+  const pinFull = (el, extra) => {
+    if (!el) return;
+    el.style.position = 'fixed';
+    el.style.top = '0px';
+    el.style.bottom = '0px';
+    el.style.height = `${height}px`;
+    el.style.minHeight = `${height}px`;
+    Object.assign(el.style, extra);
+  };
+  pinFull(navigation, {left: `${left}px`});
+  pinFull(appearance, {left: `${left}px`, width: `${width}px`});
+  pinFull(backdrop, {left: `${left}px`, width: `${width}px`, right: 'auto'});
+
+  if (composerArea) {
+    composerArea.style.position = 'fixed';
+    composerArea.style.left = `${left + 16}px`;
+    composerArea.style.width = `${width - 32}px`;
+    composerArea.style.right = 'auto';
+    composerArea.style.bottom = 'auto';
+    composerArea.style.top = `${Math.max(0, height - composerArea.offsetHeight - 20)}px`;
+  }
+
+  document.querySelectorAll('.sheet').forEach(sheet => {
+    sheet.style.position = 'fixed';
+    sheet.style.left = `${left}px`;
+    sheet.style.width = `${width}px`;
+    sheet.style.right = 'auto';
+    sheet.style.bottom = '0px';
+    sheet.style.top = 'auto';
+  });
+}
+bruteForceDock();
+window.visualViewport?.addEventListener('resize', bruteForceDock);
+window.visualViewport?.addEventListener('scroll', bruteForceDock);
+window.addEventListener('resize', bruteForceDock);
+window.addEventListener('orientationchange', bruteForceDock);
+function refreshViewportDock() {
+  if (!document.hidden) requestAnimationFrame(bruteForceDock);
+}
+window.addEventListener('pageshow', refreshViewportDock);
+window.addEventListener('load', refreshViewportDock);
+document.addEventListener('visibilitychange', refreshViewportDock);
 const historyContent = document.querySelector('.nav-content');
 const settingsContent = document.querySelector('.settings-content');
 const themeColor = document.querySelector('meta[name="theme-color"]');
@@ -207,7 +250,12 @@ document.addEventListener('keydown', event => {
 });
 // Deterministic reference framing for screenshot review; never fabricates iOS status UI.
 const query = new URLSearchParams(location.search);
-if (query.has('reference')) app.classList.add('reference');
+if (query.has('reference')) {
+  app.classList.add('reference');
+  [app, navigation, appearance, backdrop, composerArea, ...document.querySelectorAll('.sheet')].forEach(el => {
+    if (el) el.removeAttribute('style');
+  });
+}
 if (query.get('theme') === 'light' || query.get('theme') === 'dark') applyTheme(query.get('theme'));
 if (['connections','models','attachments','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
 if (query.get('screen') === 'settings') { openMenu('navigation'); showSettings(true); }
