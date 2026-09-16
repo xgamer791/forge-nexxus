@@ -31,7 +31,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .conversation-options{margin-left:auto;width:17px;height:28px;display:grid;place-items:center;color:var(--subdued)}
 .conversation-options svg{width:17px;height:17px;fill:currentColor;stroke:none}
 .nav-footer{height:auto;flex-shrink:0;border-top:1px solid var(--border);display:flex;align-items:center;padding:16px 24px max(12px,env(safe-area-inset-bottom,0px)) 18px;gap:12px}
-.profile{display:flex;align-items:center;gap:10px;font-size:17px;line-height:20px}
+.profile{display:flex;align-items:center;gap:10px;font-size:17px;line-height:20px;-webkit-touch-callout:none;user-select:none}
 .avatar{width:32px;height:32px;border:1px solid var(--border);border-radius:50%;display:grid;place-items:center;font-size:17px;font-weight:600}
 .settings{margin-left:auto;width:34px;height:34px;display:grid;place-items:center;color:var(--focus)}
 .settings svg{width:30px;height:30px;stroke-width:1.8}

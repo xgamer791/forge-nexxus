@@ -209,7 +209,8 @@ if (query.get('menu') === 'theme') {
 
 // Opt-in, device-local measurements. No viewport correction is applied here:
 // agreeing with visualViewport alone does not prove the physical strip is gone.
-if (query.get('viewport-debug') === '1') {
+function showViewportDiagnostics() {
+  if (document.querySelector('[data-viewport-diagnostics]')) return;
   const makeProbe = (styles) => {
     const probe = document.createElement('div');
     probe.setAttribute('aria-hidden', 'true');
@@ -275,3 +276,24 @@ if (query.get('viewport-debug') === '1') {
   window.visualViewport?.addEventListener('resize', updateViewportReport);
   window.visualViewport?.addEventListener('scroll', updateViewportReport);
 }
+if (query.get('viewport-debug') === '1') showViewportDiagnostics();
+
+// A Home Screen launch has its own viewport. Let support measurements be
+// opened there without reinstalling the app or switching to a browser tab.
+const diagnosticTrigger = document.querySelector('.profile');
+let diagnosticHold;
+let diagnosticTouch;
+function cancelDiagnosticHold() {
+  clearTimeout(diagnosticHold);
+  diagnosticTouch = null;
+}
+diagnosticTrigger.addEventListener('pointerdown', event => {
+  cancelDiagnosticHold();
+  diagnosticTouch = {x: event.clientX, y: event.clientY};
+  diagnosticHold = setTimeout(showViewportDiagnostics, 1000);
+});
+diagnosticTrigger.addEventListener('pointermove', event => {
+  if (diagnosticTouch && Math.hypot(event.clientX - diagnosticTouch.x, event.clientY - diagnosticTouch.y) > 12) cancelDiagnosticHold();
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach(type => diagnosticTrigger.addEventListener(type, cancelDiagnosticHold));
+diagnosticTrigger.addEventListener('contextmenu', event => event.preventDefault());
