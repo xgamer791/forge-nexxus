@@ -246,6 +246,7 @@ pre {
   min-height: 48px;
   padding: 0 1.15rem;
   border: 1px solid var(--line);
+  border-radius: 0;
   text-decoration: none;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -261,6 +262,7 @@ pre {
 .btn-ghost {
   background: transparent;
   color: var(--text);
+  border-color: #c6c8cc;
 }
 
 .btn:hover {
@@ -284,8 +286,7 @@ pre {
 
 .bench-head {
   display: grid;
-  grid-template-columns: minmax(16rem, 1fr) minmax(16rem, 1.4fr);
-  gap: 1rem 3rem;
+  gap: 0.75rem;
   margin-bottom: 1.75rem;
 }
 
@@ -345,7 +346,7 @@ fieldset {
 textarea,
 input[type="text"] {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid #5c5f66;
   background: var(--bg);
   padding: 0.85rem 0.9rem;
   border-radius: 0;
@@ -353,7 +354,7 @@ input[type="text"] {
 }
 
 textarea {
-  min-height: 9.5rem;
+  min-height: 7.5rem;
 }
 
 .field-note {
@@ -373,7 +374,8 @@ textarea {
 .segment {
   min-height: 40px;
   padding: 0 0.85rem;
-  border: 1px solid var(--line);
+  border: 1px solid #8d9096;
+  border-radius: 0;
   background: var(--bg);
   color: var(--text);
   font-weight: 600;
@@ -445,8 +447,8 @@ textarea {
 }
 
 .nexus-wrap {
-  border: 1px solid var(--line);
-  background: var(--bg);
+  border: 1px solid #5c5f66;
+  background: #101114;
   min-height: 280px;
 }
 
@@ -457,8 +459,8 @@ textarea {
 }
 
 .nexus .link {
-  stroke: var(--line);
-  stroke-width: 2;
+  stroke: #8d9096;
+  stroke-width: 1.75;
   fill: none;
 }
 
@@ -467,9 +469,9 @@ textarea {
 }
 
 .nexus .node rect {
-  fill: var(--bg-2);
-  stroke: var(--line);
-  stroke-width: 1.5;
+  fill: #24262b;
+  stroke: #d0d2d6;
+  stroke-width: 1.75;
 }
 
 .nexus .node text {
@@ -571,7 +573,6 @@ textarea {
   }
 
   .hero-copy,
-  .bench-head,
   .bench-grid,
   .run-grid {
     grid-template-columns: 1fr;

@@ -202,10 +202,10 @@ function titleFrom(brief) {
   return words.map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
 }
 
-function clip(brief) {
+function clipQuote(brief) {
   const clean = brief.trim().replace(/\s+/g, " ");
-  if (!clean) return "a job that already has a name in the room";
-  return clean.length > 140 ? `${clean.slice(0, 137)}…` : clean;
+  if (!clean) return "unnamed work";
+  return clean.length > 120 ? `${clean.slice(0, 117)}…` : clean;
 }
 
 function activeModules() {
@@ -214,17 +214,17 @@ function activeModules() {
 
 function missionLine() {
   const name = els.project.value.trim() || titleFrom(state.brief);
-  const subject = clip(state.brief);
+  const quote = clipQuote(state.brief);
   const bySurface = {
-    site: `${name} is a public surface for ${subject}. The first cut is a page a stranger can finish.`,
-    tool: `${name} is an internal bench for ${subject}. The first cut is the daily loop: intake, status, handoff.`,
-    field: `${name} is a field kit for ${subject}. The first cut works when the signal is bad and the hands are full.`,
-    cli: `${name} is a command bench for ${subject}. The first cut is one invocation that prints a plate a person can use.`,
+    site: `${name} is a public first page. One finished action. No second door.`,
+    tool: `${name} is an internal bench. First cut: intake, status, handoff.`,
+    field: `${name} is a field kit. It has to work with bad signal and full hands.`,
+    cli: `${name} is a command bench. One invocation, a plate a person can read.`,
   };
   const flavors = [
-    bySurface[state.surface],
-    `${name} starts as a nexus of a few named modules — not a platform. Hold the work to ${subject}.`,
-    `Treat ${name} as a plate you can stamp this week. If a piece does not serve ${subject}, it waits.`,
+    `${bySurface[state.surface]} Brief: “${quote}”`,
+    `${name} is a nexus of a few named modules — not a platform. Brief: “${quote}”`,
+    `Stamp ${name} this week. If a piece does not serve the brief, it waits. Brief: “${quote}”`,
   ];
   return flavors[state.stamp % flavors.length];
 }
