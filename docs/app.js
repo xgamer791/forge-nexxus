@@ -47,6 +47,15 @@ dockToVisualViewport();
 window.visualViewport?.addEventListener('resize', dockToVisualViewport);
 window.visualViewport?.addEventListener('scroll', dockToVisualViewport);
 window.addEventListener('orientationchange', dockToVisualViewport);
+window.addEventListener('resize', dockToVisualViewport);
+// Home Screen apps can resume without a visualViewport resize event.
+// Read again after the document is visible and its viewport has settled.
+function refreshViewportDock() {
+  if (!document.hidden) requestAnimationFrame(dockToVisualViewport);
+}
+window.addEventListener('pageshow', refreshViewportDock);
+window.addEventListener('load', refreshViewportDock);
+document.addEventListener('visibilitychange', refreshViewportDock);
 const backdrop = document.querySelector('.backdrop');
 const appearance = document.querySelector('.appearance');
 const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel => panel !== appearance);
@@ -63,7 +72,8 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('forge-theme', next); } catch { /* Private mode keeps the in-session theme. */ }
   if (themeColor) themeColor.content = next === 'light' ? '#f2f2f7' : '#121315';
-  if (statusBar) statusBar.content = next === 'light' ? 'default' : 'black-translucent';
+  // Theme changes affect colors only. Switching iOS status-bar modes here
+  // changes the standalone viewport geometry after the shell was measured.
   document.querySelectorAll('[data-theme-label]').forEach(label => { label.textContent = next === 'light' ? 'Light' : 'Dark'; });
   document.querySelectorAll('.theme-menu [data-theme]').forEach(option => {
     option.setAttribute('aria-selected', String(option.dataset.theme === next));
