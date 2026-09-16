@@ -29,6 +29,24 @@ window.addEventListener('focus', checkRelease);
 document.addEventListener('visibilitychange', checkRelease);
 setInterval(checkRelease, 60000);
 const app = document.querySelector('.app');
+function dockToVisualViewport() {
+  if (!app || app.classList.contains('reference')) return;
+  const vv = window.visualViewport;
+  const width = vv ? vv.width : window.innerWidth;
+  const height = vv ? vv.height : window.innerHeight;
+  const top = vv ? vv.offsetTop : 0;
+  const left = vv ? vv.offsetLeft : 0;
+  const appWidth = Math.min(640, width);
+  const root = document.documentElement;
+  root.style.setProperty('--vv-top', `${top}px`);
+  root.style.setProperty('--vv-left', `${left + (width - appWidth) / 2}px`);
+  root.style.setProperty('--vv-width', `${appWidth}px`);
+  root.style.setProperty('--vv-height', `${height}px`);
+}
+dockToVisualViewport();
+window.visualViewport?.addEventListener('resize', dockToVisualViewport);
+window.visualViewport?.addEventListener('scroll', dockToVisualViewport);
+window.addEventListener('orientationchange', dockToVisualViewport);
 const backdrop = document.querySelector('.backdrop');
 const appearance = document.querySelector('.appearance');
 const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel => panel !== appearance);
