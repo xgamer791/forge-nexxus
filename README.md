@@ -18,4 +18,4 @@ The prompt docks to the browser viewport with a 20px bottom gap. Bottom sheets m
 
 ## Review
 
-`?reference` provides a 430 × 932 logical reference frame. `&screen=connections`, `models`, `attachments`, or `navigation` exposes each menu for comparison. Test normal production layout separately: with a 932px viewport and a deliberately shortened 873px container, the prompt bottom must remain912px and bottom sheets must end at932px. Native iOS browser behavior still requires device verification.
+`?reference` provides a 430 × 932 logical reference frame. `&screen=connections`, `models`, `attachments`, `navigation`, `settings`, or `appearance` exposes each menu for comparison. `&theme=light` or `&theme=dark` sets the Appearance theme. Test normal production layout separately: with a 932px viewport and a deliberately shortened 873px container, the prompt bottom must remain912px and bottom sheets must end at932px. Native iOS browser behavior still requires device verification.

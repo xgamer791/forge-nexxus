@@ -30,15 +30,57 @@ document.addEventListener('visibilitychange', checkRelease);
 setInterval(checkRelease, 60000);
 const app = document.querySelector('.app');
 const backdrop = document.querySelector('.backdrop');
-const panels = [...document.querySelectorAll('[role="dialog"]')];
+const appearance = document.querySelector('.appearance');
+const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel => panel !== appearance);
 const navigation = document.querySelector('.navigation');
 const historyContent = document.querySelector('.nav-content');
 const settingsContent = document.querySelector('.settings-content');
+const themeColor = document.querySelector('meta[name="theme-color"]');
+const statusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+function currentTheme() {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+function applyTheme(theme) {
+  const next = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('forge-theme', next); } catch { /* Private mode keeps the in-session theme. */ }
+  if (themeColor) themeColor.content = next === 'light' ? '#f2f2f7' : '#121315';
+  if (statusBar) statusBar.content = next === 'light' ? 'default' : 'black-translucent';
+  document.querySelectorAll('[data-theme-label]').forEach(label => { label.textContent = next === 'light' ? 'Light' : 'Dark'; });
+  document.querySelectorAll('.theme-menu [data-theme]').forEach(option => {
+    option.setAttribute('aria-selected', String(option.dataset.theme === next));
+  });
+}
+function applyTransparency(reduce) {
+  app.classList.toggle('opaque-surfaces', reduce);
+}
+try { applyTheme(localStorage.getItem('forge-theme') === 'light' ? 'light' : 'dark'); }
+catch { applyTheme('dark'); }
+function closePopovers() {
+  document.querySelectorAll('.theme-menu,.font-menu').forEach(menu => { menu.hidden = true; });
+  document.querySelectorAll('.theme-select,.font-select').forEach(button => button.setAttribute('aria-expanded', 'false'));
+}
 function showSettings(show) {
+  appearance.hidden = true;
+  closePopovers();
   historyContent.hidden = show;
   settingsContent.hidden = !show;
   navigation.setAttribute('aria-label', show ? 'Settings menu' : 'Navigation menu');
   document.querySelector('.settings').setAttribute('aria-expanded', String(show));
+}
+function showAppearance(show) {
+  closePopovers();
+  if (show) {
+    historyContent.hidden = true;
+    settingsContent.hidden = true;
+    appearance.hidden = false;
+    navigation.setAttribute('aria-label', 'Appearance settings');
+    document.querySelector('.appearance-back').focus({preventScroll:true});
+  } else {
+    appearance.hidden = true;
+    showSettings(true);
+    document.querySelector('.open-appearance').focus({preventScroll:true});
+  }
 }
 document.querySelector('.settings').addEventListener('click', () => {
   showSettings(true);
@@ -48,8 +90,49 @@ document.querySelector('.settings-back').addEventListener('click', () => {
   showSettings(false);
   document.querySelector('.settings').focus({preventScroll:true});
 });
+document.querySelector('.open-appearance').addEventListener('click', () => showAppearance(true));
+document.querySelector('.appearance-back').addEventListener('click', () => showAppearance(false));
+document.querySelector('.theme-select').addEventListener('click', event => {
+  event.stopPropagation();
+  const menu = document.querySelector('.theme-menu');
+  const open = menu.hidden;
+  closePopovers();
+  menu.hidden = !open;
+  document.querySelector('.theme-select').setAttribute('aria-expanded', String(open));
+});
+document.querySelectorAll('.theme-menu [data-theme]').forEach(option => {
+  option.addEventListener('click', () => {
+    applyTheme(option.dataset.theme);
+    closePopovers();
+  });
+});
+document.querySelectorAll('.font-menu button').forEach(button => button.addEventListener('click', closePopovers));
+document.querySelectorAll('.font-select').forEach(button => {
+  button.addEventListener('click', event => {
+    event.stopPropagation();
+    const menu = document.getElementById(button.dataset.fontMenu);
+    const open = menu.hidden;
+    closePopovers();
+    menu.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+  });
+});
+document.querySelectorAll('.toggle').forEach(button => {
+  button.addEventListener('click', () => {
+    const pressed = button.getAttribute('aria-pressed') !== 'true';
+    button.setAttribute('aria-pressed', String(pressed));
+    if (button.classList.contains('reduce-transparency')) applyTransparency(pressed);
+  });
+});
+applyTransparency(document.querySelector('.reduce-transparency').getAttribute('aria-pressed') === 'true');
+const density = document.querySelector('.density-range');
+function syncDensity() { density.style.setProperty('--density', `${density.value}%`); }
+density.addEventListener('input', syncDensity);
+syncDensity();
 let opener;
 function closeMenu() {
+  closePopovers();
+  appearance.hidden = true;
   panels.forEach(panel => panel.hidden = true);
   backdrop.hidden = true;
   app.classList.remove("navigation-open");
@@ -78,12 +161,17 @@ document.querySelectorAll('[data-open]').forEach(button => {
 document.querySelectorAll('.dismiss').forEach(button => button.addEventListener('click', closeMenu));
 backdrop.addEventListener('click', closeMenu);
 document.addEventListener('click', event => {
+  if (!event.target.closest('.theme-select,.theme-menu,.font-select,.font-menu')) closePopovers();
   if (!document.querySelector('.attachments').hidden && !event.target.closest('.attachments,[data-open]')) closeMenu();
 });
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') closeMenu();
+  if (event.key === 'Escape') {
+    if (![...document.querySelectorAll('.theme-menu,.font-menu')].every(menu => menu.hidden)) { closePopovers(); return; }
+    if (!appearance.hidden) { showAppearance(false); return; }
+    closeMenu();
+  }
   if (event.key !== 'Tab') return;
-  const panel = panels.find(item => !item.hidden);
+  const panel = appearance.hidden ? panels.find(item => !item.hidden) : appearance;
   if (!panel) return;
   const controls = [...panel.querySelectorAll('button,input')].filter(control => !control.closest('[hidden]'));
   const first = controls[0], last = controls.at(-1);
@@ -93,5 +181,11 @@ document.addEventListener('keydown', event => {
 // Deterministic reference framing for screenshot review; never fabricates iOS status UI.
 const query = new URLSearchParams(location.search);
 if (query.has('reference')) app.classList.add('reference');
+if (query.get('theme') === 'light' || query.get('theme') === 'dark') applyTheme(query.get('theme'));
 if (['connections','models','attachments','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
 if (query.get('screen') === 'settings') { openMenu('navigation'); showSettings(true); }
+if (query.get('screen') === 'appearance') { openMenu('navigation'); showAppearance(true); }
+if (query.get('menu') === 'theme') {
+  document.querySelector('.theme-menu').hidden = false;
+  document.querySelector('.theme-select').setAttribute('aria-expanded', 'true');
+}
