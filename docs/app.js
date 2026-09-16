@@ -2,6 +2,23 @@
 const app = document.querySelector('.app');
 const backdrop = document.querySelector('.backdrop');
 const panels = [...document.querySelectorAll('[role="dialog"]')];
+const navigation = document.querySelector('.navigation');
+const historyContent = document.querySelector('.nav-content');
+const settingsContent = document.querySelector('.settings-content');
+function showSettings(show) {
+  historyContent.hidden = show;
+  settingsContent.hidden = !show;
+  navigation.setAttribute('aria-label', show ? 'Settings menu' : 'Navigation menu');
+  document.querySelector('.settings').setAttribute('aria-expanded', String(show));
+}
+document.querySelector('.settings').addEventListener('click', () => {
+  showSettings(true);
+  document.querySelector('.settings-back').focus({preventScroll:true});
+});
+document.querySelector('.settings-back').addEventListener('click', () => {
+  showSettings(false);
+  document.querySelector('.settings').focus({preventScroll:true});
+});
 let opener;
 function closeMenu() {
   panels.forEach(panel => panel.hidden = true);
@@ -15,6 +32,7 @@ function openMenu(name, trigger) {
   const panel = document.querySelector(`.${name}`);
   if (!panels.includes(panel)) return;
   opener = trigger;
+  if (name === 'navigation') showSettings(false);
   panel.hidden = false;
   backdrop.hidden = name === 'attachments';
   app.classList.toggle('navigation-open', name === 'navigation');
@@ -38,7 +56,7 @@ document.addEventListener('keydown', event => {
   if (event.key !== 'Tab') return;
   const panel = panels.find(item => !item.hidden);
   if (!panel) return;
-  const controls = [...panel.querySelectorAll('button,input')];
+  const controls = [...panel.querySelectorAll('button,input')].filter(control => !control.closest('[hidden]'));
   const first = controls[0], last = controls.at(-1);
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
@@ -47,3 +65,4 @@ document.addEventListener('keydown', event => {
 const query = new URLSearchParams(location.search);
 if (query.has('reference')) app.classList.add('reference');
 if (['connections','models','attachments','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
+if (query.get('screen') === 'settings') { openMenu('navigation'); showSettings(true); }
