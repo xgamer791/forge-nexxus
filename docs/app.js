@@ -146,7 +146,7 @@ function openMenu(name, trigger) {
   opener = trigger;
   if (name === 'navigation') showSettings(false);
   panel.hidden = false;
-  backdrop.hidden = name === 'attachments';
+  backdrop.hidden = false;
   app.classList.toggle('navigation-open', name === 'navigation');
   trigger?.setAttribute('aria-expanded', 'true');
   panel.querySelector('button')?.focus({preventScroll:true});
@@ -162,7 +162,6 @@ document.querySelectorAll('.dismiss').forEach(button => button.addEventListener(
 backdrop.addEventListener('click', closeMenu);
 document.addEventListener('click', event => {
   if (!event.target.closest('.theme-select,.theme-menu,.font-select,.font-menu')) closePopovers();
-  if (!document.querySelector('.attachments').hidden && !event.target.closest('.attachments,[data-open]')) closeMenu();
 });
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
