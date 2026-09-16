@@ -1,0 +1,1 @@
+{"name":"forge-nexxus","private":true,"type":"module","scripts":{"dev":"node scripts/preview.mjs"}}

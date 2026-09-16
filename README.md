@@ -1,59 +1,21 @@
 # Forge Nexxus
 
-A public spec bench. Type a brief, pick a surface / stack / heat, and stamp a first-cut build order. The spelling is **Nexxus** (two x’s).
+Mobile UI prototype rebuilt from the supplied screenshots. Main dashboard, connections sheet, model sheet, attachment menu, and hamburger drawer are included. Only menu opening/closing works; there are no accounts, API calls, uploads, or storage.
 
-This is a static site. There is no backend and no secrets. The forge runs in the browser.
+Live app: https://xgamer791.github.io/forge-nexxus/
 
-**Live URL:** https://xgamer791.github.io/forge-nexxus/
+## Hosting
 
-## Run locally
+Standard GitHub Pages only, using the existing `.github/workflows/pages.yml` workflow and `docs/` output. Keep all asset paths relative to support `/forge-nexxus/`. No OpenAI hosting configuration, authentication, or proprietary deployment dependency is included.
 
-The site is the files in `docs/`. Serve that folder with any static server.
+## Local preview
 
-```bash
-git clone https://github.com/xgamer791/forge-nexxus.git
-cd forge-nexxus
-python3 -m http.server 4173 --directory docs
-```
+Run `npm run dev` (Node.js; no install required), then open http://localhost:4173/forge-nexxus/ . Any static server can also serve `docs/` directly.
 
-Open http://127.0.0.1:4173
+## Layout requirements
 
-Any other static server works the same way:
+The prompt docks to the browser viewport with a 20px bottom gap. Bottom sheets meet the viewport edge and the navigation drawer spans its height. These must remain independent of the app container height. iOS safe-area top padding and native system fonts are retained; the operating-system status bar and Dynamic Island are not drawn by the app.
 
-```bash
-npx --yes serve docs
-```
+## Review
 
-Asset paths are relative (`styles.css`, `app.js`), so the page works at the site root and on the GitHub Pages project path `/forge-nexxus/`.
-
-## GitHub Pages
-
-Pages serves the same `docs/` folder that you run locally.
-
-1. In the repo, open **Settings → Pages**.
-2. Either:
-   - **Source:** GitHub Actions (this repo’s `Deploy GitHub Pages` workflow uploads `docs/` on every push to `main`), or
-   - **Source:** Deploy from a branch → `main` → `/docs`.
-3. After the first deploy, the site is at **https://xgamer791.github.io/forge-nexxus/**
-
-`docs/.nojekyll` is included so GitHub does not process the folder as a Jekyll site.
-
-## What is in the page
-
-- Landing plate with the Forge Nexxus name and tagline
-- **Spec bench:** live spec from your brief, example loads, nexus map you can inspect or drop modules from, copy-as-markdown
-
-No accounts, API keys, or workspace connections.
-
-## Layout
-
-```
-docs/                 published site
-  index.html
-  styles.css
-  app.js
-  404.html
-  .nojekyll
-.github/workflows/
-  pages.yml           deploy docs/ to GitHub Pages
-```
+`?reference` provides a 430 × 932 logical reference frame. `&screen=connections`, `models`, `attachments`, or `navigation` exposes each menu for comparison. Test normal production layout separately: with a 932px viewport and a deliberately shortened 873px container, the prompt bottom must remain912px and bottom sheets must end at932px. Native iOS browser behavior still requires device verification.
