@@ -37,6 +37,70 @@ const historyContent = document.querySelector('.nav-content');
 const settingsContent = document.querySelector('.settings-content');
 const themeColor = document.querySelector('meta[name="theme-color"]');
 const statusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+const promptInput = document.querySelector('.composer textarea');
+const microphone = document.querySelector('.microphone');
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition;
+let voicePrefix = '';
+let voiceTranscript = '';
+
+function setVoiceInputActive(active) {
+  microphone?.setAttribute('aria-pressed', String(active));
+  microphone?.setAttribute('aria-label', active ? 'Stop voice input' : 'Start voice input');
+  if (promptInput) promptInput.placeholder = active ? 'Listening…' : 'Ask Forge';
+}
+
+function startVoiceInput() {
+  if (!promptInput || !microphone) return;
+  if (!SpeechRecognition) {
+    promptInput.placeholder = 'Voice input is not supported in this browser';
+    promptInput.focus();
+    return;
+  }
+
+  recognition ??= new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = navigator.language || 'en-US';
+  voicePrefix = promptInput.value.trim();
+  if (voicePrefix) voicePrefix += ' ';
+  voiceTranscript = '';
+
+  recognition.onstart = () => setVoiceInputActive(true);
+  recognition.onresult = event => {
+    let interimTranscript = '';
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const transcript = event.results[index][0].transcript.trim();
+      if (event.results[index].isFinal) voiceTranscript += `${transcript} `;
+      else interimTranscript += transcript;
+    }
+    promptInput.value = `${voicePrefix}${voiceTranscript}${interimTranscript}`.trimEnd();
+    promptInput.dispatchEvent(new Event('input', {bubbles:true}));
+  };
+  recognition.onerror = event => {
+    setVoiceInputActive(false);
+    if (!promptInput.value) {
+      promptInput.placeholder = event.error === 'not-allowed'
+        ? 'Enable microphone access to use voice input'
+        : 'Voice input unavailable';
+    }
+  };
+  recognition.onend = () => {
+    setVoiceInputActive(false);
+    promptInput.value = promptInput.value.trimEnd();
+    promptInput.focus();
+  };
+
+  try { recognition.start(); }
+  catch { setVoiceInputActive(false); }
+}
+
+microphone?.addEventListener('click', () => {
+  if (microphone.getAttribute('aria-pressed') === 'true') recognition?.stop();
+  else startVoiceInput();
+});
+window.addEventListener('pagehide', () => recognition?.abort());
+
 function currentTheme() {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
