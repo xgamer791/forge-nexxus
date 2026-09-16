@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0c0e">
+  <title>Forge Nexxus</title>
+  <meta name="description" content="Forge Nexxus — turn a loose brief into a build order. A local spec bench that runs as a static page.">
+  <link rel="canonical" href="https://xgamer791.github.io/forge-nexxus/">
+  <meta property="og:title" content="Forge Nexxus">
+  <meta property="og:description" content="Turn a loose brief into a build order.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://xgamer791.github.io/forge-nexxus/">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0c0e'/%3E%3Cpath fill='%23ececec' d='M7 6h3l6 9V6h3v20h-3l-6-9v9H7V6zm16 0h3v20h-3z'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://api.fontshare.com">
+  <link href="https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#bench">Skip to spec bench</a>
+
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="Forge Nexxus home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M7 6h3l6 9V6h3v20h-3l-6-9v9H7V6zm16 0h3v20h-3z"/>
+      </svg>
+      <span>Forge Nexxus</span>
+    </a>
+    <p class="topbar-meta">Spec bench · client-side · no account</p>
+    <nav class="topbar-nav" aria-label="Page">
+      <a href="#bench">Bench</a>
+      <a href="#run">How it runs</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-name">
+      <p class="index">01 / plate</p>
+      <h1 id="hero-name">
+        <span>Forge</span>
+        <span>Nexxus</span>
+      </h1>
+      <div class="hero-copy">
+        <p class="tagline">Turn a loose brief into a build order.</p>
+        <p class="deck">A bench for stamping the first spec — modules, sequence, and the risks worth naming. The live site is a static page. What you type stays in this browser.</p>
+        <div class="hero-actions">
+          <a class="btn btn-ember" href="#bench">Open the bench</a>
+          <a class="btn btn-ghost" href="#run">How this runs</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="bench" id="bench" aria-labelledby="bench-title">
+      <div class="bench-head">
+        <p class="index">02 / bench</p>
+        <h2 id="bench-title">Spec bench</h2>
+        <p>Describe the thing. Pick a surface, a stack, and a heat. The plate updates as you type. Click a nexus node to put that module on the anvil.</p>
+      </div>
+
+      <div class="bench-grid">
+        <form class="panel controls" id="forge-form">
+          <div class="field">
+            <label for="brief">Brief</label>
+            <textarea id="brief" name="brief" rows="6" maxlength="480" required>A weekend tool library for the block — who has the ladder, who wants it back, and when it is due.</textarea>
+            <p class="field-note"><span id="brief-count">0</span> / 480</p>
+          </div>
+
+          <div class="examples" aria-label="Example briefs">
+            <p class="field-label">Load an example</p>
+            <div class="chip-row" id="examples"></div>
+          </div>
+
+          <fieldset>
+            <legend>Surface</legend>
+            <div class="segments" id="surface" role="radiogroup" aria-label="Surface"></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Stack</legend>
+            <div class="segments" id="stack" role="radiogroup" aria-label="Stack"></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Heat</legend>
+            <div class="segments" id="heat" role="radiogroup" aria-label="Heat"></div>
+          </fieldset>
+
+          <div class="field">
+            <label for="project">Plate name</label>
+            <input id="project" name="project" type="text" maxlength="48" autocomplete="off" spellcheck="false">
+          </div>
+
+          <div class="control-actions">
+            <button type="button" class="btn btn-ember" id="stamp">Stamp again</button>
+            <button type="button" class="btn btn-ghost" id="copy">Copy plate</button>
+          </div>
+          <p class="sr-live" id="copy-status" role="status" aria-live="polite"></p>
+        </form>
+
+        <article class="panel plate" id="plate" aria-live="polite">
+          <header class="plate-head">
+            <p class="index">03 / plate</p>
+            <p class="serial" id="serial">FN-0000</p>
+          </header>
+          <h3 id="plate-name">Untitled Forge</h3>
+          <p class="mission" id="mission"></p>
+          <p class="plate-tags" id="tags"></p>
+
+          <h4>Nexus map</h4>
+          <p class="plate-hint">Click a node to inspect it. Click again to drop it from this cut.</p>
+          <div class="nexus-wrap" id="nexus"></div>
+          <p class="anvil" id="anvil"></p>
+
+          <h4>Build order</h4>
+          <ol id="order"></ol>
+
+          <h4>First 48 hours</h4>
+          <ul id="hours"></ul>
+
+          <h4>Watch-outs</h4>
+          <ul id="risks"></ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="run" id="run" aria-labelledby="run-title">
+      <p class="index">04 / run</p>
+      <h2 id="run-title">How this runs</h2>
+      <div class="run-grid">
+        <article>
+          <h3>Local</h3>
+          <p>The site is static HTML, CSS, and JavaScript in <code>docs/</code>. From the repo root:</p>
+          <pre><code>python3 -m http.server 4173 --directory docs</code></pre>
+          <p>Then open <code>http://127.0.0.1:4173</code>.</p>
+        </article>
+        <article>
+          <h3>GitHub Pages</h3>
+          <p>The same files are what Pages serves. Expected live URL:</p>
+          <p><a href="https://xgamer791.github.io/forge-nexxus/">https://xgamer791.github.io/forge-nexxus/</a></p>
+          <p>No secrets. No backend. The forge runs in the page.</p>
+        </article>
+        <article>
+          <h3>What it does not do</h3>
+          <p>It does not call a model, store a brief, or connect a workspace. It stamps a first-cut spec so you can start with a map instead of a blank page.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p><strong>Forge Nexxus</strong> — spec bench. Spelling is Nexxus, with two x’s.</p>
+    <p><a href="https://xgamer791.github.io/forge-nexxus/">xgamer791.github.io/forge-nexxus</a></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
