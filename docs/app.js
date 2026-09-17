@@ -195,14 +195,28 @@ function syncDensity() { density.style.setProperty('--density', `${density.value
 density.addEventListener('input', syncDensity);
 syncDensity();
 let opener;
+function resetViewport() {
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}
 function closeMenu() {
   closePopovers();
+  const active = document.activeElement;
+  if (active && app.contains(active) && active !== document.body) active.blur();
   appearance.hidden = true;
-  panels.forEach(panel => panel.hidden = true);
+  panels.forEach(panel => {
+    panel.hidden = true;
+    panel.scrollTop = 0;
+  });
   backdrop.hidden = true;
   app.classList.remove("navigation-open");
   document.querySelectorAll('[data-open]').forEach(button => button.setAttribute('aria-expanded', 'false'));
-  opener?.focus();
+  resetViewport();
+  requestAnimationFrame(() => {
+    resetViewport();
+    opener?.focus({preventScroll:true});
+  });
 }
 function openMenu(name, trigger) {
   closeMenu();
@@ -215,6 +229,7 @@ function openMenu(name, trigger) {
   app.classList.toggle('navigation-open', name === 'navigation');
   trigger?.setAttribute('aria-expanded', 'true');
   panel.querySelector('button')?.focus({preventScroll:true});
+  resetViewport();
 }
 document.querySelectorAll('[data-open]').forEach(button => {
   button.setAttribute('aria-expanded', 'false');
