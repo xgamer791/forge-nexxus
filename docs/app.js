@@ -301,7 +301,7 @@ document.addEventListener('keydown', event => {
 const query = new URLSearchParams(location.search);
 if (query.has('reference')) app.classList.add('reference');
 if (query.get('theme') === 'light' || query.get('theme') === 'dark') applyTheme(query.get('theme'));
-if (['connections','models','attachments','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
+if (['connections','models','attachments','account','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
 if (query.get('screen') === 'settings') { openMenu('navigation'); showSettings(true); }
 if (query.get('screen') === 'appearance') { openMenu('navigation'); showAppearance(true); }
 if (query.get('menu') === 'theme') {
@@ -392,16 +392,26 @@ function cancelDiagnosticHold() {
 diagnosticTrigger.addEventListener('pointerdown', event => {
   cancelDiagnosticHold();
   diagnosticTouch = {x: event.clientX, y: event.clientY};
-  diagnosticHold = setTimeout(showViewportDiagnostics, 1000);
+  diagnosticHold = setTimeout(() => { diagnosticHoldFired = true; showViewportDiagnostics(); }, 1000);
 });
+// A completed hold is a diagnostics gesture, not a tap on the account button.
+let diagnosticHoldFired = false;
+diagnosticTrigger.addEventListener('click', event => {
+  if (!diagnosticHoldFired) return;
+  diagnosticHoldFired = false;
+  event.stopImmediatePropagation();
+}, true);
 diagnosticTrigger.addEventListener('pointermove', event => {
   if (diagnosticTouch && Math.hypot(event.clientX - diagnosticTouch.x, event.clientY - diagnosticTouch.y) > 12) cancelDiagnosticHold();
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => diagnosticTrigger.addEventListener(type, cancelDiagnosticHold));
 diagnosticTrigger.addEventListener('contextmenu', event => event.preventDefault());
 
-// Conversations persist in Convex through the ForgeData bundle loaded before this script.
+// Conversations and the account persist in Convex through the ForgeData bundle loaded before this script.
 const forge = window.ForgeData;
+function reportError(error) {
+  console.error('Forge Nexxus could not save the change', error);
+}
 const conversationList = document.querySelector('.conversation-list');
 const newChat = document.querySelector('.new-chat');
 const thread = document.querySelector('.thread');
@@ -505,9 +515,6 @@ if (forge?.conversations && conversationList && thread) {
     if (!id) { renderThread([]); return; }
     stopMessages = forge.messages.subscribe(id, renderThread);
   }
-  function reportError(error) {
-    console.error('Forge Nexxus could not save the change', error);
-  }
   forge.conversations.subscribe(list => {
     conversations = list;
     const activeGone = activeId && forge.auth.state().signedIn && !list.some(conversation => conversation._id === activeId);
@@ -545,5 +552,60 @@ if (forge?.conversations && conversationList && thread) {
       event.preventDefault();
       sendPrompt();
     }
+  });
+}
+
+const accountSheet = document.querySelector('.account');
+if (forge?.account && accountSheet) {
+  const guestView = accountSheet.querySelector('.account-guest');
+  const memberView = accountSheet.querySelector('.account-member');
+  const emailForm = accountSheet.querySelector('.account-email');
+  const emailSent = accountSheet.querySelector('.account-sent');
+  const labels = document.querySelectorAll('[data-account-label]');
+  const avatars = document.querySelectorAll('[data-account-avatar]');
+  function renderAccount(user) {
+    const member = user && !user.isAnonymous;
+    guestView.hidden = Boolean(member);
+    memberView.hidden = !member;
+    const name = member ? (user.name || user.email || 'Signed in') : 'Guest';
+    labels.forEach(label => { label.textContent = name; });
+    avatars.forEach(avatar => { avatar.textContent = name.trim().charAt(0).toUpperCase() || 'G'; });
+    accountSheet.querySelector('[data-account-name]').textContent = member ? name : '';
+    accountSheet.querySelector('[data-account-email]').textContent = member && user.email && user.email !== name ? user.email : '';
+    if (!member) {
+      emailForm.hidden = false;
+      emailSent.hidden = true;
+      accountSheet.querySelectorAll('[data-provider]').forEach(button => { button.disabled = false; });
+    }
+  }
+  renderAccount(null);
+  forge.account.subscribe(renderAccount);
+  emailForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const email = emailForm.elements.email.value.trim();
+    const submit = emailForm.querySelector('button');
+    if (!email || submit.disabled) return;
+    submit.disabled = true;
+    try {
+      await forge.auth.signInWithEmail(email);
+      emailForm.hidden = true;
+      emailSent.hidden = false;
+    } catch (error) {
+      reportError(error);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  accountSheet.querySelectorAll('[data-provider]').forEach(button => {
+    button.addEventListener('click', () => {
+      button.disabled = true;
+      forge.auth.signInWith(button.dataset.provider).catch(error => {
+        button.disabled = false;
+        reportError(error);
+      });
+    });
+  });
+  accountSheet.querySelector('.account-signout').addEventListener('click', () => {
+    forge.auth.signOut().then(closeMenu).catch(reportError);
   });
 }

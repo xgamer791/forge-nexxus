@@ -1,25 +1,61 @@
+import Apple from "@auth/core/providers/apple";
+import Google from "@auth/core/providers/google";
 import Resend from "@auth/core/providers/resend";
 import { Anonymous } from "@convex-dev/auth/providers/Anonymous";
 import { convexAuth, getAuthUserId } from "@convex-dev/auth/server";
+import { v } from "convex/values";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import { action, internalMutation, type MutationCtx } from "./_generated/server";
 
-export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
+const convex = convexAuth({
   providers: [
     Anonymous,
     Resend({
       from: process.env.AUTH_EMAIL_FROM ?? "Forge Nexxus <onboarding@resend.dev>",
     }),
+    Google,
+    Apple,
   ],
-  callbacks: {
-    // A guest who signs in with email keeps their conversations.
-    async afterUserCreatedOrUpdated(ctx, { userId }) {
-      const guestId = await getAuthUserId(ctx);
-      if (!guestId || guestId === userId) return;
-      const guest = await ctx.db.get(guestId);
-      if (!guest?.isAnonymous) return;
-      await adoptGuestData(ctx, guestId, userId);
-    },
+});
+
+export const { auth, signOut, store, isAuthenticated } = convex;
+export const signInWithConvexAuth = convex.signIn;
+
+type SignInResult = {
+  tokens?: { token: string; refreshToken: string } | null;
+  redirect?: string;
+  verifier?: string;
+  started?: boolean;
+};
+
+// Every sign-in passes through here so a guest's conversations follow them to
+// the account they just signed in to, whichever provider issued it.
+export const signIn = action({
+  args: {
+    provider: v.optional(v.string()),
+    params: v.optional(v.any()),
+    verifier: v.optional(v.string()),
+    refreshToken: v.optional(v.string()),
+    calledBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<SignInResult> => {
+    const guestId = await getAuthUserId(ctx);
+    const result: SignInResult = await ctx.runAction(api.auth.signInWithConvexAuth, args);
+    const userId = result.tokens?.token ? userIdFromToken(result.tokens.token) : null;
+    if (guestId && userId && userId !== guestId) {
+      await ctx.runMutation(internal.auth.adoptGuest, { guestId, userId });
+    }
+    return result;
+  },
+});
+
+export const adoptGuest = internalMutation({
+  args: { guestId: v.id("users"), userId: v.id("users") },
+  handler: async (ctx, { guestId, userId }) => {
+    const guest = await ctx.db.get(guestId);
+    if (!guest?.isAnonymous || !(await ctx.db.get(userId))) return;
+    await adoptGuestData(ctx, guestId, userId);
   },
 });
 
@@ -39,4 +75,15 @@ export async function adoptGuestData(
     .collect();
   await Promise.all(accounts.map((a) => ctx.db.delete(a._id)));
   await ctx.db.delete(guestId);
+}
+
+function userIdFromToken(token: string): Id<"users"> | null {
+  try {
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const subject = String(JSON.parse(atob(payload)).sub ?? "");
+    const [userId] = subject.split("|");
+    return userId ? (userId as Id<"users">) : null;
+  } catch {
+    return null;
+  }
 }

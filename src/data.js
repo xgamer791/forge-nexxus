@@ -1,16 +1,25 @@
 const TOKEN_KEY = "forge-auth-token";
 const REFRESH_KEY = "forge-auth-refresh";
 const KIND_KEY = "forge-auth-kind";
+const VERIFIER_KEY = "forge-auth-verifier";
 const GUEST_RETRY_MS = [1000, 2000, 4000, 8000, 16000];
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Convex Auth's client library is React-only, so the session lifecycle is
-// handled here: guests are signed in anonymously, magic-link codes are
-// exchanged while still holding the guest token (which is what lets the
-// server migrate guest data), and refreshes go out on the HTTP client so the
-// live WebSocket client's auth state never blocks them.
-export function createForgeData({ client, httpClient, storage, api, authCode = null, wait = delay }) {
+// handled here: guests are signed in anonymously, sign-in codes (magic link or
+// OAuth) are exchanged while still holding the guest token so the server can
+// move the guest's data, and refreshes go out on the HTTP client so the live
+// WebSocket client's auth state never blocks them.
+export function createForgeData({
+  client,
+  httpClient,
+  storage,
+  api,
+  authCode = null,
+  wait = delay,
+  navigate = () => {},
+}) {
   let token = read(TOKEN_KEY);
   let refreshToken = read(REFRESH_KEY);
   let refreshing = null;
@@ -96,13 +105,19 @@ export function createForgeData({ client, httpClient, storage, api, authCode = n
     }
   }
 
+  // OAuth codes must be presented with the verifier saved when the flow started;
+  // magic-link codes have none. Either way the verifier is single-use.
+  async function exchangeCode(code) {
+    const verifier = read(VERIFIER_KEY) ?? undefined;
+    write(VERIFIER_KEY, null);
+    const { tokens } = await authCall({ params: { code }, verifier }, { withToken: true });
+    return tokens ?? null;
+  }
+
   const ready = (async () => {
     if (authCode !== null) {
       try {
-        const { tokens } = await authCall(
-          { provider: "resend", params: { code: authCode } },
-          { withToken: true },
-        );
+        const tokens = await exchangeCode(authCode);
         if (tokens) {
           applyTokens(tokens, "member", { reconnect: true });
           return;
@@ -120,11 +135,21 @@ export function createForgeData({ client, httpClient, storage, api, authCode = n
   })();
 
   async function signInWithEmail(email) {
+    write(VERIFIER_KEY, null);
     const result = await authCall(
       { provider: "resend", params: { email, redirectTo: "/" } },
       { withToken: true },
     );
     return result?.started === true;
+  }
+
+  async function signInWith(provider) {
+    write(VERIFIER_KEY, null);
+    const result = await authCall({ provider, params: { redirectTo: "/" } }, { withToken: true });
+    if (!result?.redirect) throw new Error(`Sign-in with ${provider} did not start`);
+    write(VERIFIER_KEY, result.verifier ?? null);
+    navigate(result.redirect);
+    return result.redirect;
   }
 
   async function signOut() {
@@ -147,7 +172,10 @@ export function createForgeData({ client, httpClient, storage, api, authCode = n
 
   return {
     ready,
-    auth: { state, onChange, signInWithEmail, signOut },
+    auth: { state, onChange, signInWithEmail, signInWith, signOut },
+    account: {
+      subscribe: (callback) => client.onUpdate(api.users.me, {}, callback),
+    },
     conversations: {
       subscribe: (callback) => client.onUpdate(api.conversations.list, {}, callback),
       create: (title) => client.mutation(api.conversations.create, title ? { title } : {}),

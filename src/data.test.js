@@ -4,6 +4,7 @@ import { createForgeData } from "./data.js";
 
 const api = {
   auth: { signIn: "auth:signIn", signOut: "auth:signOut" },
+  users: { me: "users:me" },
   conversations: {
     list: "conversations:list",
     create: "conversations:create",
@@ -42,6 +43,12 @@ function fakeClient() {
 async function defaultHandler(fn, args) {
   if (fn === "auth:signOut") return null;
   if (args.provider === "anonymous") return { tokens: tokens("guest") };
+  if (args.provider === "google" || args.provider === "apple") {
+    return {
+      redirect: `https://x.convex.site/api/auth/signin/${args.provider}?code=v-${args.provider}`,
+      verifier: `v-${args.provider}`,
+    };
+  }
   if (args.refreshToken) return { tokens: tokens("refreshed") };
   if (args.params?.code === "good") return { tokens: tokens("member") };
   if (args.params?.code) throw new Error("Could not verify code");
@@ -51,6 +58,7 @@ async function defaultHandler(fn, args) {
 
 function harness({ storage = memoryStorage(), handler = defaultHandler, authCode = null } = {}) {
   const client = fakeClient();
+  const navigate = vi.fn();
   const http = { auth: null, calls: [] };
   http.setAuth = (value) => {
     http.auth = value;
@@ -69,8 +77,9 @@ function harness({ storage = memoryStorage(), handler = defaultHandler, authCode
     api,
     authCode,
     wait: async () => {},
+    navigate,
   });
-  return { client, http, storage, data };
+  return { client, http, storage, data, navigate };
 }
 
 describe("session bootstrap", () => {
@@ -98,14 +107,23 @@ describe("session bootstrap", () => {
     });
     await data.ready;
     expect(http.calls).toEqual([
-      {
-        fn: "auth:signIn",
-        args: { provider: "resend", params: { code: "good" } },
-        auth: "guest-token",
-      },
+      { fn: "auth:signIn", args: { params: { code: "good" } }, auth: "guest-token" },
     ]);
     expect(data.auth.state()).toEqual({ signedIn: true, kind: "member" });
     expect(storage.dump()).toEqual(stored("member", "member"));
+  });
+
+  test("an OAuth code is exchanged with the saved verifier, which is then discarded", async () => {
+    const storage = memoryStorage({ ...stored("guest", "guest"), "forge-auth-verifier": "v-google" });
+    const { http, data } = harness({ storage, authCode: "good" });
+    await data.ready;
+    expect(http.calls[0]).toEqual({
+      fn: "auth:signIn",
+      args: { params: { code: "good" }, verifier: "v-google" },
+      auth: "guest-token",
+    });
+    expect(storage.dump()["forge-auth-verifier"]).toBeUndefined();
+    expect(data.auth.state()).toEqual({ signedIn: true, kind: "member" });
   });
 
   test("a bad code keeps the guest session", async () => {
@@ -178,9 +196,12 @@ describe("token lifecycle", () => {
     ]);
     expect(client.clearAuth).toHaveBeenCalledTimes(1);
   });
+});
 
-  test("email sign-in requests a magic link back to the app root", async () => {
-    const { http, data } = harness();
+describe("sign-in providers", () => {
+  test("email sign-in requests a magic link back to the app root and drops stale verifiers", async () => {
+    const storage = memoryStorage({ "forge-auth-verifier": "abandoned" });
+    const { http, data } = harness({ storage });
     await data.ready;
     expect(await data.auth.signInWithEmail("me@example.com")).toBe(true);
     expect(http.calls.at(-1)).toEqual({
@@ -188,14 +209,39 @@ describe("token lifecycle", () => {
       args: { provider: "resend", params: { email: "me@example.com", redirectTo: "/" } },
       auth: "guest-token",
     });
+    expect(storage.dump()["forge-auth-verifier"]).toBeUndefined();
+  });
+
+  test.each(["google", "apple"])("%s sign-in saves the verifier and follows the redirect", async (provider) => {
+    const { http, storage, data, navigate } = harness();
+    await data.ready;
+    const redirect = await data.auth.signInWith(provider);
+    expect(redirect).toBe(`https://x.convex.site/api/auth/signin/${provider}?code=v-${provider}`);
+    expect(http.calls.at(-1)).toEqual({
+      fn: "auth:signIn",
+      args: { provider, params: { redirectTo: "/" } },
+      auth: "guest-token",
+    });
+    expect(storage.dump()["forge-auth-verifier"]).toBe(`v-${provider}`);
+    expect(navigate).toHaveBeenCalledWith(redirect);
+  });
+
+  test("a provider that does not redirect is reported", async () => {
+    const { data } = harness({
+      handler: async (fn, args) =>
+        args.provider === "anonymous" ? { tokens: tokens("guest") } : { started: false },
+    });
+    await data.ready;
+    await expect(data.auth.signInWith("google")).rejects.toThrow("did not start");
   });
 });
 
 describe("data access", () => {
-  test("conversation and message calls target the right functions", async () => {
+  test("account, conversation, and message calls target the right functions", async () => {
     const { client, data } = harness();
     await data.ready;
     const callback = () => {};
+    data.account.subscribe(callback);
     data.conversations.subscribe(callback);
     data.messages.subscribe("c1", callback);
     await data.conversations.create();
@@ -204,6 +250,7 @@ describe("data access", () => {
     await data.conversations.remove("c1");
     await data.messages.send("c1", "hi");
     expect(client.onUpdate.mock.calls).toEqual([
+      ["users:me", {}, callback],
       ["conversations:list", {}, callback],
       ["messages:list", { conversationId: "c1" }, callback],
     ]);

@@ -33,7 +33,8 @@ const data = createForgeData({
   storage: pickStorage(),
   api,
   authCode,
+  navigate: (target) => location.assign(target),
 });
 data.ready.catch((error) => console.error("Forge Nexxus could not start a session", error));
 
-export const { ready, auth, conversations, messages } = data;
+export const { ready, auth, account, conversations, messages } = data;
