@@ -1,4 +1,4 @@
-// Presentation only: menus open/close; no models, uploads, connections, or API calls.
+// Menus, appearance, and voice input are local; conversations persist through ForgeData (Convex).
 // Revalidate on return so cached tabs discover new GitHub Pages releases.
 const loadedVersion = document.querySelector('meta[name="app-version"]')?.content;
 const cleanUrl = new URL(location.href);
@@ -152,7 +152,7 @@ try { applyTheme(localStorage.getItem('forge-theme') === 'light' ? 'light' : 'da
 catch { applyTheme('dark'); }
 function closePopovers() {
   document.querySelectorAll('.theme-menu,.font-menu').forEach(menu => { menu.hidden = true; });
-  document.querySelectorAll('.theme-select,.font-select').forEach(button => button.setAttribute('aria-expanded', 'false'));
+  document.querySelectorAll('.theme-select,.font-select,.conversation-options').forEach(button => button.setAttribute('aria-expanded', 'false'));
 }
 function showSettings(show) {
   hideOverlay(appearance);
@@ -399,3 +399,151 @@ diagnosticTrigger.addEventListener('pointermove', event => {
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => diagnosticTrigger.addEventListener(type, cancelDiagnosticHold));
 diagnosticTrigger.addEventListener('contextmenu', event => event.preventDefault());
+
+// Conversations persist in Convex through the ForgeData bundle loaded before this script.
+const forge = window.ForgeData;
+const conversationList = document.querySelector('.conversation-list');
+const newChat = document.querySelector('.new-chat');
+const thread = document.querySelector('.thread');
+if (forge?.conversations && conversationList && thread) {
+  let conversations = [];
+  let activeId = null;
+  let stopMessages = null;
+  try { activeId = localStorage.getItem('forge-conversation'); } catch { /* Private mode starts on a fresh thread. */ }
+
+  function rememberActive(id) {
+    activeId = id;
+    try {
+      if (id) localStorage.setItem('forge-conversation', id);
+      else localStorage.removeItem('forge-conversation');
+    } catch { /* Private mode forgets the thread on reload. */ }
+  }
+  function optionsIcon() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    for (const cx of [6, 12, 18]) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', cx);
+      dot.setAttribute('cy', 12);
+      dot.setAttribute('r', 1.25);
+      svg.append(dot);
+    }
+    return svg;
+  }
+  function menuItem(label, action) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitem');
+    item.textContent = label;
+    item.addEventListener('click', () => { closePopovers(); action(); });
+    return item;
+  }
+  function renderConversations() {
+    conversationList.replaceChildren(...conversations.map(conversation => {
+      const active = conversation._id === activeId;
+      const row = document.createElement('div');
+      row.className = 'conversation';
+      row.classList.toggle('is-active', active);
+      const dot = document.createElement('span');
+      dot.className = 'conversation-dot';
+      dot.setAttribute('aria-hidden', 'true');
+      const title = document.createElement('button');
+      title.type = 'button';
+      title.className = 'conversation-title';
+      title.textContent = conversation.title;
+      title.setAttribute('aria-current', String(active));
+      title.addEventListener('click', () => { selectConversation(conversation._id); closeMenu(); });
+      const options = document.createElement('button');
+      options.type = 'button';
+      options.className = 'conversation-options';
+      options.setAttribute('aria-label', `Options for ${conversation.title}`);
+      options.setAttribute('aria-haspopup', 'menu');
+      options.setAttribute('aria-expanded', 'false');
+      options.append(optionsIcon());
+      const menu = document.createElement('div');
+      menu.className = 'font-menu conversation-menu';
+      menu.setAttribute('role', 'menu');
+      menu.hidden = true;
+      menu.append(
+        menuItem('Rename', () => {
+          const next = prompt('Rename conversation', conversation.title)?.trim();
+          if (next && next !== conversation.title) forge.conversations.rename(conversation._id, next).catch(reportError);
+        }),
+        menuItem('Delete', () => {
+          if (confirm(`Delete "${conversation.title}"?`)) forge.conversations.remove(conversation._id).catch(reportError);
+        })
+      );
+      options.addEventListener('click', event => {
+        event.stopPropagation();
+        const open = menu.hidden;
+        closePopovers();
+        menu.hidden = !open;
+        options.setAttribute('aria-expanded', String(open));
+      });
+      row.append(dot, title, options, menu);
+      return row;
+    }));
+  }
+  function renderThread(messages) {
+    thread.replaceChildren(...messages.map(message => {
+      const row = document.createElement('div');
+      row.className = `message message-${message.role}`;
+      const body = document.createElement('p');
+      body.textContent = message.body;
+      row.append(body);
+      return row;
+    }));
+    app.classList.toggle('has-thread', messages.length > 0);
+    thread.scrollTop = thread.scrollHeight;
+  }
+  function selectConversation(id) {
+    stopMessages?.();
+    stopMessages = null;
+    rememberActive(id);
+    renderConversations();
+    if (!id) { renderThread([]); return; }
+    stopMessages = forge.messages.subscribe(id, renderThread);
+  }
+  function reportError(error) {
+    console.error('Forge Nexxus could not save the change', error);
+  }
+  forge.conversations.subscribe(list => {
+    conversations = list;
+    const activeGone = activeId && forge.auth.state().signedIn && !list.some(conversation => conversation._id === activeId);
+    if (activeGone) selectConversation(null);
+    else renderConversations();
+  });
+  if (activeId) selectConversation(activeId);
+
+  newChat?.addEventListener('click', () => {
+    forge.conversations.create().then(id => {
+      selectConversation(id);
+      closeMenu();
+      promptInput?.focus({preventScroll:true});
+    }).catch(reportError);
+  });
+
+  async function sendPrompt() {
+    const body = promptInput.value.trim();
+    if (!body) return;
+    promptInput.value = '';
+    try {
+      let id = activeId;
+      if (!id || !conversations.some(conversation => conversation._id === id)) {
+        id = await forge.conversations.create(body.length > 48 ? `${body.slice(0, 47).trimEnd()}…` : body);
+        selectConversation(id);
+      }
+      await forge.messages.send(id, body);
+    } catch (error) {
+      promptInput.value = body;
+      reportError(error);
+    }
+  }
+  promptInput?.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      sendPrompt();
+    }
+  });
+}

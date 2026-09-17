@@ -144,3 +144,18 @@ html[data-theme=dark] .sheet.connections{background:#1c1c1e}
 .connections .destinations button>svg:first-child{width:22px;height:22px;color:var(--text)}
 .connections .destinations .count{color:var(--subdued)}
 .connections .destinations .chevron{color:var(--subdued)}
+
+/* Conversations and the active thread, persisted through Convex. */
+.conversation{position:relative}
+.conversation.is-active{color:var(--text)}
+.conversation.is-active .conversation-dot{background:var(--text);border-color:var(--text)}
+.conversation-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.conversation-menu{right:0;top:calc(100% - 2px)}
+.thread{display:none;position:absolute;top:max(64px,calc(env(safe-area-inset-top,0px) + 56px));bottom:172px;left:16px;right:16px;overflow:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.thread::-webkit-scrollbar{display:none}
+.app.has-thread .thread{display:block}
+.app.has-thread .greeting{display:none}
+.message{display:flex;margin:6px 0}
+.message-user{justify-content:flex-end}
+.message p{margin:0;max-width:85%;padding:10px 14px;border-radius:18px;background:var(--surface);border:1px solid var(--border);font-size:17px;line-height:22px;white-space:pre-wrap;overflow-wrap:anywhere}
+.message-assistant p,.message-system p{background:none;border:0;padding-left:0;max-width:100%}
