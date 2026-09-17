@@ -35,7 +35,36 @@ const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel =>
 const navigation = document.querySelector('.navigation');
 const historyContent = document.querySelector('.nav-content');
 const settingsContent = document.querySelector('.settings-content');
-const themeColor = document.querySelector('meta[name="theme-color"]');
+// iOS 26 standalone reports a zero top inset even though it reserves the strip,
+// so fall back to the gap the system withheld from the web layer.
+function measureStatusStrip() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-top,0px)';
+  document.body.append(probe);
+  const inset = probe.getBoundingClientRect().height;
+  probe.remove();
+  const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  const withheld = (window.screen?.height || 0) - window.innerHeight;
+  const strip = inset > 0 ? inset : (standalone && withheld > 0 && withheld <= 80 ? withheld : 0);
+  document.documentElement.style.setProperty('--status-strip', `${strip}px`);
+}
+measureStatusStrip();
+window.addEventListener('resize', measureStatusStrip);
+window.addEventListener('orientationchange', measureStatusStrip);
+
+let themeColor = document.querySelector('meta[name="theme-color"]');
+// iOS caches the standalone status-bar tint and ignores in-place edits to the
+// existing tag, so replace the element to make it re-read the app background.
+function refreshStatusBarTint() {
+  const tint = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  if (!tint) return;
+  const replacement = document.createElement('meta');
+  replacement.name = 'theme-color';
+  replacement.content = tint;
+  themeColor?.remove();
+  document.head.append(replacement);
+  themeColor = replacement;
+}
 const statusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
 const promptInput = document.querySelector('.composer textarea');
 const microphone = document.querySelector('.microphone');
@@ -108,7 +137,7 @@ function applyTheme(theme) {
   const next = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('forge-theme', next); } catch { /* Private mode keeps the in-session theme. */ }
-  if (themeColor) themeColor.content = next === 'light' ? '#f2f2f7' : '#121315';
+  refreshStatusBarTint();
   // Theme changes affect colors only. Switching iOS status-bar modes here
   // changes the standalone viewport geometry after the shell was measured.
   document.querySelectorAll('[data-theme-label]').forEach(label => { label.textContent = next === 'light' ? 'Light' : 'Dark'; });
@@ -222,6 +251,7 @@ function closeMenu() {
     app.style.transform = 'translateZ(0)';
     void app.offsetHeight;
     app.style.transform = '';
+    refreshStatusBarTint();
     opener?.focus({preventScroll:true});
   });
 }

@@ -22,6 +22,11 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 /* Navigation drawer, measured from the supplied mobile reference. */
 .navigation{position:fixed;z-index:4;top:0;bottom:0;left:max(0px,calc((100vw - 640px)/2));width:min(320px,calc(100vw - 48px));background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column}
 .navigation-open .backdrop{background:var(--nav-backdrop)}
+/* iOS tints the standalone status bar from whatever paints beneath it. Keep the
+   dimmer out of that strip so the tint never caches the darkened page color. */
+.backdrop{top:var(--status-strip,env(safe-area-inset-top,0px))}
+.status-shield{position:fixed;top:0;left:0;right:0;height:var(--status-strip,env(safe-area-inset-top,0px));background:var(--bg);z-index:6;pointer-events:none}
+.app.reference .status-shield{display:none}
 .nav-content{padding: max(16px,calc(env(safe-area-inset-top) + 12px)) 16px 16px;overflow:auto;flex:1;min-height:0}
 .new-chat{height:44px;width:100%;border:1px solid var(--border);border-radius:24px;background:var(--surface);display:flex;align-items:center;padding:0 17px;gap:13px;font-size:17px;font-weight:500;line-height:20px}
 .new-chat svg{width:17px;height:17px;stroke-width:2}
