@@ -126,7 +126,7 @@ function closePopovers() {
   document.querySelectorAll('.theme-select,.font-select').forEach(button => button.setAttribute('aria-expanded', 'false'));
 }
 function showSettings(show) {
-  appearance.hidden = true;
+  hideOverlay(appearance);
   closePopovers();
   historyContent.hidden = show;
   settingsContent.hidden = !show;
@@ -139,10 +139,11 @@ function showAppearance(show) {
     historyContent.hidden = true;
     settingsContent.hidden = true;
     appearance.hidden = false;
+    appearance.classList.add('is-open');
     navigation.setAttribute('aria-label', 'Appearance settings');
     document.querySelector('.appearance-back').focus({preventScroll:true});
   } else {
-    appearance.hidden = true;
+    hideOverlay(appearance);
     showSettings(true);
     document.querySelector('.open-appearance').focus({preventScroll:true});
   }
@@ -200,21 +201,27 @@ function resetViewport() {
   document.documentElement.scrollTop = 0;
   document.body.scrollTop = 0;
 }
+function hideOverlay(element) {
+  if (!element) return;
+  element.hidden = true;
+  element.classList.remove('is-open');
+  element.scrollTop = 0;
+}
 function closeMenu() {
   closePopovers();
   const active = document.activeElement;
   if (active && app.contains(active) && active !== document.body) active.blur();
-  appearance.hidden = true;
-  panels.forEach(panel => {
-    panel.hidden = true;
-    panel.scrollTop = 0;
-  });
-  backdrop.hidden = true;
-  app.classList.remove("navigation-open");
+  hideOverlay(appearance);
+  panels.forEach(hideOverlay);
+  hideOverlay(backdrop);
+  app.classList.remove('navigation-open', 'sheet-open');
   document.querySelectorAll('[data-open]').forEach(button => button.setAttribute('aria-expanded', 'false'));
   resetViewport();
   requestAnimationFrame(() => {
     resetViewport();
+    app.style.transform = 'translateZ(0)';
+    void app.offsetHeight;
+    app.style.transform = '';
     opener?.focus({preventScroll:true});
   });
 }
@@ -225,7 +232,10 @@ function openMenu(name, trigger) {
   opener = trigger;
   if (name === 'navigation') showSettings(false);
   panel.hidden = false;
+  panel.classList.add('is-open');
   backdrop.hidden = false;
+  backdrop.classList.add('is-open');
+  app.classList.add('sheet-open');
   app.classList.toggle('navigation-open', name === 'navigation');
   trigger?.setAttribute('aria-expanded', 'true');
   panel.querySelector('button')?.focus({preventScroll:true});
