@@ -132,10 +132,8 @@ html[data-theme=dark] .sheet.connections{background:#1c1c1e}
 .connections .group button+button{border-top-color:color-mix(in srgb,var(--text) 10%,transparent)}
 .connections .recents .workspace{height:76px;padding:0 18px;gap:14px}
 .connections .workspace>svg,.connections .workspace:first-child>svg{width:22px;height:22px;color:var(--text)}
-.connections .workspace-copy{flex:1;min-width:0;overflow:hidden;-webkit-mask-image:linear-gradient(to right,#000 0%,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 0%,#000 calc(100% - 32px),transparent)}
-.connections .workspace strong,.connections .workspace small{overflow:hidden;white-space:nowrap}
 .connections .workspace small{color:var(--subdued)}
-.connections .workspace .status{flex-shrink:0;margin-left:12px;color:var(--subdued);align-self:center;position:relative;z-index:1}
+.connections .workspace .status{color:var(--subdued);align-self:center}
 .connections .workspace .status.active{color:var(--text)}
 .connections .destinations button{height:56px;padding:0 18px;gap:14px}
 .connections .destinations button>svg:first-child{width:22px;height:22px;color:var(--text)}
