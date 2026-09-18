@@ -27,10 +27,19 @@
       gate.innerHTML = `<header class="auth-header">${back(next === 'register' ? 'signup' : 'email')}<h1>Create account</h1></header><div class="auth-signup-content">${logo}<h2>Create your Forge Nexus account</h2>${next === 'signup' ? `<div class="auth-signup-options">${provider('apple', 'Create account with')}${provider('google', 'Create account with')}<div class="auth-or">OR</div><button class="auth-button auth-primary" type="button" data-auth-screen="register">Create account with email</button></div>${message}${footer}` : `<form class="auth-register-form">${field('given-name', 'First name', 'Alex')}${field('family-name', 'Last name', 'Smith')}${field('email', 'Email address', 'you@example.com', 'email')}<label class="auth-field">Create a password<div class="auth-password"><input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" required aria-describedby="password-rules"><button type="button" class="auth-show" aria-pressed="false">Show</button></div></label><div class="auth-rules" id="password-rules"><p>Your password must include the following:</p><ul><li data-rule="length">10–256 characters</li><li data-rule="case">Upper &amp; lowercase letters</li><li data-rule="number">At least one number</li></ul></div><label class="auth-marketing"><input type="checkbox" name="updates" checked><span>Send me emails about Forge updates, new features, and tips.</span></label><p class="auth-terms">By clicking Continue, you acknowledge you have read and agreed to our <button type="button" data-legal="Terms of Use">Terms of Use</button> and <button type="button" data-legal="Privacy Policy">Privacy Policy</button>.</p><button class="auth-button auth-primary auth-register-submit" disabled>Continue</button>${message}</form>${footer}`}</div>`;
     }
     gate.scrollTop = 0;
+    // Bind navigation to the button itself: SVG <use> targets on iOS can
+    // originate in the referenced symbol instead of the button's DOM tree.
+    gate.querySelectorAll('[data-auth-screen]').forEach(button => {
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        render(event.currentTarget.dataset.authScreen);
+      });
+    });
   }
   render('welcome');
   gate.addEventListener('click', async event => {
-    const target = event.target.closest('button');
+    const target = event.composedPath().find(node => node instanceof HTMLButtonElement);
     if (!target) return;
     if (target.dataset.authScreen) return render(target.dataset.authScreen);
     if (target.dataset.authProvider) {

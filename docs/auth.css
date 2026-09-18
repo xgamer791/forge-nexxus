@@ -11,8 +11,10 @@
 .auth-welcome .auth-button{height:50px;border-radius:12px;border:0;background:#3a3a3c;color:#fff}
 .auth-welcome .apple{background:#fff;color:#000}
 .auth-login-content{max-width:430px;margin:auto;padding:clamp(70px,19.4dvh,181px) 20px 65px}
-.auth-back{width:40px;height:28px;display:grid;place-items:center;color:#989a9c}
-.auth-back svg{width:22px;height:22px;stroke-width:2.6}
+.auth-back{position:relative;width:40px;height:28px;display:grid;place-items:center;color:#989a9c;touch-action:manipulation}
+.auth-back:before{content:"";position:absolute;inset:-8px -2px}
+.auth-back svg{width:22px;height:22px;stroke-width:2.6;pointer-events:none}
+.auth-back svg *{pointer-events:none}
 .auth-login-content h1{font-size:27px;line-height:33px;letter-spacing:-1px;text-align:center;margin:23px -2px 10px;font-weight:700}
 .auth-intro{max-width:340px;margin:0 auto 34px;text-align:center;color:#9fa1a4;font-size:16px;line-height:20px}
 .auth-field{display:block;font-size:14px;font-weight:600;line-height:20px}
