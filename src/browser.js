@@ -37,4 +37,14 @@ const data = createForgeData({
 });
 data.ready.catch((error) => console.error("Forge Nexxus could not start a session", error));
 
+// iOS can suspend timers and sockets while the app is closed or backgrounded.
+// Refresh persisted credentials on return rather than starting a guest session.
+const resumeSession = () => {
+  if (document.visibilityState !== "visible" || !navigator.onLine) return;
+  void data.ready.then(() => data.auth.resume()).catch(() => {});
+};
+window.addEventListener("online", resumeSession);
+window.addEventListener("pageshow", resumeSession);
+document.addEventListener("visibilitychange", resumeSession);
+
 export const { ready, auth, account, conversations, messages } = data;

@@ -23,6 +23,11 @@ export function createForgeData({
   let token = read(TOKEN_KEY);
   let refreshToken = read(REFRESH_KEY);
   let refreshing = null;
+  let restoring = null;
+  let retryTimer = null;
+  let retryAttempt = 0;
+  let sessionVersion = 0;
+  let signingOut = false;
   const listeners = new Set();
 
   function read(key) {
@@ -56,6 +61,7 @@ export function createForgeData({
   }
 
   function applyTokens(tokens, kind, { reconnect }) {
+    if (reconnect || !tokens) sessionVersion += 1;
     token = tokens?.token ?? null;
     refreshToken = tokens?.refreshToken ?? null;
     write(TOKEN_KEY, token);
@@ -71,31 +77,75 @@ export function createForgeData({
   async function fetchToken({ forceRefreshToken }) {
     if (!forceRefreshToken && token !== null) return token;
     if (refreshToken === null) return null;
-    refreshing ??= authCall({ refreshToken }, { withToken: false })
+    if (refreshing) return refreshing;
+    const version = sessionVersion;
+    const pending = authCall({ refreshToken }, { withToken: false })
       .then(({ tokens }) => {
+        if (version !== sessionVersion) return null;
+        clearTimeout(retryTimer);
+        retryTimer = null;
+        retryAttempt = 0;
         applyTokens(tokens ?? null, read(KIND_KEY), { reconnect: false });
+        if (!tokens) client.clearAuth();
         return token;
       })
       .catch(() => {
-        applyTokens(null, null, { reconnect: false });
+        // A network/server outage is not a sign-out. Retain the saved refresh
+        // token; only a successful response with no tokens invalidates it.
+        if (version === sessionVersion) scheduleRestore();
         return null;
       })
       .finally(() => {
-        refreshing = null;
+        if (refreshing === pending) refreshing = null;
       });
+    refreshing = pending;
     return refreshing;
   }
 
+  function scheduleRestore() {
+    if (retryTimer !== null || refreshToken === null || signingOut) return;
+    const version = sessionVersion;
+    const pause = Math.min(1000 * 2 ** Math.min(retryAttempt++, 5), 30000);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (version === sessionVersion) void resume();
+    }, pause);
+  }
+
+  async function resume() {
+    if (signingOut || refreshToken === null) return;
+    if (restoring) return restoring;
+    clearTimeout(retryTimer);
+    retryTimer = null;
+    const version = sessionVersion;
+    const pending = (async () => {
+      const refreshed = await fetchToken({ forceRefreshToken: true });
+      if (version !== sessionVersion || signingOut) return;
+      if (refreshed !== null) client.setAuth(fetchToken, onAuthStatus);
+    })().finally(() => {
+      if (restoring === pending) restoring = null;
+    });
+    restoring = pending;
+    return pending;
+  }
+
   function onAuthStatus(isAuthenticated) {
-    if (isAuthenticated) return;
+    if (isAuthenticated || signingOut) return;
+    if (refreshToken !== null) {
+      scheduleRestore();
+      return;
+    }
     applyTokens(null, null, { reconnect: false });
-    void startGuest();
+    void startGuest().catch(() => {});
   }
 
   async function startGuest() {
+    const version = sessionVersion;
     for (let attempt = 0; ; attempt += 1) {
+      if (version !== sessionVersion || signingOut || refreshToken !== null) return;
       try {
         const { tokens } = await authCall({ provider: "anonymous" }, { withToken: false });
+        if (version !== sessionVersion || signingOut) return;
         applyTokens(tokens ?? null, "guest", { reconnect: true });
         return;
       } catch (error) {
@@ -126,7 +176,7 @@ export function createForgeData({
         /* An expired or reused link keeps whatever session already exists. */
       }
     }
-    if (token !== null) {
+    if (token !== null || refreshToken !== null) {
       client.setAuth(fetchToken, onAuthStatus);
       emit();
       return;
@@ -153,6 +203,13 @@ export function createForgeData({
   }
 
   async function signOut() {
+    signingOut = true;
+    sessionVersion += 1;
+    clearTimeout(retryTimer);
+    retryTimer = null;
+    retryAttempt = 0;
+    refreshing = null;
+    restoring = null;
     if (token !== null) {
       httpClient.setAuth(token);
       try {
@@ -162,6 +219,7 @@ export function createForgeData({
       }
     }
     applyTokens(null, null, { reconnect: true });
+    signingOut = false;
     await startGuest();
   }
 
@@ -172,7 +230,7 @@ export function createForgeData({
 
   return {
     ready,
-    auth: { state, onChange, signInWithEmail, signInWith, signOut },
+    auth: { state, onChange, signInWithEmail, signInWith, signOut, resume },
     account: {
       subscribe: (callback) => client.onUpdate(api.users.me, {}, callback),
     },
