@@ -9,17 +9,16 @@
  */
 
 import type * as access from "../access.js";
-import type * as apps from "../apps.js";
 import type * as auth from "../auth.js";
-import type * as connections from "../connections.js";
+import type * as billing from "../billing.js";
 import type * as conversations from "../conversations.js";
+import type * as domains from "../domains.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
-import type * as remote from "../remote.js";
+import type * as plans from "../plans.js";
 import type * as settings from "../settings.js";
-import type * as shapes from "../shapes.js";
+import type * as sites from "../sites.js";
 import type * as users from "../users.js";
-import type * as workspaces from "../workspaces.js";
 
 import type {
   ApiFromModules,
@@ -29,17 +28,16 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
-  apps: typeof apps;
   auth: typeof auth;
-  connections: typeof connections;
+  billing: typeof billing;
   conversations: typeof conversations;
+  domains: typeof domains;
   http: typeof http;
   messages: typeof messages;
-  remote: typeof remote;
+  plans: typeof plans;
   settings: typeof settings;
-  shapes: typeof shapes;
+  sites: typeof sites;
   users: typeof users;
-  workspaces: typeof workspaces;
 }>;
 
 /**

@@ -1,7 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { requireOwnedConversation, requireUserId } from "./access";
-import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { mutation, query, type MutationCtx } from "./_generated/server";
 
 const DEFAULT_TITLE = "New conversation";
 
@@ -42,11 +43,30 @@ export const remove = mutation({
   args: { id: v.id("conversations") },
   handler: async (ctx, { id }) => {
     await requireOwnedConversation(ctx, id);
-    const messages = await ctx.db
-      .query("messages")
-      .withIndex("by_conversation", (q) => q.eq("conversationId", id))
-      .collect();
-    await Promise.all(messages.map((message) => ctx.db.delete(message._id)));
-    await ctx.db.delete(id);
+    await deleteConversation(ctx, id);
   },
 });
+
+// Removes a thread and everything hanging off it: its messages, and the site it
+// belongs to along with that site's domains. Site deletion and account deletion
+// both come through here, so the cascade lives in one place.
+export async function deleteConversation(ctx: MutationCtx, conversationId: Id<"conversations">) {
+  const site = await ctx.db
+    .query("sites")
+    .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
+    .first();
+  if (site) {
+    const domains = await ctx.db
+      .query("domains")
+      .withIndex("by_site", (q) => q.eq("siteId", site._id))
+      .collect();
+    await Promise.all(domains.map((domain) => ctx.db.delete(domain._id)));
+    await ctx.db.delete(site._id);
+  }
+  const messages = await ctx.db
+    .query("messages")
+    .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
+    .collect();
+  await Promise.all(messages.map((message) => ctx.db.delete(message._id)));
+  if (await ctx.db.get(conversationId)) await ctx.db.delete(conversationId);
+}

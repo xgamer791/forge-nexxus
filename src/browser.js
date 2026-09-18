@@ -47,5 +47,4 @@ window.addEventListener("online", resumeSession);
 window.addEventListener("pageshow", resumeSession);
 document.addEventListener("visibilitychange", resumeSession);
 
-export const { ready, auth, account, conversations, messages, connections, settings, workspaces, apps } =
-  data;
+export const { ready, auth, account, sites, messages, domains, billing, settings } = data;

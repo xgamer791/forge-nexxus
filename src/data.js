@@ -245,12 +245,22 @@ export function createForgeData({
     auth: { state, onChange, signInWithEmail, signInWith, signOut, resume },
     account: {
       subscribe: (callback) => client.onUpdate(api.users.me, {}, callback),
+      providers: (callback) => client.onUpdate(api.users.providers, {}, callback),
+      updateProfile: (name) => client.mutation(api.users.updateProfile, { name }),
+      // The server deletes the session with the account, so the tokens held
+      // here are dead the moment this resolves; signing out starts a guest.
+      deleteAccount: async () => {
+        await client.mutation(api.users.deleteAccount, {});
+        await signOut();
+      },
     },
-    conversations: {
-      subscribe: (callback) => client.onUpdate(api.conversations.list, {}, callback),
-      create: (title) => client.mutation(api.conversations.create, title ? { title } : {}),
-      rename: (id, title) => client.mutation(api.conversations.rename, { id, title }),
-      remove: (id) => client.mutation(api.conversations.remove, { id }),
+    // A site and its build thread are one thing to the app: creating a site
+    // returns the conversation the composer posts into.
+    sites: {
+      subscribe: (callback) => client.onUpdate(api.sites.list, {}, callback),
+      create: (name) => client.mutation(api.sites.create, name ? { name } : {}),
+      rename: (id, name) => client.mutation(api.sites.rename, { id, name }),
+      remove: (id) => client.mutation(api.sites.remove, { id }),
     },
     messages: {
       subscribe: (conversationId, callback) =>
@@ -258,39 +268,24 @@ export function createForgeData({
       send: (conversationId, body) =>
         client.mutation(api.messages.send, { conversationId, body }),
     },
-    connections: {
-      subscribe: (callback) => client.onUpdate(api.connections.list, {}, callback),
-      add: (kind, name, detail) => client.mutation(api.connections.add, { kind, name, detail }),
-      rename: (id, name) => client.mutation(api.connections.rename, { id, name }),
-      remove: (id) => client.mutation(api.connections.remove, { id }),
-      setConnected: (id, connected) =>
-        client.mutation(api.connections.setConnected, { id, connected }),
+    domains: {
+      subscribe: (callback) => client.onUpdate(api.domains.list, {}, callback),
+      add: (siteId, hostname) => client.mutation(api.domains.add, { siteId, hostname }),
+      remove: (id) => client.mutation(api.domains.remove, { id }),
+    },
+    // The plan, the balance, and the catalog all come from the deployment; the
+    // client never carries a price or an allowance of its own.
+    billing: {
+      subscribe: (callback) => client.onUpdate(api.billing.summary, {}, callback),
+      catalog: (callback) => client.onUpdate(api.billing.catalog, {}, callback),
+      history: (callback) => client.onUpdate(api.billing.history, {}, callback),
+      cancel: () => client.mutation(api.billing.cancel, {}),
+      resume: () => client.mutation(api.billing.resume, {}),
+      checkout: (choice) => client.action(api.billing.checkout, choice),
     },
     settings: {
       subscribe: (callback) => client.onUpdate(api.settings.get, {}, callback),
       update: (patch) => client.mutation(api.settings.update, patch),
-    },
-    // Credentials only ever travel towards the deployment: `list` returns
-    // metadata, and `test`/`create` hand the secret straight to a Node action
-    // that seals it before it is stored.
-    workspaces: {
-      subscribe: (callback) => client.onUpdate(api.workspaces.list, {}, callback),
-      test: (details) => client.action(api.remote.test, details),
-      create: (details) => client.action(api.remote.create, details),
-      connect: (id) => client.action(api.remote.connect, { id }),
-      scanApps: (id) => client.action(api.remote.scanApps, { id }),
-      disconnect: (id) => client.mutation(api.workspaces.disconnect, { id }),
-      rename: (id, name) => client.mutation(api.workspaces.rename, { id, name }),
-      setEnvironment: (id, environment) =>
-        client.mutation(api.workspaces.setEnvironment, { id, environment }),
-      remove: (id) => client.mutation(api.workspaces.remove, { id }),
-    },
-    // Applications found on a server. The list is whatever the last scan read,
-    // and `activate` makes one of them the workspace the app works against.
-    apps: {
-      subscribe: (callback) => client.onUpdate(api.apps.list, {}, callback),
-      activate: (id) => client.mutation(api.apps.activate, { id }),
-      clearActive: () => client.mutation(api.apps.clearActive, {}),
     },
   };
 }

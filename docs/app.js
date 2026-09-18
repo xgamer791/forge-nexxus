@@ -1,4 +1,4 @@
-// Menus, appearance, and voice input are local; conversations persist through ForgeData (Convex).
+// Menus, appearance, and voice input are local; sites, credits, and the account persist through ForgeData (Convex).
 // Revalidate on return so cached tabs discover new GitHub Pages releases.
 const loadedVersion = document.querySelector('meta[name="app-version"]')?.content;
 const cleanUrl = new URL(location.href);
@@ -191,7 +191,7 @@ let settings = {...SETTING_DEFAULTS, ...readStoredSettings()};
 applyTheme(settings.theme);
 function closePopovers() {
   document.querySelectorAll('.theme-menu,.font-menu').forEach(menu => { menu.hidden = true; });
-  document.querySelectorAll('.theme-select,.font-select,.conversation-options,.row-options').forEach(button => button.setAttribute('aria-expanded', 'false'));
+  document.querySelectorAll('.theme-select,.font-select,.site-options').forEach(button => button.setAttribute('aria-expanded', 'false'));
 }
 function closeOverlays() {
   overlays.forEach(hideOverlay);
@@ -211,6 +211,7 @@ function showSettings(show) {
   historyContent.hidden = show;
   settingsContent.hidden = !show;
   navigation.setAttribute('aria-label', show ? 'Settings menu' : 'Navigation menu');
+  navigation.classList.toggle('is-settings', show);
   document.querySelector('.settings').setAttribute('aria-expanded', String(show));
 }
 function showAppearance(show) {
@@ -411,7 +412,7 @@ document.addEventListener('keydown', event => {
 const query = new URLSearchParams(location.search);
 if (query.has('reference')) app.classList.add('reference');
 if (query.get('theme') === 'light' || query.get('theme') === 'dark') applyTheme(query.get('theme'));
-if (['connections','cloud-picker','repo-picker','models','attachments','account','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
+if (['attachments','account','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
 if (query.get('screen') === 'settings') { openMenu('navigation'); showSettings(true); }
 if (query.get('screen') === 'appearance') { openMenu('navigation'); showAppearance(true); }
 if (query.get('menu') === 'theme') {
@@ -473,7 +474,7 @@ function showViewportDiagnostics() {
       `navigation ${bottom('.navigation')}  footer ${bottom('.nav-footer')}`,
       `footer H ${number(bounds('.nav-footer')?.height)}  pad ${footerStyle.paddingTop}/${footerStyle.paddingBottom}`,
       `composer ${bottom('.composer-area')}  VV gap ${number(visibleBottom - bounds('.composer-area').bottom)}`,
-      `sheets C/M/A ${bottom('.connections')}/${bottom('.models')}/${bottom('.attachments')}`,
+      `attachments ${bottom('.attachments')}`,
       `appearance ${bottom('.appearance')}  content ${bottom('.appearance-scroll')}`,
       `status mode ${statusBar?.content || 'unset'}`,
       'Screen height is not the browser viewport.',
@@ -517,16 +518,37 @@ diagnosticTrigger.addEventListener('pointermove', event => {
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => diagnosticTrigger.addEventListener(type, cancelDiagnosticHold));
 diagnosticTrigger.addEventListener('contextmenu', event => event.preventDefault());
 
-// Conversations and the account persist in Convex through the ForgeData bundle loaded before this script.
+// Sites, credits, and the account persist in Convex through the ForgeData bundle loaded before this script.
 const forge = window.ForgeData;
 function reportError(error) {
   console.error('Forge Nexxus could not save the change', error);
 }
-const conversationList = document.querySelector('.conversation-list');
-const newChat = document.querySelector('.new-chat');
+function messageOf(error) {
+  return error?.data ?? error?.message ?? String(error);
+}
+// Notes are how a failure is shown on a phone, where there is no console to
+// read. An empty text hides the note.
+function showNote(element, text, bad = true) {
+  if (!element) return;
+  element.textContent = text;
+  element.hidden = !text;
+  element.classList.toggle('is-bad', bad);
+}
+const shortDate = ms => new Date(ms).toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+const money = cents => cents === 0
+  ? 'Free'
+  : `$${(cents / 100).toLocaleString('en-US', {minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2})}`;
+
+// Sites: what the drawer lists, and what the composer builds into. A site's
+// conversation is its build thread, so selecting a site opens that thread.
+const siteList = document.querySelector('.site-list');
+const sitesEmpty = document.querySelector('.sites-empty');
+const sitesError = document.querySelector('.sites-error');
+const newSite = document.querySelector('.new-site');
 const thread = document.querySelector('.thread');
-if (forge?.conversations && conversationList && thread) {
-  let conversations = [];
+const composerError = document.querySelector('.composer-error');
+let sites = [];
+if (forge?.sites && siteList && thread) {
   let activeId = null;
   let stopMessages = null;
   try { activeId = localStorage.getItem('forge-conversation'); } catch { /* Private mode starts on a fresh thread. */ }
@@ -559,39 +581,41 @@ if (forge?.conversations && conversationList && thread) {
     item.addEventListener('click', () => { closePopovers(); action(); });
     return item;
   }
-  function renderConversations() {
-    conversationList.replaceChildren(...conversations.map(conversation => {
-      const active = conversation._id === activeId;
+  function renderSites() {
+    sitesEmpty.hidden = sites.length > 0;
+    siteList.replaceChildren(...sites.map(site => {
+      const active = site.conversationId === activeId;
       const row = document.createElement('div');
-      row.className = 'conversation';
+      row.className = 'site';
       row.classList.toggle('is-active', active);
       const dot = document.createElement('span');
-      dot.className = 'conversation-dot';
+      dot.className = 'site-dot';
+      dot.dataset.status = site.status;
       dot.setAttribute('aria-hidden', 'true');
       const title = document.createElement('button');
       title.type = 'button';
-      title.className = 'conversation-title';
-      title.textContent = conversation.title;
+      title.className = 'site-title';
+      title.textContent = site.name;
       title.setAttribute('aria-current', String(active));
-      title.addEventListener('click', () => { selectConversation(conversation._id); closeMenu(); });
+      title.addEventListener('click', () => { selectConversation(site.conversationId); closeMenu(); });
       const options = document.createElement('button');
       options.type = 'button';
-      options.className = 'conversation-options';
-      options.setAttribute('aria-label', `Options for ${conversation.title}`);
+      options.className = 'site-options';
+      options.setAttribute('aria-label', `Options for ${site.name}`);
       options.setAttribute('aria-haspopup', 'menu');
       options.setAttribute('aria-expanded', 'false');
       options.append(optionsIcon());
       const menu = document.createElement('div');
-      menu.className = 'font-menu conversation-menu';
+      menu.className = 'font-menu site-menu';
       menu.setAttribute('role', 'menu');
       menu.hidden = true;
       menu.append(
         menuItem('Rename', () => {
-          const next = prompt('Rename conversation', conversation.title)?.trim();
-          if (next && next !== conversation.title) forge.conversations.rename(conversation._id, next).catch(reportError);
+          const next = prompt('Rename site', site.name)?.trim();
+          if (next && next !== site.name) forge.sites.rename(site._id, next).catch(error => showNote(sitesError, messageOf(error)));
         }),
         menuItem('Delete', () => {
-          if (confirm(`Delete "${conversation.title}"?`)) forge.conversations.remove(conversation._id).catch(reportError);
+          if (confirm(`Delete "${site.name}" and its build thread?`)) forge.sites.remove(site._id).catch(error => showNote(sitesError, messageOf(error)));
         })
       );
       options.addEventListener('click', event => {
@@ -621,40 +645,54 @@ if (forge?.conversations && conversationList && thread) {
     stopMessages?.();
     stopMessages = null;
     rememberActive(id);
-    renderConversations();
+    renderSites();
     if (!id) { renderThread([]); return; }
     stopMessages = forge.messages.subscribe(id, renderThread);
   }
-  forge.conversations.subscribe(list => {
-    conversations = list;
-    const activeGone = activeId && forge.auth.state().signedIn && !list.some(conversation => conversation._id === activeId);
+  forge.sites.subscribe(list => {
+    sites = Array.isArray(list) ? list : [];
+    const activeGone = activeId && forge.auth.state().signedIn && !sites.some(site => site.conversationId === activeId);
     if (activeGone) selectConversation(null);
-    else renderConversations();
+    else renderSites();
+    document.dispatchEvent(new CustomEvent('forge:sites'));
   });
   if (activeId) selectConversation(activeId);
 
-  newChat?.addEventListener('click', () => {
-    forge.conversations.create().then(id => {
-      selectConversation(id);
+  function createSite(name) {
+    return forge.sites.create(name).then(({conversationId}) => {
+      selectConversation(conversationId);
+      return conversationId;
+    });
+  }
+  newSite?.addEventListener('click', () => {
+    showNote(sitesError, '');
+    createSite().then(() => {
       closeMenu();
       promptInput?.focus({preventScroll:true});
-    }).catch(reportError);
+    }).catch(error => {
+      reportError(error);
+      showNote(sitesError, messageOf(error));
+    });
   });
 
+  // The first prompt names the site. Building needs an account, so a guest
+  // who gets this far is sent to sign in rather than silently refused.
   async function sendPrompt() {
     const body = promptInput.value.trim();
     if (!body) return;
+    if (forge.auth.state().kind !== 'member') { openMenu('account', promptInput); return; }
     promptInput.value = '';
+    showNote(composerError, '');
     try {
       let id = activeId;
-      if (!id || !conversations.some(conversation => conversation._id === id)) {
-        id = await forge.conversations.create(body.length > 48 ? `${body.slice(0, 47).trimEnd()}…` : body);
-        selectConversation(id);
+      if (!id || !sites.some(site => site.conversationId === id)) {
+        id = await createSite(body.length > 48 ? `${body.slice(0, 47).trimEnd()}…` : body);
       }
       await forge.messages.send(id, body);
     } catch (error) {
       promptInput.value = body;
       reportError(error);
+      showNote(composerError, messageOf(error));
     }
   }
   promptInput?.addEventListener('keydown', event => {
@@ -665,477 +703,10 @@ if (forge?.conversations && conversationList && thread) {
   });
 }
 
-// Set by the Remote Workspaces block below. Adding a server needs a host, a
-// username and a credential, so the Connect sheet hands that off rather than
-// keeping a second, weaker form.
-let startWorkspaceWizard = null;
-
-// The Connect sheet reads from two places, because a repository and a server
-// are not the same thing: repos come from `connections`, and Cloud is the
-// remote workspaces saved in Settings, so connecting one shows up in both.
-// Nothing is seeded, so a user who has added nothing sees empty lists.
-const connectionsSheet = document.querySelector('.connections');
-if (connectionsSheet) {
-  const recentsSection = connectionsSheet.querySelector('.recents-section');
-  const recents = connectionsSheet.querySelector('.recents');
-  const pickerLists = [...document.querySelectorAll('[data-list]')];
-  const filterInputs = [...document.querySelectorAll('[data-filter]')];
-  const EMPTY_COPY = {
-    cloud: 'No servers added yet.',
-    apps: 'No applications found on this server.',
-    repo: 'No repositories connected yet.',
-  };
-  const appsTitle = document.querySelector('[data-apps-title]');
-  let openServer = null;
-  const filters = {};
-  const connectButton = document.querySelector('.composer-area .connect');
-  const reasonOf = error => error?.data ?? error?.message ?? 'Something went wrong';
-  let connections = [];
-  let servers = [];
-  let apps = [];
-  let connecting = null;
-  let currentUser = null;
-  const scannedServers = new Set();
-
-  // A workspace is drawn with the same row as a repo, so it is reshaped rather
-  // than given a second renderer.
-  function asRow(workspace) {
-    return {
-      _id: workspace._id,
-      kind: 'cloud',
-      remote: true,
-      name: workspace.name,
-      detail: `${workspace.username}@${workspace.host}`,
-      connected: workspace.connected,
-      usedAt: workspace.lastConnectedAt ?? workspace.createdAt ?? 0,
-    };
-  }
-  // Every app path starts with the master user's home, which is noise in a
-  // narrow row. The home directory is not named after the SSH user on
-  // Cloudways, so the prefix is matched by shape.
-  function shortPath(path) {
-    return path.replace(/^\/home\/[^/]+\//, '~/');
-  }
-  function asAppRow(app) {
-    return {
-      _id: app._id,
-      kind: 'cloud',
-      app: true,
-      workspaceId: app.workspaceId,
-      name: app.name,
-      detail: shortPath(app.path),
-      connected: app.active,
-      usedAt: app.usedAt ?? 0,
-      used: Boolean(app.usedAt),
-    };
-  }
-  function everything() {
-    return [
-      ...connections.filter(connection => connection.kind === 'repo'),
-      ...servers,
-      ...apps.map(asAppRow),
-    ];
-  }
-  function appsOf(workspaceId) {
-    return apps
-      .filter(app => app.workspaceId === workspaceId)
-      .map(asAppRow)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }
-  // Cloud is a list of servers. Opening one shows what is on it, so a box with
-  // fifty applications does not turn the sheet into a wall.
-  function openApps(server) {
-    openServer = server._id;
-    if (appsTitle) appsTitle.textContent = server.name;
-    const search = document.querySelector('[data-filter="apps"]');
-    if (search) search.value = '';
-    filters.apps = '';
-    render();
-    openMenu('apps-picker');
-  }
-
-  function say(kind, message, bad) {
-    const slot = document.querySelector(`[data-error="${kind}"]`);
-    if (!slot) return;
-    slot.textContent = message;
-    slot.hidden = false;
-    slot.classList.toggle('is-bad', bad === true);
-  }
-  function fail(kind, message, error) {
-    if (error) reportError(error);
-    say(kind, message, true);
-  }
-  function clearError(kind) {
-    const slot = document.querySelector(`[data-error="${kind}"]`);
-    if (!slot) return;
-    slot.textContent = '';
-    slot.hidden = true;
-    slot.classList.remove('is-bad');
-  }
-
-  function matches(connection, term) {
-    const needle = term.trim().toLowerCase();
-    if (!needle) return true;
-    return connection.name.toLowerCase().includes(needle)
-      || connection.detail.toLowerCase().includes(needle);
-  }
-  // Cloud rows carry a Connect/Connected status; a repo row only says so once
-  // it is the active one, which is how the two lists are drawn.
-  function workspaceRow(connection, showStatus) {
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'workspace';
-    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    glyph.setAttribute(
-      'href',
-      connection.app ? '#folder' : connection.kind === 'repo' ? '#branch' : '#server'
-    );
-    icon.append(glyph);
-    const copy = document.createElement('span');
-    copy.className = 'workspace-copy';
-    const name = document.createElement('strong');
-    name.textContent = connection.name;
-    const detail = document.createElement('small');
-    detail.textContent = connection.detail;
-    copy.append(name, detail);
-    row.append(icon, copy);
-    if (connection.app) row.classList.add('is-app');
-    const busy = connecting === connection._id;
-    // A server is connected or not; an app or a repo is the active workspace or
-    // it is nothing, so it only carries a label once it is chosen.
-    const chosen = connection.app || !connection.remote;
-    if ((showStatus && !connection.app) || connection.connected || busy) {
-      const status = document.createElement('span');
-      status.className = connection.connected ? 'status active' : 'status';
-      status.textContent = busy
-        ? 'Connecting…'
-        : connection.connected
-          ? (chosen ? 'Active' : 'Connected')
-          : 'Connect';
-      row.append(status);
-    }
-    if (busy) row.setAttribute('aria-disabled', 'true');
-    row.setAttribute(
-      'aria-label',
-      connection.app
-        ? `${connection.connected ? 'Leave' : 'Work on'} ${connection.name}`
-        : `${connection.connected ? 'Disconnect from' : 'Connect to'} ${connection.name}`
-    );
-    row.addEventListener('click', () => {
-      if (connecting) return;
-      const connect = !connection.connected;
-      const fromPicker = Boolean(row.closest('.picker'));
-      const fromCloud = Boolean(row.closest('.cloud-picker'));
-      clearError(connection.kind);
-      if (connection.app) {
-        const change = connect
-          ? forge.apps.activate(connection._id)
-          : forge.apps.clearActive();
-        change.catch(error => fail('cloud', 'Could not change the active workspace.', error));
-        if (connect && fromPicker) openMenu('connections');
-        return;
-      }
-      if (connection.remote) {
-        // In Cloud a connected server is a way in to its applications; in
-        // Recents it is still the thing you connect and disconnect.
-        if (connection.connected && fromCloud) {
-          openApps(connection);
-          return;
-        }
-        void toggleServer(connection, connect, fromPicker, fromCloud);
-        return;
-      }
-      forge.connections.setConnected(connection._id, connect)
-        .catch(error => fail(connection.kind, 'Could not change that connection.', error));
-      // Picking a workspace in a picker is the end of that errand, so the sheet
-      // returns to Connect where the new state shows up under Recents.
-      if (connect && fromPicker) openMenu('connections');
-    });
-    return row;
-  }
-  function optionsGlyph() {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('aria-hidden', 'true');
-    for (const cx of [6, 12, 18]) {
-      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      dot.setAttribute('cx', cx);
-      dot.setAttribute('cy', 12);
-      dot.setAttribute('r', 1.25);
-      svg.append(dot);
-    }
-    return svg;
-  }
-  function menuItem(label, action) {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.setAttribute('role', 'menuitem');
-    item.textContent = label;
-    item.addEventListener('click', () => { closePopovers(); action(); });
-    return item;
-  }
-  // Only the pickers manage workspaces; Recents on the Connect sheet stays a
-  // plain list of rows.
-  function manageableRow(connection, row) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'workspace-row';
-    const options = document.createElement('button');
-    options.type = 'button';
-    options.className = 'row-options';
-    options.setAttribute('aria-label', `Options for ${connection.name}`);
-    options.setAttribute('aria-haspopup', 'menu');
-    options.setAttribute('aria-expanded', 'false');
-    options.append(optionsGlyph());
-    const menu = document.createElement('div');
-    menu.className = 'font-menu row-menu';
-    menu.setAttribute('role', 'menu');
-    menu.hidden = true;
-    menu.append(
-      menuItem('Rename', () => {
-        const next = prompt('Rename workspace', connection.name)?.trim();
-        if (!next || next === connection.name) return;
-        clearError(connection.kind);
-        forge.connections.rename(connection._id, next)
-          .catch(error => fail(connection.kind, 'Could not rename that workspace.', error));
-      }),
-      menuItem('Remove', () => {
-        if (!confirm(`Remove "${connection.name}"?`)) return;
-        clearError(connection.kind);
-        forge.connections.remove(connection._id)
-          .catch(error => fail(connection.kind, 'Could not remove that workspace.', error));
-      })
-    );
-    options.addEventListener('click', event => {
-      event.stopPropagation();
-      const open = menu.hidden;
-      closePopovers();
-      menu.hidden = !open;
-      options.setAttribute('aria-expanded', String(open));
-    });
-    wrapper.append(row, options, menu);
-    return wrapper;
-  }
-  // Disconnecting is local state; connecting opens a session against the real
-  // server, which takes long enough to need a visible pending state.
-  async function toggleServer(server, connect, fromPicker, fromCloud) {
-    if (!connect) {
-      forge.workspaces.disconnect(server._id)
-        .catch(error => fail('cloud', 'Could not disconnect that server.', error));
-      return;
-    }
-    connecting = server._id;
-    render();
-    try {
-      const outcome = await forge.workspaces.connect(server._id);
-      if (!outcome?.ok) {
-        fail('cloud', outcome?.message ?? 'Could not reach that server.');
-      } else {
-        // A fresh session is the moment to re-read what is on the server.
-        scannedServers.delete(server._id);
-        scanServers();
-        // Connecting from Cloud carries straight on to what is on the server.
-        if (fromCloud) openApps(server);
-        else if (fromPicker) openMenu('connections');
-      }
-    } catch (error) {
-      fail('cloud', reasonOf(error), error);
-    } finally {
-      connecting = null;
-      render();
-    }
-  }
-  function render() {
-    const rows = everything();
-    const term = filters.recents ?? '';
-    // Recents is what has been used, not everything that exists: an app only
-    // earns a place once it has been chosen at least once.
-    const recent = [...rows]
-      .filter(connection => connection.used !== false)
-      .sort((a, b) => b.usedAt - a.usedAt)
-      .filter(connection => matches(connection, term));
-    recents.replaceChildren(...recent.map(connection => workspaceRow(connection, true)));
-    recentsSection.hidden = recent.length === 0;
-    pickerLists.forEach(list => {
-      const kind = list.dataset.list;
-      const search = filters[kind] ?? '';
-      const ofKind = kind === 'apps'
-        ? (openServer ? appsOf(openServer) : [])
-        : kind === 'cloud'
-          ? [...servers]
-          : rows.filter(connection => connection.kind === kind);
-      const shown = ofKind
-        .filter(connection => matches(connection, search))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      // Servers are managed in Settings, so only repo rows carry the options menu.
-      list.replaceChildren(...shown.map(connection => {
-        const row = workspaceRow(connection, kind === 'cloud');
-        // A connected server leads somewhere, so it says so.
-        if (kind === 'cloud' && connection.connected) {
-          const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          chevron.setAttribute('class', 'chevron');
-          const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-          use.setAttribute('href', '#chevron');
-          chevron.append(use);
-          row.append(chevron);
-        }
-        return connection.remote || connection.app ? row : manageableRow(connection, row);
-      }));
-      const empty = document.querySelector(`[data-empty="${kind}"]`);
-      if (!empty) return;
-      empty.textContent = ofKind.length === 0 ? EMPTY_COPY[kind] : 'No workspaces match that search.';
-      empty.hidden = shown.length > 0;
-    });
-    // The pill names what you are working on, because that is the thing worth
-    // knowing without opening the sheet. A connected server with nothing chosen
-    // yet is still just Connected.
-    const chosen = rows.find(
-      connection => connection.connected && (connection.app || !connection.remote)
-    );
-    const liveServer = servers.find(server => server.connected);
-    if (connectButton) {
-      let label = connectButton.querySelector('span');
-      if (!label) {
-        label = document.createElement('span');
-        connectButton.replaceChildren(label);
-      }
-      label.textContent = chosen ? chosen.name : liveServer ? 'Connected' : 'Connect';
-      connectButton.setAttribute(
-        'aria-label',
-        chosen
-          ? `Working on ${chosen.name}. Open connections`
-          : liveServer
-            ? `Connected to ${liveServer.name}. Open connections`
-            : 'Connect a workspace'
-      );
-    }
-    document.querySelectorAll('[data-count]').forEach(count => {
-      const total = count.dataset.count === 'cloud'
-        ? servers.length
-        : rows.filter(
-            connection => connection.kind === count.dataset.count && !connection.app
-          ).length;
-      count.textContent = total ? String(total) : '';
-      count.hidden = total === 0;
-    });
-  }
-  filterInputs.forEach(input => {
-    filters[input.dataset.filter] = '';
-    input.addEventListener('input', () => {
-      filters[input.dataset.filter] = input.value;
-      render();
-    });
-  });
-  function showAddForm(kind, show) {
-    const form = document.querySelector(`[data-form="${kind}"]`);
-    const trigger = document.querySelector(`[data-add="${kind}"]`);
-    if (!form || !trigger) return;
-    form.hidden = !show;
-    trigger.closest('.picker-actions').hidden = show;
-    trigger.setAttribute('aria-expanded', String(show));
-    if (show) form.querySelector('input')?.focus({preventScroll:true});
-    else form.reset();
-  }
-  document.querySelectorAll('[data-add]').forEach(trigger => {
-    trigger.addEventListener('click', () => showAddForm(trigger.dataset.add, true));
-  });
-  document.querySelectorAll('[data-cancel]').forEach(button => {
-    button.addEventListener('click', () => showAddForm(button.dataset.cancel, false));
-  });
-  document.querySelectorAll('[data-form]').forEach(form => {
-    form.addEventListener('submit', async event => {
-      event.preventDefault();
-      const kind = form.dataset.form;
-      const name = form.elements.name.value.trim();
-      const detail = form.elements.detail.value.trim();
-      const submit = form.querySelector('[type="submit"]');
-      if (!name || !detail || submit.disabled) return;
-      submit.disabled = true;
-      clearError(kind);
-      try {
-        await forge.connections.add(kind, name, detail);
-        showAddForm(kind, false);
-      } catch (error) {
-        fail(kind, 'Could not add that workspace. Check the name and address.', error);
-      } finally {
-        submit.disabled = false;
-      }
-    });
-  });
-  // Every sheet opens on a clean search and a collapsed form, the same way it
-  // opens scrolled to top.
-  function resetSheets() {
-    let changed = false;
-    filterInputs.forEach(input => {
-      if (input.value === '') return;
-      input.value = '';
-      filters[input.dataset.filter] = '';
-      changed = true;
-    });
-    document.querySelectorAll('[data-add]').forEach(trigger => {
-      showAddForm(trigger.dataset.add, false);
-      clearError(trigger.dataset.add);
-    });
-    if (changed) render();
-  }
-  document.querySelectorAll('[data-wizard]').forEach(button => {
-    button.addEventListener('click', () => {
-      closeMenu();
-      startWorkspaceWizard?.();
-    });
-  });
-  document.querySelectorAll('[data-open],[data-sheet-back],.dismiss')
-    .forEach(button => button.addEventListener('click', resetSheets));
-  backdrop.addEventListener('click', resetSheets);
-  render();
-  // Every connected server is re-read once per session, so the Cloud list is
-  // what is on the server now rather than what a previous login cached.
-  function scanServers() {
-    if (!forge?.workspaces?.scanApps) return;
-    for (const server of servers) {
-      if (!server.connected || scannedServers.has(server._id)) continue;
-      scannedServers.add(server._id);
-      say('cloud', `Reading applications on ${server.name}…`);
-      forge.workspaces.scanApps(server._id)
-        .then(outcome => {
-          if (outcome?.ok === false) {
-            fail('cloud', outcome.message ?? 'Could not read the applications on that server.');
-          } else if (outcome?.count === 0) {
-            say('cloud', outcome.message ?? 'No applications found on that server.');
-          } else {
-            clearError('cloud');
-          }
-        })
-        .catch(error => {
-          scannedServers.delete(server._id);
-          fail('cloud', reasonOf(error), error);
-        });
-    }
-  }
-  forge?.connections?.subscribe(list => {
-    connections = Array.isArray(list) ? list : [];
-    render();
-  });
-  forge?.workspaces?.subscribe(list => {
-    servers = (Array.isArray(list) ? list : []).map(asRow);
-    render();
-    scanServers();
-  });
-  forge?.apps?.subscribe(list => {
-    apps = Array.isArray(list) ? list : [];
-    render();
-  });
-  // Signing in as someone else means their servers, so the scan runs again.
-  forge?.account?.subscribe(user => {
-    const id = user?._id ?? null;
-    if (id === currentUser) return;
-    currentUser = id;
-    scannedServers.clear();
-    scanServers();
-  });
-}
-
+// The account: the footer, the account sheet, the Profile screen, and the
+// greeting all render from one subscription.
 const accountSheet = document.querySelector('.account');
+const greetingTitle = document.querySelector('[data-greeting]');
 if (forge?.account && accountSheet) {
   const guestView = accountSheet.querySelector('.account-guest');
   const memberView = accountSheet.querySelector('.account-member');
@@ -1143,6 +714,8 @@ if (forge?.account && accountSheet) {
   const emailSent = accountSheet.querySelector('.account-sent');
   const labels = document.querySelectorAll('[data-account-label]');
   const avatars = document.querySelectorAll('[data-account-avatar]');
+  const names = document.querySelectorAll('[data-account-name]');
+  const emails = document.querySelectorAll('[data-account-email]');
   function renderAccount(user) {
     const member = user && !user.isAnonymous;
     guestView.hidden = Boolean(member);
@@ -1150,8 +723,12 @@ if (forge?.account && accountSheet) {
     const name = member ? (user.name || user.email || 'Signed in') : 'Guest';
     labels.forEach(label => { label.textContent = name; });
     avatars.forEach(avatar => { avatar.textContent = name.trim().charAt(0).toUpperCase() || 'G'; });
-    accountSheet.querySelector('[data-account-name]').textContent = member ? name : '';
-    accountSheet.querySelector('[data-account-email]').textContent = member && user.email && user.email !== name ? user.email : '';
+    names.forEach(element => { element.textContent = member ? name : ''; });
+    emails.forEach(element => { element.textContent = member && user.email && user.email !== name ? user.email : ''; });
+    if (greetingTitle) {
+      const first = member && user.name ? user.name.trim().split(/\s+/)[0] : '';
+      greetingTitle.textContent = first ? `Let's build, ${first}.` : 'What will you build today?';
+    }
     if (!member) {
       emailForm.hidden = false;
       emailSent.hidden = true;
@@ -1188,339 +765,401 @@ if (forge?.account && accountSheet) {
   // Starting the replacement guest session still needs the network, so the
   // button says it is working rather than looking ignored, and a failure is
   // said out loud: there is no console to read on a phone.
-  const signOutButton = accountSheet.querySelector('.account-signout');
-  const signOutError = accountSheet.querySelector('.account-error');
-  signOutButton.addEventListener('click', () => {
-    if (signOutButton.disabled) return;
-    signOutButton.disabled = true;
-    signOutButton.textContent = 'Signing out…';
-    if (signOutError) {
-      signOutError.textContent = '';
-      signOutError.hidden = true;
-    }
-    forge.auth.signOut()
-      .then(closeMenu)
-      .catch(error => {
-        reportError(error);
-        if (!signOutError) return;
-        signOutError.textContent = `Could not sign out: ${error?.data ?? error?.message ?? error}`;
-        signOutError.hidden = false;
-      })
-      .finally(() => {
-        signOutButton.disabled = false;
-        signOutButton.textContent = 'Sign out';
-      });
+  document.querySelectorAll('.account-signout,.profile-signout').forEach(signOutButton => {
+    const signOutError = signOutButton.closest('.account, .overlay')?.querySelector('.account-error,.overlay-error');
+    signOutButton.addEventListener('click', () => {
+      if (signOutButton.disabled) return;
+      signOutButton.disabled = true;
+      signOutButton.textContent = 'Signing out…';
+      showNote(signOutError, '');
+      forge.auth.signOut()
+        .then(closeMenu)
+        .catch(error => {
+          reportError(error);
+          showNote(signOutError, `Could not sign out: ${messageOf(error)}`);
+        })
+        .finally(() => {
+          signOutButton.disabled = false;
+          signOutButton.textContent = 'Sign out';
+        });
+    });
   });
 }
 
-// Remote Workspaces: real servers saved against the account. The credential is
-// handed to Convex once and never comes back, so what is rendered here is
-// metadata plus whatever the last handshake reported.
-const workspacesScreen = document.querySelector('.workspaces');
-const wizardScreen = document.querySelector('.workspace-wizard');
-if (workspacesScreen && wizardScreen) {
-  const cards = workspacesScreen.querySelector('.workspace-cards');
-  const emptyNote = workspacesScreen.querySelector('.workspaces-empty');
-  const listError = workspacesScreen.querySelector('.workspaces-error');
-  const openEntry = document.querySelector('.open-workspaces');
-  const wizardForm = wizardScreen.querySelector('.wizard-form');
-  const typeStep = wizardScreen.querySelector('[data-step="type"]');
-  const detailsTitle = wizardScreen.querySelector('[data-details-title]');
-  const passwordLabel = wizardScreen.querySelector('[data-password-label]');
-  const passwordHint = wizardScreen.querySelector('[data-password-hint]');
-  const keyFields = wizardScreen.querySelector('[data-auth="key"]');
-  const result = wizardScreen.querySelector('.wizard-result');
-  const testButton = wizardScreen.querySelector('.test-button');
-  const createButton = wizardScreen.querySelector('.wizard-create');
-  const wizardScroll = wizardScreen.querySelector('.appearance-scroll');
-  const ENVIRONMENTS = {production: 'Production', staging: 'Staging', dev: 'Dev'};
-  const field = name => wizardForm.querySelector(`[name="${name}"]`);
-  let workspaces = [];
-  let protocol = 'ssh';
-  let connecting = null;
-
-  function glyph(id, className) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    if (className) svg.setAttribute('class', className);
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', `#${id}`);
-    svg.append(use);
-    return svg;
-  }
-  // A ConvexError arrives with its message on `data`; anything else is a
-  // transport failure worth reporting in the same place.
-  function messageOf(error) {
-    reportError(error);
-    return error?.data ?? error?.message ?? 'Something went wrong';
-  }
-  function showListError(message) {
-    listError.textContent = message ?? '';
-    listError.hidden = !message;
-  }
-  function optionsFor(workspace) {
-    const options = document.createElement('button');
-    options.type = 'button';
-    options.className = 'row-options';
-    options.setAttribute('aria-label', `Options for ${workspace.name}`);
-    options.setAttribute('aria-haspopup', 'menu');
-    options.setAttribute('aria-expanded', 'false');
-    const dots = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    dots.setAttribute('viewBox', '0 0 24 24');
-    dots.setAttribute('aria-hidden', 'true');
-    for (const cy of [6, 12, 18]) {
-      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      dot.setAttribute('cx', 12);
-      dot.setAttribute('cy', cy);
-      dot.setAttribute('r', 1.25);
-      dots.append(dot);
-    }
-    options.append(dots);
-    const menu = document.createElement('div');
-    menu.className = 'font-menu row-menu';
-    menu.setAttribute('role', 'menu');
-    menu.hidden = true;
-    const item = (label, action) => {
-      const entry = document.createElement('button');
-      entry.type = 'button';
-      entry.setAttribute('role', 'menuitem');
-      entry.textContent = label;
-      entry.addEventListener('click', () => { closePopovers(); action(); });
-      return entry;
-    };
-    menu.append(
-      item('Rename', () => {
-        const next = prompt('Rename workspace', workspace.name)?.trim();
-        if (!next || next === workspace.name) return;
-        showListError(null);
-        forge.workspaces.rename(workspace._id, next).catch(error => showListError(messageOf(error)));
-      }),
-      item('Remove', () => {
-        if (!confirm(`Remove "${workspace.name}"? Its stored credentials are deleted too.`)) return;
-        showListError(null);
-        forge.workspaces.remove(workspace._id).catch(error => showListError(messageOf(error)));
-      })
-    );
-    options.addEventListener('click', event => {
-      event.stopPropagation();
-      const open = menu.hidden;
-      closePopovers();
-      menu.hidden = !open;
-      options.setAttribute('aria-expanded', String(open));
-    });
-    return [options, menu];
-  }
-  function workspaceCard(workspace) {
-    const article = document.createElement('article');
-    article.className = 'workspace-card';
-    article.classList.toggle('is-connected', workspace.connected);
-
-    const head = document.createElement('div');
-    head.className = 'workspace-card-head';
-    const badge = document.createElement('span');
-    badge.className = 'workspace-badge';
-    badge.append(glyph('server'));
-    const copy = document.createElement('div');
-    copy.className = 'workspace-card-copy';
-    const name = document.createElement('strong');
-    name.textContent = workspace.name;
-    const address = document.createElement('code');
-    address.textContent = `${workspace.username}@${workspace.host}:${workspace.port}`;
-    copy.append(name, address);
-    head.append(badge, copy, ...optionsFor(workspace));
-
-    const meta = document.createElement('div');
-    meta.className = 'workspace-meta';
-    const state = document.createElement('span');
-    state.className = 'workspace-state';
-    if (workspace.connected) {
-      const dot = document.createElement('span');
-      dot.className = 'state-dot';
-      state.append(dot, document.createTextNode('Connected'));
-    } else {
-      state.append(glyph('wifi-off'), document.createTextNode('Disconnected'));
-    }
-    const protocolChip = document.createElement('span');
-    protocolChip.className = 'chip protocol';
-    protocolChip.append(
-      glyph(workspace.protocol === 'sftp' ? 'folder' : 'terminal'),
-      document.createTextNode(workspace.protocol.toUpperCase())
-    );
-    meta.append(state, protocolChip);
-    if (workspace.environment) {
-      const tag = document.createElement('span');
-      tag.className = `chip env-${workspace.environment}`;
-      tag.textContent = ENVIRONMENTS[workspace.environment];
-      meta.append(tag);
-    }
-
-    const action = document.createElement('button');
-    action.type = 'button';
-    action.className = workspace.connected ? 'workspace-action is-secondary' : 'workspace-action';
-    const working = connecting === workspace._id;
-    action.disabled = working;
-    if (working) action.textContent = 'Connecting…';
-    else action.append(
-      glyph(workspace.connected ? 'wifi-off' : 'wifi'),
-      document.createTextNode(workspace.connected ? 'Disconnect' : 'Connect')
-    );
-    action.addEventListener('click', () => toggleConnection(workspace));
-
-    article.append(head, meta, action);
-    if (workspace.lastError && !workspace.connected) {
-      const note = document.createElement('p');
-      note.className = 'workspaces-error';
-      note.textContent = workspace.lastError;
-      article.append(note);
-    }
-    return article;
-  }
-  function renderWorkspaces() {
-    cards.replaceChildren(...workspaces.map(workspaceCard));
-    emptyNote.hidden = workspaces.length > 0;
-  }
-  async function toggleConnection(workspace) {
-    showListError(null);
-    if (workspace.connected) {
-      forge.workspaces.disconnect(workspace._id).catch(error => showListError(messageOf(error)));
-      return;
-    }
-    connecting = workspace._id;
-    renderWorkspaces();
-    try {
-      const outcome = await forge.workspaces.connect(workspace._id);
-      if (!outcome?.ok) showListError(outcome?.message ?? 'Could not reach that server');
-    } catch (error) {
-      showListError(messageOf(error));
-    } finally {
-      connecting = null;
-      renderWorkspaces();
-    }
-  }
-  function setResult(message, ok) {
-    result.textContent = message ?? '';
-    result.hidden = !message;
-    result.classList.toggle('is-ok', ok === true);
-    result.classList.toggle('is-bad', ok === false);
-  }
-  function setProtocol(next) {
-    protocol = next === 'sftp' ? 'sftp' : 'ssh';
-    detailsTitle.textContent = `Connection Details (${protocol.toUpperCase()})`;
-    keyFields.hidden = protocol !== 'ssh';
-    const password = field('password');
-    password.placeholder = protocol === 'sftp' ? 'Enter SFTP password' : 'Enter SSH password';
-    password.required = protocol === 'sftp';
-    passwordLabel.textContent = 'Password';
-    if (protocol === 'sftp') {
-      const star = document.createElement('i');
-      star.textContent = '*';
-      passwordLabel.append(' ', star);
-    }
-    passwordHint.textContent = protocol === 'sftp'
-      ? 'Password for SFTP authentication'
-      : 'Less secure than key-based authentication';
-    wizardScreen.querySelectorAll('.type-card').forEach(card => {
-      card.setAttribute('aria-pressed', String(card.dataset.protocol === protocol));
-    });
-  }
-  function showStep(step) {
-    typeStep.hidden = step !== 'type';
-    wizardForm.hidden = step !== 'details';
-    if (wizardScroll) wizardScroll.scrollTop = 0;
-  }
-  function openWorkspaces() {
-    showListError(null);
-    showOverlay(workspacesScreen);
-    navigation.setAttribute('aria-label', 'Remote workspaces');
-  }
-  function openWizard() {
-    wizardForm.reset();
-    wizardForm.classList.remove('is-collapsed');
-    wizardScreen.querySelector('.section-toggle').setAttribute('aria-expanded', 'true');
-    setResult(null);
-    setProtocol('ssh');
-    showStep('type');
-    showOverlay(wizardScreen);
-    navigation.setAttribute('aria-label', 'New remote workspace');
-  }
-  // Only the parts the chosen protocol actually uses are sent, so an SFTP
-  // workspace never carries an SSH key it ignored.
-  function credentials() {
-    const key = protocol === 'ssh' ? field('privateKey').value.trim() : '';
-    const passphrase = protocol === 'ssh' ? field('passphrase').value : '';
-    const password = field('password').value;
-    return {
-      ...(key ? {privateKey: key} : {}),
-      ...(key && passphrase ? {passphrase} : {}),
-      ...(password ? {password} : {}),
-    };
-  }
-  function target() {
-    return {
-      protocol,
-      host: field('host').value.trim(),
-      port: Number(field('port').value),
-      username: field('username').value.trim(),
-    };
-  }
-
-  openEntry?.addEventListener('click', openWorkspaces);
-  workspacesScreen.querySelector('.workspaces-back').addEventListener('click', () => {
+// Settings screens are full-screen overlays opened from the settings list.
+// `data-back` on each section is what the back button and Escape use.
+const settingsScreens = {
+  profile: {element: document.querySelector('.overlay.profile-screen'), opener: '.open-profile', label: 'Profile'},
+  plan: {element: document.querySelector('.overlay.plan'), opener: '.open-plan', label: 'Plan and credits'},
+  usage: {element: document.querySelector('.overlay.usage'), opener: '.open-usage', label: 'Usage'},
+  domains: {element: document.querySelector('.overlay.domains'), opener: '.open-domains', label: 'Domains'},
+};
+function showSettingsScreen(name, show = true) {
+  const screen = settingsScreens[name];
+  if (!screen?.element) return;
+  if (show) {
+    showOverlay(screen.element);
+    navigation.setAttribute('aria-label', screen.label);
+  } else {
     showSettings(true);
-    openEntry?.focus({preventScroll:true});
-  });
-  workspacesScreen.querySelector('.new-workspace').addEventListener('click', openWizard);
-  wizardScreen.querySelector('.wizard-back').addEventListener('click', () => {
-    if (!wizardForm.hidden) { showStep('type'); return; }
-    openWorkspaces();
-  });
-  wizardScreen.querySelector('.wizard-prev').addEventListener('click', () => showStep('type'));
-  wizardScreen.querySelectorAll('.type-card').forEach(card => {
-    card.addEventListener('click', () => {
-      setProtocol(card.dataset.protocol);
-      showStep('details');
-    });
-  });
-  wizardScreen.querySelector('.section-toggle').addEventListener('click', event => {
-    event.preventDefault();
-    const collapsed = wizardForm.classList.toggle('is-collapsed');
-    event.currentTarget.setAttribute('aria-expanded', String(!collapsed));
-  });
-  testButton.addEventListener('click', async () => {
-    setResult('Testing the connection…');
-    testButton.disabled = true;
-    try {
-      const outcome = await forge.workspaces.test({...target(), ...credentials()});
-      setResult(outcome.message, outcome.ok);
-    } catch (error) {
-      setResult(messageOf(error), false);
-    } finally {
-      testButton.disabled = false;
-    }
-  });
-  wizardForm.addEventListener('submit', async event => {
-    event.preventDefault();
-    createButton.disabled = true;
-    setResult('Saving the workspace…');
-    try {
-      await forge.workspaces.create({
-        name: field('name').value.trim(),
-        environment: field('environment').value || undefined,
-        ...target(),
-        ...credentials(),
-      });
-      setResult(null);
-      openWorkspaces();
-    } catch (error) {
-      setResult(messageOf(error), false);
-    } finally {
-      createButton.disabled = false;
-    }
-  });
+    document.querySelector(screen.opener)?.focus({preventScroll:true});
+  }
+}
+Object.entries(settingsScreens).forEach(([name, screen]) => {
+  document.querySelectorAll(screen.opener).forEach(button => button.addEventListener('click', () => showSettingsScreen(name)));
+  screen.element?.querySelector(`.${name}-back`)?.addEventListener('click', () => showSettingsScreen(name, false));
+});
+document.querySelectorAll('.credits-summary,[data-credits-cta],.open-plan-from-domains').forEach(button => {
+  button.addEventListener('click', () => showSettingsScreen('plan'));
+});
 
-  startWorkspaceWizard = openWizard;
-  renderWorkspaces();
-  forge?.workspaces?.subscribe(list => {
-    workspaces = Array.isArray(list) ? list : [];
-    renderWorkspaces();
+// Plan and credits. The balance and the catalog both come from the
+// deployment; the card hides for guests, who have no plan to show.
+const creditsCard = document.querySelector('.credits-card');
+const planScreen = document.querySelector('.overlay.plan');
+let summary = null;
+let catalog = null;
+function setText(selector, text) {
+  document.querySelectorAll(selector).forEach(element => { element.textContent = text; });
+}
+function setFill(selector, available, granted) {
+  const percent = granted > 0 ? Math.max(0, Math.min(100, Math.round((100 * available) / granted))) : 0;
+  document.querySelectorAll(selector).forEach(element => { element.style.width = `${percent}%`; });
+}
+function renderCredits() {
+  if (creditsCard) creditsCard.hidden = !summary;
+  setText('[data-settings-plan]', summary ? summary.plan.name : '');
+  if (summary) {
+    const {plan, available, granted, periodEnd, cancelAtPeriodEnd} = summary;
+    const used = Math.max(0, granted - available);
+    setText('[data-credits-plan]', `${plan.name} plan`);
+    setText('[data-credits-available]', String(available));
+    setText('[data-credits-granted]', ` of ${granted}`);
+    setFill('[data-credits-fill]', available, granted);
+    setText('[data-credits-resets]', cancelAtPeriodEnd ? `Moving to Free ${shortDate(periodEnd)}` : `Resets ${shortDate(periodEnd)}`);
+    setText('[data-credits-cta]', plan.key === 'business' ? 'Top up' : 'Upgrade');
+    setText('[data-plan-name]', `${plan.name} plan`);
+    setText('[data-plan-renews]', cancelAtPeriodEnd
+      ? `Ends ${shortDate(periodEnd)}`
+      : plan.monthlyPriceCents ? `Renews ${shortDate(periodEnd)}` : `Credits reset ${shortDate(periodEnd)}`);
+    setText('[data-plan-price]', plan.monthlyPriceCents ? `${money(plan.monthlyPriceCents)}/mo` : 'Free');
+    setText('[data-plan-available]', String(available));
+    setText('[data-plan-granted]', String(granted));
+    setFill('[data-plan-fill]', available, granted);
+    setText('[data-plan-resets]', `${used} used · resets ${shortDate(periodEnd)}`);
+    setText('[data-plan-end]', shortDate(periodEnd));
+    setText('[data-usage-headline]', `${used} of ${granted} credits used`);
+    setText('[data-usage-sub]', `${available} left · resets ${shortDate(periodEnd)}`);
+    if (planScreen) {
+      planScreen.querySelector('.plan-cancel').hidden = plan.key === 'free' || cancelAtPeriodEnd;
+      planScreen.querySelector('.plan-resume').hidden = !cancelAtPeriodEnd;
+      planScreen.querySelector('.plan-scheduled').hidden = !cancelAtPeriodEnd;
+    }
+  }
+  renderPlanCards();
+  document.dispatchEvent(new CustomEvent('forge:billing'));
+}
+function checkIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '#check');
+  svg.append(use);
+  return svg;
+}
+async function startCheckout(choice, button) {
+  const error = planScreen?.querySelector('.overlay-error');
+  showNote(error, '');
+  button.disabled = true;
+  try {
+    const {url} = await forge.billing.checkout(choice);
+    location.assign(url);
+  } catch (caught) {
+    reportError(caught);
+    showNote(error, messageOf(caught));
+    button.disabled = false;
+  }
+}
+function renderPlanCards() {
+  const cards = planScreen?.querySelector('[data-plan-cards]');
+  const topUps = planScreen?.querySelector('[data-topup-list]');
+  if (!cards || !topUps || !catalog) return;
+  const order = catalog.plans.map(plan => plan.key);
+  const current = summary?.plan.key ?? null;
+  cards.replaceChildren(...catalog.plans.map(plan => {
+    const card = document.createElement('article');
+    card.className = 'plan-card';
+    card.classList.toggle('is-current', plan.key === current);
+    const title = document.createElement('h4');
+    title.textContent = plan.name;
+    if (plan.key === current) {
+      const badge = document.createElement('span');
+      badge.className = 'plan-current-badge';
+      badge.textContent = 'Current';
+      title.append(badge);
+    }
+    const tagline = document.createElement('p');
+    tagline.className = 'plan-tagline';
+    tagline.textContent = plan.tagline;
+    const price = document.createElement('p');
+    price.className = 'plan-price';
+    const amount = document.createElement('strong');
+    amount.textContent = money(plan.monthlyPriceCents);
+    const per = document.createElement('span');
+    per.textContent = plan.monthlyPriceCents ? '/ month' : 'forever';
+    price.append(amount, per);
+    const features = document.createElement('ul');
+    features.className = 'plan-features';
+    [
+      `${plan.monthlyCredits} credits a month`,
+      plan.maxSites === null ? 'Unlimited sites' : `Up to ${plan.maxSites} sites`,
+      plan.customDomains ? 'Custom domains' : null,
+      plan.removeBadge ? 'No Forge badge' : null,
+    ].filter(Boolean).forEach(text => {
+      const item = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = text;
+      item.append(checkIcon(), label);
+      features.append(item);
+    });
+    const cta = document.createElement('button');
+    cta.type = 'button';
+    cta.className = 'plan-cta';
+    if (plan.key === current) {
+      cta.textContent = 'Current plan';
+      cta.disabled = true;
+      cta.classList.add('is-secondary');
+    } else if (plan.key === 'free') {
+      const scheduled = Boolean(summary?.cancelAtPeriodEnd);
+      cta.textContent = scheduled ? 'Scheduled' : 'Downgrade';
+      cta.disabled = scheduled || !summary;
+      cta.classList.add('is-secondary');
+      cta.addEventListener('click', () => {
+        const error = planScreen.querySelector('.overlay-error');
+        showNote(error, '');
+        forge.billing.cancel().catch(caught => showNote(error, messageOf(caught)));
+      });
+    } else {
+      const upgrade = current === null || order.indexOf(plan.key) > order.indexOf(current);
+      cta.textContent = upgrade ? 'Upgrade' : 'Switch';
+      if (!upgrade) cta.classList.add('is-secondary');
+      cta.addEventListener('click', () => startCheckout({plan: plan.key}, cta));
+    }
+    card.append(title, tagline, price, features, cta);
+    return card;
+  }));
+  topUps.replaceChildren(...catalog.topUps.map(pack => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'topup-row';
+    const copy = document.createElement('span');
+    const credits = document.createElement('strong');
+    credits.textContent = `${pack.credits} credits`;
+    const note = document.createElement('small');
+    note.textContent = 'Added to this period';
+    copy.append(credits, note);
+    const price = document.createElement('span');
+    price.className = 'topup-price';
+    price.textContent = money(pack.priceCents);
+    row.append(copy, price);
+    row.addEventListener('click', () => startCheckout({topUp: pack.key}, row));
+    return row;
+  }));
+}
+if (forge?.billing && planScreen) {
+  planScreen.querySelector('.plan-cancel').addEventListener('click', () => {
+    const error = planScreen.querySelector('.overlay-error');
+    showNote(error, '');
+    forge.billing.cancel().catch(caught => showNote(error, messageOf(caught)));
   });
+  planScreen.querySelector('.plan-resume').addEventListener('click', () => {
+    const error = planScreen.querySelector('.overlay-error');
+    showNote(error, '');
+    forge.billing.resume().catch(caught => showNote(error, messageOf(caught)));
+  });
+  forge.billing.subscribe(next => { summary = next ?? null; renderCredits(); });
+  forge.billing.catalog(next => { catalog = next ?? null; renderCredits(); });
+}
+
+// Usage: the credit ledger, newest first.
+const usageScreen = document.querySelector('.overlay.usage');
+if (forge?.billing && usageScreen) {
+  const ledger = usageScreen.querySelector('[data-ledger]');
+  const empty = usageScreen.querySelector('[data-ledger-empty]');
+  const KIND_LABELS = {grant: 'Monthly credits', topup: 'Top-up', spend: 'Build request', refund: 'Refund', expire: 'Credits expired', adjust: 'Adjustment'};
+  forge.billing.history(list => {
+    const entries = Array.isArray(list) ? list : [];
+    empty.hidden = entries.length > 0;
+    ledger.replaceChildren(...entries.map(entry => {
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      const copy = document.createElement('span');
+      copy.className = 'ledger-copy';
+      const label = document.createElement('strong');
+      label.textContent = entry.note || KIND_LABELS[entry.kind] || entry.kind;
+      const when = document.createElement('small');
+      when.textContent = new Date(entry.createdAt).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
+      copy.append(label, when);
+      const amount = document.createElement('span');
+      amount.className = `ledger-amount ${entry.amount >= 0 ? 'is-plus' : 'is-minus'}`;
+      amount.textContent = `${entry.amount >= 0 ? '+' : '−'}${Math.abs(entry.amount)}`;
+      const balance = document.createElement('small');
+      balance.className = 'ledger-balance';
+      balance.textContent = `${entry.balanceAfter} left`;
+      row.append(copy, amount, balance);
+      return row;
+    }));
+  });
+}
+
+// Domains: a hostname pointed at one of the account's sites. The form only
+// shows when the plan allows custom domains and there is a site to point at.
+const domainsScreen = document.querySelector('.overlay.domains');
+if (forge?.domains && domainsScreen) {
+  const form = domainsScreen.querySelector('.domain-form');
+  const select = form.elements.siteId;
+  const list = domainsScreen.querySelector('[data-domain-list]');
+  const empty = domainsScreen.querySelector('[data-domain-empty]');
+  const gate = domainsScreen.querySelector('.domain-gate');
+  const noSites = domainsScreen.querySelector('.domain-nosites');
+  const error = domainsScreen.querySelector('.overlay-error');
+  const STATUS_LABELS = {pending: 'Pending', active: 'Active', failed: 'Failed'};
+  let domains = [];
+  function renderAccess() {
+    const allowed = Boolean(summary?.plan.customDomains);
+    const cheapest = catalog?.plans.find(plan => plan.customDomains);
+    setText('[data-domain-plan]', cheapest?.name ?? '');
+    gate.hidden = allowed || !cheapest;
+    noSites.hidden = !allowed || sites.length > 0;
+    form.hidden = !allowed || sites.length === 0;
+    const chosen = select.value;
+    select.replaceChildren(...sites.map(site => new Option(site.name, site._id)));
+    if (sites.some(site => site._id === chosen)) select.value = chosen;
+  }
+  function renderDomains() {
+    empty.hidden = domains.length > 0;
+    document.querySelectorAll('[data-settings-domains]').forEach(element => {
+      element.textContent = domains.length ? String(domains.length) : '';
+      element.hidden = domains.length === 0;
+    });
+    list.replaceChildren(...domains.map(domain => {
+      const row = document.createElement('div');
+      row.className = 'domain-row';
+      const copy = document.createElement('span');
+      copy.className = 'domain-copy';
+      const host = document.createElement('strong');
+      host.textContent = domain.hostname;
+      const site = document.createElement('small');
+      site.textContent = sites.find(item => item._id === domain.siteId)?.name ?? 'Site removed';
+      copy.append(host, site);
+      const status = document.createElement('span');
+      status.className = `status-chip is-${domain.status}`;
+      status.textContent = STATUS_LABELS[domain.status] ?? domain.status;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'icon-button';
+      remove.setAttribute('aria-label', `Remove ${domain.hostname}`);
+      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      icon.setAttribute('aria-hidden', 'true');
+      const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+      use.setAttribute('href', '#close');
+      icon.append(use);
+      remove.append(icon);
+      remove.addEventListener('click', () => {
+        if (!confirm(`Remove ${domain.hostname}?`)) return;
+        showNote(error, '');
+        forge.domains.remove(domain._id).catch(caught => showNote(error, messageOf(caught)));
+      });
+      row.append(copy, status, remove);
+      return row;
+    }));
+  }
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = form.querySelector('.chip-button');
+    if (submit.disabled) return;
+    showNote(error, '');
+    submit.disabled = true;
+    try {
+      await forge.domains.add(select.value, form.elements.hostname.value);
+      form.elements.hostname.value = '';
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, messageOf(caught));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  forge.domains.subscribe(next => {
+    domains = Array.isArray(next) ? next : [];
+    renderDomains();
+  });
+  document.addEventListener('forge:sites', () => { renderAccess(); renderDomains(); });
+  document.addEventListener('forge:billing', renderAccess);
+  renderAccess();
+}
+
+// Profile: the name, the linked sign-in methods, and the way out.
+const profileScreen = document.querySelector('.overlay.profile-screen');
+if (forge?.account && profileScreen) {
+  const form = profileScreen.querySelector('.profile-form');
+  const nameField = form.elements.name;
+  const error = profileScreen.querySelector('.overlay-error');
+  const providerList = profileScreen.querySelector('[data-provider-list]');
+  const providerEmpty = profileScreen.querySelector('[data-provider-empty]');
+  const PROVIDER_NAMES = {resend: 'Email link', google: 'Google', apple: 'Apple'};
+  forge.account.subscribe(user => {
+    if (document.activeElement === nameField) return;
+    nameField.value = user && !user.isAnonymous ? (user.name ?? '') : '';
+  });
+  forge.account.providers(list => {
+    const names = (Array.isArray(list) ? list : []).map(provider => PROVIDER_NAMES[provider] ?? provider);
+    providerEmpty.hidden = names.length > 0;
+    providerList.replaceChildren(...names.map(name => {
+      const row = document.createElement('div');
+      row.className = 'appearance-row provider-row';
+      const label = document.createElement('strong');
+      label.textContent = name;
+      row.append(label, checkIcon());
+      return row;
+    }));
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = form.querySelector('.chip-button');
+    if (submit.disabled) return;
+    showNote(error, '');
+    submit.disabled = true;
+    try {
+      await forge.account.updateProfile(nameField.value);
+      showNote(error, 'Saved.', false);
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, messageOf(caught));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  const deleteButton = profileScreen.querySelector('.profile-delete');
+  deleteButton.addEventListener('click', async () => {
+    if (!confirm('Delete your account and everything in it? This cannot be undone.')) return;
+    showNote(error, '');
+    deleteButton.disabled = true;
+    try {
+      await forge.account.deleteAccount();
+      closeMenu();
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, `Could not delete the account: ${messageOf(caught)}`);
+    } finally {
+      deleteButton.disabled = false;
+    }
+  });
+}
+
+// Review framing for the settings screens, once their wiring exists.
+if (['profile', 'plan', 'usage', 'domains'].includes(query.get('screen'))) {
+  openMenu('navigation');
+  showSettings(true);
+  showSettingsScreen(query.get('screen'));
 }

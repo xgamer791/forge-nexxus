@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { requireOwnedConversation } from "./access";
+import { touchSite } from "./sites";
 import { mutation, query } from "./_generated/server";
 
 export const list = query({
@@ -23,8 +24,10 @@ export const send = mutation({
     const text = body.trim();
     if (!text) throw new ConvexError("Message is empty");
     await requireOwnedConversation(ctx, conversationId);
+    const now = Date.now();
     const id = await ctx.db.insert("messages", { conversationId, role: "user", body: text });
-    await ctx.db.patch(conversationId, { updatedAt: Date.now() });
+    await ctx.db.patch(conversationId, { updatedAt: now });
+    await touchSite(ctx, conversationId, now);
     return id;
   },
 });

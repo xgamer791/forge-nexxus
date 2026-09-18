@@ -17,7 +17,7 @@ stored the same way and is carried into the account they sign in to.
 ### Never
 
 - **Hardcoded sample rows** in `docs/index.html` or `docs/app.js`. No fake
-  workspaces, servers, repos, conversations, or names — not "for now", not as
+  sites, domains, plans, credits, conversations, or names — not "for now", not as
   a design placeholder. A list with nothing in it renders empty.
 - **`localStorage` as the source of truth** for anything the user set.
 - **State that only exists in a JS variable** and dies on reload.
@@ -32,18 +32,27 @@ stored the same way and is carried into the account they sign in to.
 
 Every read of it is wrapped in `try`/`catch` and works when it comes back empty.
 
-### Credentials
+### Credentials and keys
 
-Secrets a user gives us (SSH keys, passphrases, passwords) are sealed before
-storage and never returned to a client:
+Secrets never belong to a browser and never belong to a user row:
 
-- They are encrypted in `convex/remote.ts` with the deployment's `WORKSPACE_KEY`
-  and stored only as ciphertext.
-- Any query a browser can call strips the secret. `workspaces.list` is the
-  pattern: it drops `secret` and `userId` before returning a row.
-- Editing a credential replaces it. Nothing reads one back out to prefill a form.
-- Error strings are scrubbed before they leave the server, so a key or password
-  never rides out in a failure message.
+- The AI, image and video providers are called with the deployment's own keys
+  (`npx convex env set`), from server-side functions. A user never supplies a
+  provider key and never sees provider spend — only their credits.
+- Any secret a user does give us is sealed before storage and never returned
+  to a client. Queries a browser can call strip it, editing replaces it, and
+  error strings are scrubbed before they leave the server.
+
+### Plans and credits
+
+- The plan catalog (`convex/plans.ts`) is product configuration, not user
+  data. It is served by `billing.catalog`; `docs/` never carries a price, an
+  allowance, or a request cost of its own.
+- A member's balance is server-authoritative. Spending is reserve → run →
+  settle through the internal mutations in `convex/billing.ts`; nothing a
+  client can call adds credits, and nothing spends them without a hold.
+- Guests cannot build. Anything that creates a site or moves credits goes
+  through `requireMemberId`, because a guest row costs nothing to make.
 
 ## Rule 2: empty means empty
 
@@ -72,12 +81,12 @@ example. Sections with no rows hide themselves; counts hide at zero.
    only reach the Convex deployment when someone with the deploy key pushes
    them.
 
-## Node actions
+## Tests
 
-`convex/remote.ts` starts with `"use node"` because it needs `node:crypto` and
-`ssh2`. convex-test cannot load it, so every Convex test file excludes it:
-`import.meta.glob(["./**/*.*s", "!./remote.ts"])`. Keep pure logic out of that
-module so it stays testable.
+Every Convex test file loads the whole directory with
+`import.meta.glob("./**/*.*s")`. No module uses `"use node"`; keep it that way
+unless something genuinely needs Node, and if it ever does, exclude that file
+from the glob so convex-test can still load the rest.
 
 ## Checks before pushing
 

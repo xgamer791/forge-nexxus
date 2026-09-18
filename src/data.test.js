@@ -5,14 +5,29 @@ import { createForgeData } from "./data.js";
 
 const api = {
   auth: { signIn: "auth:signIn", signOut: "auth:signOut" },
-  users: { me: "users:me" },
-  conversations: {
-    list: "conversations:list",
-    create: "conversations:create",
-    rename: "conversations:rename",
-    remove: "conversations:remove",
+  users: {
+    me: "users:me",
+    providers: "users:providers",
+    updateProfile: "users:updateProfile",
+    deleteAccount: "users:deleteAccount",
+  },
+  sites: {
+    list: "sites:list",
+    create: "sites:create",
+    rename: "sites:rename",
+    remove: "sites:remove",
   },
   messages: { list: "messages:list", send: "messages:send" },
+  domains: { list: "domains:list", add: "domains:add", remove: "domains:remove" },
+  billing: {
+    summary: "billing:summary",
+    catalog: "billing:catalog",
+    history: "billing:history",
+    cancel: "billing:cancel",
+    resume: "billing:resume",
+    checkout: "billing:checkout",
+  },
+  settings: { get: "settings:get", update: "settings:update" },
 };
 
 const tokens = (label) => ({ token: `${label}-token`, refreshToken: `${label}-refresh` });
@@ -278,30 +293,66 @@ describe("sign-in providers", () => {
 });
 
 describe("data access", () => {
-  test("account, conversation, and message calls target the right functions", async () => {
+  test("account, site, message, domain, billing, and settings calls target the right functions", async () => {
     const { client, data } = harness();
     await data.ready;
     const callback = () => {};
     data.account.subscribe(callback);
-    data.conversations.subscribe(callback);
+    data.account.providers(callback);
+    data.sites.subscribe(callback);
     data.messages.subscribe("c1", callback);
-    await data.conversations.create();
-    await data.conversations.create("Titled");
-    await data.conversations.rename("c1", "New");
-    await data.conversations.remove("c1");
+    data.domains.subscribe(callback);
+    data.billing.subscribe(callback);
+    data.billing.catalog(callback);
+    data.billing.history(callback);
+    data.settings.subscribe(callback);
+    await data.account.updateProfile("Sam");
+    await data.sites.create();
+    await data.sites.create("Bakery");
+    await data.sites.rename("s1", "Shop");
+    await data.sites.remove("s1");
     await data.messages.send("c1", "hi");
+    await data.domains.add("s1", "shop.example");
+    await data.domains.remove("d1");
+    await data.billing.cancel();
+    await data.billing.resume();
+    await data.settings.update({ theme: "light" });
+    await data.billing.checkout({ plan: "pro" });
     expect(client.onUpdate.mock.calls).toEqual([
       ["users:me", {}, callback],
-      ["conversations:list", {}, callback],
+      ["users:providers", {}, callback],
+      ["sites:list", {}, callback],
       ["messages:list", { conversationId: "c1" }, callback],
+      ["domains:list", {}, callback],
+      ["billing:summary", {}, callback],
+      ["billing:catalog", {}, callback],
+      ["billing:history", {}, callback],
+      ["settings:get", {}, callback],
     ]);
     expect(client.mutation.mock.calls).toEqual([
-      ["conversations:create", {}],
-      ["conversations:create", { title: "Titled" }],
-      ["conversations:rename", { id: "c1", title: "New" }],
-      ["conversations:remove", { id: "c1" }],
+      ["users:updateProfile", { name: "Sam" }],
+      ["sites:create", {}],
+      ["sites:create", { name: "Bakery" }],
+      ["sites:rename", { id: "s1", name: "Shop" }],
+      ["sites:remove", { id: "s1" }],
       ["messages:send", { conversationId: "c1", body: "hi" }],
+      ["domains:add", { siteId: "s1", hostname: "shop.example" }],
+      ["domains:remove", { id: "d1" }],
+      ["billing:cancel", {}],
+      ["billing:resume", {}],
+      ["settings:update", { theme: "light" }],
     ]);
+    expect(client.action.mock.calls).toEqual([["billing:checkout", { plan: "pro" }]]);
+  });
+
+  test("deleting the account removes it on the server, then starts a fresh guest session", async () => {
+    const { client, http, data } = harness({ storage: memoryStorage(stored("member", "member")) });
+    await data.ready;
+    const before = http.calls.length;
+    await data.account.deleteAccount();
+    expect(client.mutation.mock.calls).toEqual([["users:deleteAccount", {}]]);
+    expect(http.calls.slice(before).map((call) => call.fn)).toEqual(["auth:signOut", "auth:signIn"]);
+    expect(data.auth.state()).toEqual({ signedIn: true, kind: "guest" });
   });
 });
 

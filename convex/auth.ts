@@ -33,8 +33,9 @@ type SignInResult = {
   started?: boolean;
 };
 
-// Every sign-in passes through here so a guest's conversations follow them to
-// the account they just signed in to, whichever provider issued it.
+// Every sign-in passes through here so a guest's data follows them to the
+// account they just signed in to, whichever provider issued it, and so a
+// member has a plan from the first moment the app can ask about one.
 export const signIn = action({
   args: {
     provider: v.optional(v.string()),
@@ -50,6 +51,7 @@ export const signIn = action({
     if (guestId && userId && userId !== guestId) {
       await ctx.runMutation(internal.auth.adoptGuest, { guestId, userId });
     }
+    if (userId) await ctx.runMutation(internal.billing.ensure, { userId });
     return result;
   },
 });
@@ -73,34 +75,18 @@ export async function adoptGuestData(
     .withIndex("by_user_updated", (q) => q.eq("userId", guestId))
     .collect();
   await Promise.all(conversations.map((c) => ctx.db.patch(c._id, { userId })));
-  const connections = await ctx.db
-    .query("connections")
+  // Guests cannot build, so these are normally empty; carrying them keeps the
+  // rule that nothing a user made is left behind on the guest row.
+  const sites = await ctx.db
+    .query("sites")
+    .withIndex("by_user_updated", (q) => q.eq("userId", guestId))
+    .collect();
+  await Promise.all(sites.map((site) => ctx.db.patch(site._id, { userId })));
+  const domains = await ctx.db
+    .query("domains")
     .withIndex("by_user", (q) => q.eq("userId", guestId))
     .collect();
-  const owned = await ctx.db
-    .query("connections")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .collect();
-  await Promise.all(
-    connections.map((connection) => {
-      const alreadyThere = owned.some(
-        (item) => item.kind === connection.kind && item.detail === connection.detail,
-      );
-      return alreadyThere
-        ? ctx.db.delete(connection._id)
-        : ctx.db.patch(connection._id, { userId });
-    }),
-  );
-  const workspaces = await ctx.db
-    .query("workspaces")
-    .withIndex("by_user", (q) => q.eq("userId", guestId))
-    .collect();
-  await Promise.all(workspaces.map((workspace) => ctx.db.patch(workspace._id, { userId })));
-  const apps = await ctx.db
-    .query("apps")
-    .withIndex("by_user", (q) => q.eq("userId", guestId))
-    .collect();
-  await Promise.all(apps.map((app) => ctx.db.patch(app._id, { userId })));
+  await Promise.all(domains.map((domain) => ctx.db.patch(domain._id, { userId })));
   // Appearance choices made as a guest carry over only when the account has
   // none of its own; an existing account keeps what it already saved.
   const guestSettings = await settingsFor(ctx, guestId);

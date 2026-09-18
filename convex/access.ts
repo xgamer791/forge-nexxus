@@ -9,6 +9,16 @@ export async function requireUserId(ctx: QueryCtx | MutationCtx) {
   return userId;
 }
 
+// Building needs an account. A guest row costs nothing to make, so anything
+// that creates a site or moves credits refuses anonymous users; otherwise
+// clearing storage would mint a fresh allowance.
+export async function requireMemberId(ctx: QueryCtx | MutationCtx) {
+  const userId = await requireUserId(ctx);
+  const user = await ctx.db.get(userId);
+  if (!user || user.isAnonymous) throw new ConvexError("Sign in to build");
+  return userId;
+}
+
 export async function requireOwnedConversation(
   ctx: QueryCtx | MutationCtx,
   id: Id<"conversations">,
@@ -21,26 +31,16 @@ export async function requireOwnedConversation(
   return conversation;
 }
 
-export async function requireOwnedConnection(
-  ctx: QueryCtx | MutationCtx,
-  id: Id<"connections">,
-) {
+export async function requireOwnedSite(ctx: QueryCtx | MutationCtx, id: Id<"sites">) {
   const userId = await requireUserId(ctx);
-  const connection = await ctx.db.get(id);
-  if (!connection || connection.userId !== userId) {
-    throw new ConvexError("Connection not found");
-  }
-  return connection;
+  const site = await ctx.db.get(id);
+  if (!site || site.userId !== userId) throw new ConvexError("Site not found");
+  return site;
 }
 
-export async function requireOwnedWorkspace(
-  ctx: QueryCtx | MutationCtx,
-  id: Id<"workspaces">,
-) {
+export async function requireOwnedDomain(ctx: QueryCtx | MutationCtx, id: Id<"domains">) {
   const userId = await requireUserId(ctx);
-  const workspace = await ctx.db.get(id);
-  if (!workspace || workspace.userId !== userId) {
-    throw new ConvexError("Workspace not found");
-  }
-  return workspace;
+  const domain = await ctx.db.get(id);
+  if (!domain || domain.userId !== userId) throw new ConvexError("Domain not found");
+  return domain;
 }
