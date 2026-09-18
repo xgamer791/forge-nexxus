@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { BaseConvexClient, ConvexClient, ConvexHttpClient } from "convex/browser";
 import { describe, expect, test, vi } from "vitest";
 import { createForgeData } from "./data.js";
 
@@ -301,5 +302,33 @@ describe("data access", () => {
       ["conversations:remove", { id: "c1" }],
       ["messages:send", { conversationId: "c1", body: "hi" }],
     ]);
+  });
+});
+
+// A hand-written fake can quietly offer more than the thing it stands in for.
+// That is how a sign-out that threw on every attempt sat behind a green suite,
+// so the surface data.js relies on is checked against the real clients here.
+describe("the Convex client surface data.js relies on", () => {
+  test("every method called on the live client exists", () => {
+    for (const name of ["setAuth", "onUpdate", "mutation", "action"]) {
+      expect(typeof ConvexClient.prototype[name]).toBe("function");
+    }
+  });
+
+  test("every method called on the HTTP client exists", () => {
+    for (const name of ["setAuth", "clearAuth", "action"]) {
+      expect(typeof ConvexHttpClient.prototype[name]).toBe("function");
+    }
+  });
+
+  test("clearing auth on the live client still has somewhere to reach", () => {
+    // ConvexClient has no clearAuth of its own, so data.js goes through the
+    // base client. Both halves of that have to keep existing, or signing out
+    // silently falls back to a null token fetcher.
+    const reachable =
+      typeof ConvexClient.prototype.clearAuth === "function" ||
+      (Boolean(Object.getOwnPropertyDescriptor(ConvexClient.prototype, "client")) &&
+        typeof BaseConvexClient.prototype.clearAuth === "function");
+    expect(reachable).toBe(true);
   });
 });
