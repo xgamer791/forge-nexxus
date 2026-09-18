@@ -15,7 +15,10 @@ const convex = convexAuth({
     Resend({
       from: process.env.AUTH_EMAIL_FROM ?? "Forge Nexxus <onboarding@resend.dev>",
     }),
-    Google,
+    // Google signs you straight back into whichever account the browser is
+    // already holding unless it is asked to offer the chooser, which makes
+    // adding a second account impossible.
+    Google({ authorization: { params: { prompt: "select_account" } } }),
     Apple,
   ],
 });

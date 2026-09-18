@@ -31,12 +31,18 @@ function memoryStorage(initial = {}) {
   };
 }
 
+// Mirrors ConvexClient's real shape: it has setAuth but no clearAuth of its
+// own, and exposes the base client that does. A fake with a clearAuth of its
+// own hid a sign-out that threw on every attempt.
 function fakeClient() {
+  const base = { clearAuth: vi.fn() };
   return {
     setAuth: vi.fn(),
-    clearAuth: vi.fn(),
     onUpdate: vi.fn(() => vi.fn()),
     mutation: vi.fn(),
+    action: vi.fn(),
+    client: base,
+    clearAuth: undefined,
   };
 }
 
@@ -180,7 +186,7 @@ describe("token lifecycle", () => {
     const [fetchToken] = client.setAuth.mock.calls[0];
     expect(await fetchToken({ forceRefreshToken: true })).toBeNull();
     expect(data.auth.state().signedIn).toBe(true);
-    expect(client.clearAuth).not.toHaveBeenCalled();
+    expect(client.client.clearAuth).not.toHaveBeenCalled();
   });
 
   test("a revoked session falls back to a fresh guest", async () => {
@@ -228,7 +234,7 @@ describe("token lifecycle", () => {
       { signedIn: false, kind: null },
       { signedIn: true, kind: "guest" },
     ]);
-    expect(client.clearAuth).toHaveBeenCalledTimes(1);
+    expect(client.client.clearAuth).toHaveBeenCalledTimes(1);
   });
 });
 

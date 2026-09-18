@@ -46,6 +46,16 @@ export function createForgeData({
     }
   }
 
+  // ConvexClient exposes setAuth but no clearAuth; only the BaseConvexClient
+  // underneath it has one. Signing out has to tell the live client to drop its
+  // token, so reach through to it, and fall back to a fetcher that resolves to
+  // null, which is the only other way to say the same thing.
+  function clearClientAuth() {
+    if (typeof client.clearAuth === "function") client.clearAuth();
+    else if (typeof client.client?.clearAuth === "function") client.client.clearAuth();
+    else client.setAuth(async () => null);
+  }
+
   function state() {
     return { signedIn: token !== null, kind: token === null ? null : read(KIND_KEY) };
   }
@@ -68,7 +78,7 @@ export function createForgeData({
     write(REFRESH_KEY, refreshToken);
     write(KIND_KEY, token === null ? null : kind);
     if (reconnect) {
-      if (token === null) client.clearAuth();
+      if (token === null) clearClientAuth();
       else client.setAuth(fetchToken, onAuthStatus);
     }
     emit();
@@ -86,7 +96,7 @@ export function createForgeData({
         retryTimer = null;
         retryAttempt = 0;
         applyTokens(tokens ?? null, read(KIND_KEY), { reconnect: false });
-        if (!tokens) client.clearAuth();
+        if (!tokens) clearClientAuth();
         return token;
       })
       .catch(() => {
