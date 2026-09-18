@@ -11,6 +11,11 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // OAuth) are exchanged while still holding the guest token so the server can
 // move the guest's data, and refreshes go out on the HTTP client so the live
 // WebSocket client's auth state never blocks them.
+// `redirectTo` is where a magic link or an OAuth return lands. The mobile
+// client is at SITE_URL, so "/" is right for it; the web client passes its own
+// absolute URL so a sign-in started on forgenexxus.com finishes there. The
+// server allows only the origins it knows (see `resolveRedirect` in
+// convex/auth.ts), so this cannot send a code anywhere else.
 export function createForgeData({
   client,
   httpClient,
@@ -19,6 +24,7 @@ export function createForgeData({
   authCode = null,
   wait = delay,
   navigate = () => {},
+  redirectTo = "/",
 }) {
   let token = read(TOKEN_KEY);
   let refreshToken = read(REFRESH_KEY);
@@ -197,7 +203,7 @@ export function createForgeData({
   async function signInWithEmail(email) {
     write(VERIFIER_KEY, null);
     const result = await authCall(
-      { provider: "resend", params: { email, redirectTo: "/" } },
+      { provider: "resend", params: { email, redirectTo } },
       { withToken: true },
     );
     return result?.started === true;
@@ -205,7 +211,7 @@ export function createForgeData({
 
   async function signInWith(provider) {
     write(VERIFIER_KEY, null);
-    const result = await authCall({ provider, params: { redirectTo: "/" } }, { withToken: true });
+    const result = await authCall({ provider, params: { redirectTo } }, { withToken: true });
     if (!result?.redirect) throw new Error(`Sign-in with ${provider} did not start`);
     write(VERIFIER_KEY, result.verifier ?? null);
     navigate(result.redirect);
