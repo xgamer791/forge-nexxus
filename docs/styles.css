@@ -304,3 +304,6 @@ html[data-theme=light]{--ok:#1a7f37;--ok-soft:rgba(26,127,55,.12);--danger:#c036
    both sides rather than run into it. */
 .sheet header h2{max-width:calc(100% - 96px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cloud-picker .picker-list .workspace .chevron{margin-left:8px;width:15px;height:15px}
+/* An app name is arbitrary length; the pill keeps its shape and truncates. */
+.connect{max-width:min(100%,260px)}
+.connect span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

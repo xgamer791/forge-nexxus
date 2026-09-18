@@ -976,14 +976,27 @@ if (connectionsSheet) {
       empty.textContent = ofKind.length === 0 ? EMPTY_COPY[kind] : 'No workspaces match that search.';
       empty.hidden = shown.length > 0;
     });
-    // The composer's pill reports the session's state at a glance: Connected
-    // once any workspace is active, Connect while none is.
-    const active = rows.find(connection => connection.connected);
+    // The pill names what you are working on, because that is the thing worth
+    // knowing without opening the sheet. A connected server with nothing chosen
+    // yet is still just Connected.
+    const chosen = rows.find(
+      connection => connection.connected && (connection.app || !connection.remote)
+    );
+    const liveServer = servers.find(server => server.connected);
     if (connectButton) {
-      connectButton.textContent = active ? 'Connected' : 'Connect';
+      let label = connectButton.querySelector('span');
+      if (!label) {
+        label = document.createElement('span');
+        connectButton.replaceChildren(label);
+      }
+      label.textContent = chosen ? chosen.name : liveServer ? 'Connected' : 'Connect';
       connectButton.setAttribute(
         'aria-label',
-        active ? `Connected to ${active.name}. Open connections` : 'Connect a workspace'
+        chosen
+          ? `Working on ${chosen.name}. Open connections`
+          : liveServer
+            ? `Connected to ${liveServer.name}. Open connections`
+            : 'Connect a workspace'
       );
     }
     document.querySelectorAll('[data-count]').forEach(count => {
