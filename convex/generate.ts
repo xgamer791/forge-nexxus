@@ -33,6 +33,18 @@ Reply in plain prose: short, concrete, and about their site. Do not return HTML,
 
 If both readings are open, talk and ask which they meant.`;
 
+// What the thread shows while the request runs. The server picks it, because
+// the server is what knows whether this turn can build: promising to build a
+// site to someone whose balance only covers a conversation is a lie the client
+// cannot help telling on its own.
+const PENDING_LABELS: Record<RequestKind, string> = {
+  chat: "Thinking\u2026",
+  generate: "Building your site\u2026",
+  edit: "Updating your site\u2026",
+  image: "Making an image\u2026",
+  video: "Making a video\u2026",
+};
+
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 // One prompt in, one build out. The credits are held before the provider is
@@ -101,7 +113,7 @@ export const begin = internalMutation({
     const assistantId = await ctx.db.insert("messages", {
       conversationId,
       role: "assistant",
-      body: "",
+      body: PENDING_LABELS[kind],
       status: "pending",
     });
     await ctx.db.patch(conversationId, { updatedAt: now });

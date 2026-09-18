@@ -169,6 +169,41 @@ describe("generate.run", () => {
     );
   });
 
+  test("what a pending reply says is decided by what the turn can afford", async () => {
+    const t = fresh();
+    const pendingBody = async (conversationId: string) => {
+      const messages = await t.run((ctx) =>
+        ctx.db
+          .query("messages")
+          .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId as any))
+          .collect(),
+      );
+      return messages.filter((m) => m.status === "pending").at(-1)?.body;
+    };
+
+    // A free member can only ever afford to talk, so nothing promises a build.
+    const free_ = await createUser(t, { email: "f@example.com" });
+    const freeThread = await free_.as.mutation(api.sites.create, { name: "Hello" });
+    await t.mutation(internal.generate.begin, {
+      userId: free_.userId,
+      conversationId: freeThread.conversationId,
+      prompt: "Hello",
+    });
+    expect(await pendingBody(freeThread.conversationId)).toBe("Thinking\u2026");
+
+    // A member who can afford one is told a build is happening.
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    await t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "A bakery" });
+    expect(await pendingBody(conversationId)).toBe("Building your site\u2026");
+
+    // And once there is a page, the next one edits it rather than building it.
+    stubProvider(() => reply("Built it."));
+    await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
+    await t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "Add hours" });
+    expect(await pendingBody(conversationId)).toBe("Updating your site\u2026");
+  });
+
   test("a provider failure marks the reply failed, gives the hold back, and never leaks the key", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");

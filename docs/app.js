@@ -644,7 +644,10 @@ if (forge?.sites && siteList && thread) {
       row.className = `message message-${message.role}`;
       if (message.status) row.classList.add(`message-${message.status}`);
       const body = document.createElement('p');
-      body.textContent = message.status === 'pending' ? 'Building your site…' : message.body;
+      // The server writes what a pending message says, since only it knows
+      // whether this turn is a build or an answer. The fallback covers a
+      // request that was already in flight when that started being true.
+      body.textContent = message.body || (message.status === 'pending' ? 'Working…' : '');
       row.append(body);
       if (message.role === 'assistant' && message.versionId) {
         const view = document.createElement('button');
