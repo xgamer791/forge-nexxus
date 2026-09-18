@@ -183,3 +183,7 @@ html[data-theme=dark] .sheet.connections{background:#1c1c1e}
 .connections .sheet-back{background:var(--card)}
 .picker-list:empty{display:none}
 .picker-empty{margin:0;padding:26px 18px 12px;text-align:center;color:var(--subdued);font-size:15px;line-height:20px}
+.picker-actions{margin-top:14px}
+.picker-form{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+.picker-form .search input{color:var(--text)}
+.picker-cancel{height:40px;width:100%;display:flex;align-items:center;justify-content:center;color:var(--subdued);font-size:17px}

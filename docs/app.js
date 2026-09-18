@@ -733,8 +733,44 @@ if (connectionsSheet) {
       render();
     });
   });
-  // Every sheet opens on a clean search, the same way it opens scrolled to top.
-  function clearFilters() {
+  function showAddForm(kind, show) {
+    const form = document.querySelector(`[data-form="${kind}"]`);
+    const trigger = document.querySelector(`[data-add="${kind}"]`);
+    if (!form || !trigger) return;
+    form.hidden = !show;
+    trigger.closest('.picker-actions').hidden = show;
+    trigger.setAttribute('aria-expanded', String(show));
+    if (show) form.querySelector('input')?.focus({preventScroll:true});
+    else form.reset();
+  }
+  document.querySelectorAll('[data-add]').forEach(trigger => {
+    trigger.addEventListener('click', () => showAddForm(trigger.dataset.add, true));
+  });
+  document.querySelectorAll('[data-cancel]').forEach(button => {
+    button.addEventListener('click', () => showAddForm(button.dataset.cancel, false));
+  });
+  document.querySelectorAll('[data-form]').forEach(form => {
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const kind = form.dataset.form;
+      const name = form.elements.name.value.trim();
+      const detail = form.elements.detail.value.trim();
+      const submit = form.querySelector('[type="submit"]');
+      if (!name || !detail || submit.disabled) return;
+      submit.disabled = true;
+      try {
+        await forge.connections.add(kind, name, detail);
+        showAddForm(kind, false);
+      } catch (error) {
+        reportError(error);
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  });
+  // Every sheet opens on a clean search and a collapsed form, the same way it
+  // opens scrolled to top.
+  function resetSheets() {
     let changed = false;
     filterInputs.forEach(input => {
       if (input.value === '') return;
@@ -742,11 +778,12 @@ if (connectionsSheet) {
       filters[input.dataset.filter] = '';
       changed = true;
     });
+    document.querySelectorAll('[data-add]').forEach(trigger => showAddForm(trigger.dataset.add, false));
     if (changed) render();
   }
   document.querySelectorAll('[data-open],[data-sheet-back],.dismiss')
-    .forEach(button => button.addEventListener('click', clearFilters));
-  backdrop.addEventListener('click', clearFilters);
+    .forEach(button => button.addEventListener('click', resetSheets));
+  backdrop.addEventListener('click', resetSheets);
   render();
   forge?.connections?.subscribe(list => {
     connections = Array.isArray(list) ? list : [];
