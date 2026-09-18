@@ -49,6 +49,7 @@ Set with `npx convex env set NAME value` against the target deployment.
 | Variable | Purpose |
 |---|---|
 | `SITE_URL` | Where sign-in links and OAuth callbacks return to, e.g. `https://xgamer791.github.io/forge-nexxus` |
+| `WEB_URL` | The website client's origin, the other place a sign-in may finish (default `https://forgenexxus.com`). A client names itself with `<meta name="forge-redirect">`; `resolveRedirect` in `convex/auth.ts` refuses every other origin. |
 | `JWT_PRIVATE_KEY`, `JWKS` | Session token signing keys (RS256 pair) |
 | `AUTH_RESEND_KEY` | Resend API key for magic-link email; `AUTH_EMAIL_FROM` overrides the sender once a domain is verified |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | Google OAuth client. Authorized redirect URI: `https://<deployment>.convex.site/api/auth/callback/google` |

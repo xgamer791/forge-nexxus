@@ -9,6 +9,40 @@ import type { Id } from "./_generated/dataModel";
 import { action, internalMutation, type MutationCtx } from "./_generated/server";
 import { settingsFor } from "./settings";
 
+// Forge Nexxus is one product with two clients on one account: the mobile app
+// at SITE_URL and the website at WEB_URL. A sign-in started on either has to
+// finish on that same client, so both origins may be named as `redirectTo`.
+// Nothing else may be: an absolute URL that is not one of ours would carry
+// the sign-in code to someone else's page.
+const WEB_URL_DEFAULT = "https://forgenexxus.com";
+
+function trimSlash(url: string) {
+  return url.replace(/\/+$/, "");
+}
+
+export function redirectBases(): string[] {
+  const site = process.env.SITE_URL;
+  if (!site) throw new Error("SITE_URL is not set");
+  const web = process.env.WEB_URL ?? WEB_URL_DEFAULT;
+  return [...new Set([trimSlash(site), trimSlash(web)])];
+}
+
+// Convex Auth's own rule, extended to every client origin: a relative path or
+// query string lands on SITE_URL, and an absolute URL is accepted only when it
+// is one of the bases or sits beneath one (a prefix match alone would let
+// `https://forgenexxus.com.example` through).
+export function resolveRedirect(redirectTo: string): string {
+  const bases = redirectBases();
+  if (redirectTo.startsWith("/") || redirectTo.startsWith("?")) return `${bases[0]}${redirectTo}`;
+  for (const base of bases) {
+    if (redirectTo === base) return redirectTo;
+    if (redirectTo.startsWith(base) && ["/", "?", "#"].includes(redirectTo[base.length])) {
+      return redirectTo;
+    }
+  }
+  throw new Error(`Invalid redirectTo ${redirectTo}: not on ${bases.join(" or ")}`);
+}
+
 const convex = convexAuth({
   providers: [
     Anonymous,
@@ -21,6 +55,9 @@ const convex = convexAuth({
     Google({ authorization: { params: { prompt: "select_account" } } }),
     Apple,
   ],
+  callbacks: {
+    redirect: async ({ redirectTo }) => resolveRedirect(redirectTo),
+  },
 });
 
 export const { auth, signOut, store, isAuthenticated } = convex;
