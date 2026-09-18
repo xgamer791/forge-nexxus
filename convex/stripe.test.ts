@@ -27,6 +27,7 @@ async function createUser(
 
 const free = planFor("free");
 const starter = planFor("starter");
+const premium = planFor("premium");
 const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits;
 const SECRET = "whsec_test_secret";
 const ENV = {
@@ -220,7 +221,9 @@ describe("webhook", () => {
       data: { object: { mode: "payment", customer: "cus_9", metadata: { userId: member.userId, pack: "topup-100" } } },
     });
     expect(await pack.json()).toEqual({ handled: true, action: "topup", credits: 100 });
-    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING + 100);
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
+      OPENING + premium.monthlyCredits! + 100,
+    );
     const bogus = await signed(t, {
       id: "evt_bogus",
       type: "checkout.session.completed",
@@ -239,7 +242,9 @@ describe("webhook", () => {
       data: { object: { mode: "subscription", metadata: { userId: member.userId, plan: "free" } } },
     });
     expect(await badPlan.json()).toEqual({ handled: false, reason: "unknown plan" });
-    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING + 100);
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
+      OPENING + premium.monthlyCredits! + 100,
+    );
   });
 
   test("subscription updates sync cancellation and the period; a deletion ends the plan", async () => {

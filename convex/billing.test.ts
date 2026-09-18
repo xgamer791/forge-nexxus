@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import { addMonth, projected } from "./billing";
-import { REQUEST_COSTS, planFor } from "./plans";
+import { PLANS, REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -26,6 +26,7 @@ async function createUser(
 
 const free = planFor("free");
 const starter = planFor("starter");
+const premium = planFor("premium");
 // What a brand-new member holds: the free period's allowance plus the welcome grant.
 const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits;
 const DAY = 24 * 3600 * 1000;
@@ -90,7 +91,7 @@ describe("billing", () => {
     expect(catalog.plans.map((plan) => plan.key)).toEqual(["free", "starter", "premium"]);
     expect(catalog.plans.map((plan) => plan.monthlyPriceCents)).toEqual([0, 3990, 6990]);
     expect(catalog.plans.map((plan) => plan.yearlyPriceCents)).toEqual([0, 28680, 50280]);
-    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([0, 600, null]);
+    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([0, 600, 2000]);
     expect(catalog.plans[0].signupCredits).toBe(30);
     expect(catalog.topUps.length).toBeGreaterThan(0);
     expect(catalog.requestCosts).toEqual(REQUEST_COSTS);
@@ -200,14 +201,22 @@ describe("billing", () => {
     expect(await t.run((ctx) => ctx.db.query("creditHolds").collect())).toEqual([]);
   });
 
-  test("an unlimited plan never runs out, and its spends are still written down", async () => {
+  test("no plan hands out unlimited credits", () => {
+    // An unlimited plan is unlimited provider spend against a fixed price. The
+    // machinery for one is still here, but nothing sold may use it.
+    for (const plan of PLANS) expect(plan.monthlyCredits).not.toBeNull();
+  });
+
+  test("the top plan spends its allowance down, and every spend is written down", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    const opening = OPENING + premium.monthlyCredits!;
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       plan: { key: "premium" },
-      unlimited: true,
-      available: null,
+      unlimited: false,
+      credits: opening,
+      available: opening,
     });
     for (let i = 0; i < 5; i += 1) {
       const { holdId } = await t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "video" });
@@ -215,10 +224,26 @@ describe("billing", () => {
     }
     const summary = (await member.as.query(api.billing.summary, {}))!;
     expect(summary.reserved).toBe(0);
-    expect(summary.credits).toBe(OPENING);
+    expect(summary.credits).toBe(opening - 5 * REQUEST_COSTS.video);
     const spends = (await member.as.query(api.billing.history, {})).filter((entry) => entry.kind === "spend");
     expect(spends).toHaveLength(5);
     expect(spends[0]).toMatchObject({ amount: -REQUEST_COSTS.video, note: "Video" });
+  });
+
+  test("the top plan runs out like any other, so a period cannot cost without end", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.run(async (ctx) => {
+      const sub = await ctx.db
+        .query("subscriptions")
+        .withIndex("by_user", (q) => q.eq("userId", member.userId))
+        .unique();
+      await ctx.db.patch(sub!._id, { credits: REQUEST_COSTS.generate - 1 });
+    });
+    await expect(
+      t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "generate" }),
+    ).rejects.toThrow("Out of credits");
   });
 
   test("holds stop at the balance, so a burst of requests cannot overspend", async () => {
@@ -318,12 +343,14 @@ describe("billing", () => {
       credits: 7,
       note: "Sorry about the outage",
     });
+    const opening = OPENING + premium.monthlyCredits!;
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: OPENING + 107,
-      granted: OPENING + 107,
+      credits: opening + 107,
+      granted: opening + 107,
     });
     const history = await member.as.query(api.billing.history, {});
-    expect(history.map((entry) => entry.kind).sort()).toEqual(["grant", "topup", "topup"]);
+    // Two grants: the welcome credits, then the plan's own allowance.
+    expect(history.map((entry) => entry.kind).sort()).toEqual(["grant", "grant", "topup", "topup"]);
     expect(history.find((entry) => entry.amount === 7)?.note).toBe("Sorry about the outage");
     expect(history.find((entry) => entry.amount === 100)?.note).toBe("100 credit top-up");
     await expect(

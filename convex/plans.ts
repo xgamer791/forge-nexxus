@@ -16,8 +16,9 @@ export type Plan = {
   // Cents per month, and cents per year when billed yearly; zero is free.
   monthlyPriceCents: number;
   yearlyPriceCents: number;
-  // Credits granted each period; null means the plan is unlimited and no
-  // request is ever held against a balance.
+  // Credits granted each period. `null` means the plan is unlimited and no
+  // request is ever held against a balance -- no plan in the catalog is, and
+  // one should not be without a cap on what a period can cost to serve.
   monthlyCredits: number | null;
   // A one-time grant when the account first gets a plan.
   signupCredits: number;
@@ -76,10 +77,13 @@ export const PLANS: readonly Plan[] = [
   {
     key: "premium",
     name: "Premium",
-    tagline: "No limits, your own domain, and analytics.",
+    tagline: "Your own domain, unlimited sites, and analytics.",
     monthlyPriceCents: 6990,
     yearlyPriceCents: 50280,
-    monthlyCredits: null,
+    // An allowance rather than `null`: unlimited credits mean unlimited
+    // provider spend against a fixed monthly price, which the deployment pays
+    // for. Sites and visitors stay uncapped; the model calls do not.
+    monthlyCredits: 2000,
     signupCredits: 0,
     maxSites: null,
     visitorsPerMonth: null,

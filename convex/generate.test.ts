@@ -33,6 +33,7 @@ async function createBuilder(t: ReturnType<typeof fresh>, email: string) {
 
 const free = planFor("free");
 const starter = planFor("starter");
+const premium = planFor("premium");
 // A member on Starter, holding the free welcome grant plus the month's allowance.
 const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits + starter.monthlyCredits!;
 // What a free member holds: the welcome grant, which does not cover a build.
@@ -375,7 +376,7 @@ describe("generate.run", () => {
     expect(await member.as.query(api.messages.list, { conversationId })).toEqual([]);
   });
 
-  test("an unlimited plan builds without a balance", async () => {
+  test("the top plan builds against its allowance, not without one", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
@@ -383,7 +384,11 @@ describe("generate.run", () => {
     stubProvider(() => reply("Built it."));
     await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
     const summary = (await member.as.query(api.billing.summary, {}))!;
-    expect(summary).toMatchObject({ unlimited: true, reserved: 0 });
+    expect(summary).toMatchObject({
+      unlimited: false,
+      reserved: 0,
+      credits: FREE_OPENING + premium.monthlyCredits! - REQUEST_COSTS.generate,
+    });
     const history = await member.as.query(api.billing.history, {});
     expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.generate });
   });
