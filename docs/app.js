@@ -672,8 +672,11 @@ if (connectionsSheet) {
   const filterInputs = [...document.querySelectorAll('[data-filter]')];
   const EMPTY_COPY = {
     cloud: 'No servers added yet.',
+    apps: 'No applications found on this server.',
     repo: 'No repositories connected yet.',
   };
+  const appsTitle = document.querySelector('[data-apps-title]');
+  let openServer = null;
   const filters = {};
   const connectButton = document.querySelector('.composer-area .connect');
   const reasonOf = error => error?.data ?? error?.message ?? 'Something went wrong';
@@ -697,12 +700,11 @@ if (connectionsSheet) {
       usedAt: workspace.lastConnectedAt ?? workspace.createdAt ?? 0,
     };
   }
-  // Paths on a Cloudways box all start with the master user's home, which is
-  // noise in a narrow row.
-  function shortPath(app) {
-    const server = servers.find(item => item._id === app.workspaceId);
-    const home = server ? `/home/${server.detail.split('@')[0]}/` : null;
-    return home && app.path.startsWith(home) ? `~/${app.path.slice(home.length)}` : app.path;
+  // Every app path starts with the master user's home, which is noise in a
+  // narrow row. The home directory is not named after the SSH user on
+  // Cloudways, so the prefix is matched by shape.
+  function shortPath(path) {
+    return path.replace(/^\/home\/[^/]+\//, '~/');
   }
   function asAppRow(app) {
     return {
@@ -711,7 +713,7 @@ if (connectionsSheet) {
       app: true,
       workspaceId: app.workspaceId,
       name: app.name,
-      detail: shortPath(app),
+      detail: shortPath(app.path),
       connected: app.active,
       usedAt: app.usedAt ?? 0,
       used: Boolean(app.usedAt),
@@ -724,21 +726,22 @@ if (connectionsSheet) {
       ...apps.map(asAppRow),
     ];
   }
-  // Cloud reads server, then that server's applications beneath it, so the
-  // list mirrors where the apps actually live.
-  function cloudOrder(search) {
-    const rows = [];
-    for (const server of [...servers].sort((a, b) => a.name.localeCompare(b.name))) {
-      const beneath = apps
-        .filter(app => app.workspaceId === server._id)
-        .map(asAppRow)
-        .sort((a, b) => a.name.localeCompare(b.name));
-      const serverMatches = matches(server, search);
-      const hits = beneath.filter(app => matches(app, search));
-      if (serverMatches || hits.length > 0) rows.push(server);
-      rows.push(...(serverMatches ? beneath : hits));
-    }
-    return rows;
+  function appsOf(workspaceId) {
+    return apps
+      .filter(app => app.workspaceId === workspaceId)
+      .map(asAppRow)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+  // Cloud is a list of servers. Opening one shows what is on it, so a box with
+  // fifty applications does not turn the sheet into a wall.
+  function openApps(server) {
+    openServer = server._id;
+    if (appsTitle) appsTitle.textContent = server.name;
+    const search = document.querySelector('[data-filter="apps"]');
+    if (search) search.value = '';
+    filters.apps = '';
+    render();
+    openMenu('apps-picker');
   }
 
   function say(kind, message, bad) {
@@ -813,6 +816,7 @@ if (connectionsSheet) {
       if (connecting) return;
       const connect = !connection.connected;
       const fromPicker = Boolean(row.closest('.picker'));
+      const fromCloud = Boolean(row.closest('.cloud-picker'));
       clearError(connection.kind);
       if (connection.app) {
         const change = connect
@@ -823,7 +827,13 @@ if (connectionsSheet) {
         return;
       }
       if (connection.remote) {
-        void toggleServer(connection, connect, fromPicker);
+        // In Cloud a connected server is a way in to its applications; in
+        // Recents it is still the thing you connect and disconnect.
+        if (connection.connected && fromCloud) {
+          openApps(connection);
+          return;
+        }
+        void toggleServer(connection, connect, fromPicker, fromCloud);
         return;
       }
       forge.connections.setConnected(connection._id, connect)
@@ -898,7 +908,7 @@ if (connectionsSheet) {
   }
   // Disconnecting is local state; connecting opens a session against the real
   // server, which takes long enough to need a visible pending state.
-  async function toggleServer(server, connect, fromPicker) {
+  async function toggleServer(server, connect, fromPicker, fromCloud) {
     if (!connect) {
       forge.workspaces.disconnect(server._id)
         .catch(error => fail('cloud', 'Could not disconnect that server.', error));
@@ -914,7 +924,9 @@ if (connectionsSheet) {
         // A fresh session is the moment to re-read what is on the server.
         scannedServers.delete(server._id);
         scanServers();
-        if (fromPicker) openMenu('connections');
+        // Connecting from Cloud carries straight on to what is on the server.
+        if (fromCloud) openApps(server);
+        else if (fromPicker) openMenu('connections');
       }
     } catch (error) {
       fail('cloud', reasonOf(error), error);
@@ -937,15 +949,26 @@ if (connectionsSheet) {
     pickerLists.forEach(list => {
       const kind = list.dataset.list;
       const search = filters[kind] ?? '';
-      const ofKind = rows.filter(connection => connection.kind === kind);
-      const shown = kind === 'cloud'
-        ? cloudOrder(search)
-        : ofKind
-            .filter(connection => matches(connection, search))
-            .sort((a, b) => a.name.localeCompare(b.name));
+      const ofKind = kind === 'apps'
+        ? (openServer ? appsOf(openServer) : [])
+        : kind === 'cloud'
+          ? [...servers]
+          : rows.filter(connection => connection.kind === kind);
+      const shown = ofKind
+        .filter(connection => matches(connection, search))
+        .sort((a, b) => a.name.localeCompare(b.name));
       // Servers are managed in Settings, so only repo rows carry the options menu.
       list.replaceChildren(...shown.map(connection => {
         const row = workspaceRow(connection, kind === 'cloud');
+        // A connected server leads somewhere, so it says so.
+        if (kind === 'cloud' && connection.connected) {
+          const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          chevron.setAttribute('class', 'chevron');
+          const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+          use.setAttribute('href', '#chevron');
+          chevron.append(use);
+          row.append(chevron);
+        }
         return connection.remote || connection.app ? row : manageableRow(connection, row);
       }));
       const empty = document.querySelector(`[data-empty="${kind}"]`);
@@ -964,7 +987,11 @@ if (connectionsSheet) {
       );
     }
     document.querySelectorAll('[data-count]').forEach(count => {
-      const total = rows.filter(connection => connection.kind === count.dataset.count).length;
+      const total = count.dataset.count === 'cloud'
+        ? servers.length
+        : rows.filter(
+            connection => connection.kind === count.dataset.count && !connection.app
+          ).length;
       count.textContent = total ? String(total) : '';
       count.hidden = total === 0;
     });
