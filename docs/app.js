@@ -655,9 +655,15 @@ if (forge?.conversations && conversationList && thread) {
   });
 }
 
-// The Connect sheet and its Cloud and Repo pickers all render from the
-// workspaces saved against the account in Convex. Nothing is seeded, so a user
-// who has added nothing sees empty lists rather than examples.
+// Set by the Remote Workspaces block below. Adding a server needs a host, a
+// username and a credential, so the Connect sheet hands that off rather than
+// keeping a second, weaker form.
+let startWorkspaceWizard = null;
+
+// The Connect sheet reads from two places, because a repository and a server
+// are not the same thing: repos come from `connections`, and Cloud is the
+// remote workspaces saved in Settings, so connecting one shows up in both.
+// Nothing is seeded, so a user who has added nothing sees empty lists.
 const connectionsSheet = document.querySelector('.connections');
 if (connectionsSheet) {
   const recentsSection = connectionsSheet.querySelector('.recents-section');
@@ -665,15 +671,35 @@ if (connectionsSheet) {
   const pickerLists = [...document.querySelectorAll('[data-list]')];
   const filterInputs = [...document.querySelectorAll('[data-filter]')];
   const EMPTY_COPY = {
-    cloud: 'No cloud workspaces connected yet.',
+    cloud: 'No servers added yet.',
     repo: 'No repositories connected yet.',
   };
   const filters = {};
   const connectButton = document.querySelector('.composer-area .connect');
+  const reasonOf = error => error?.data ?? error?.message ?? 'Something went wrong';
   let connections = [];
+  let servers = [];
+  let connecting = null;
+
+  // A workspace is drawn with the same row as a repo, so it is reshaped rather
+  // than given a second renderer.
+  function asRow(workspace) {
+    return {
+      _id: workspace._id,
+      kind: 'cloud',
+      remote: true,
+      name: workspace.name,
+      detail: `${workspace.username}@${workspace.host}`,
+      connected: workspace.connected,
+      usedAt: workspace.lastConnectedAt ?? workspace.createdAt ?? 0,
+    };
+  }
+  function everything() {
+    return [...connections.filter(connection => connection.kind === 'repo'), ...servers];
+  }
 
   function fail(kind, message, error) {
-    reportError(error);
+    if (error) reportError(error);
     const slot = document.querySelector(`[data-error="${kind}"]`);
     if (!slot) return;
     slot.textContent = message;
@@ -710,24 +736,32 @@ if (connectionsSheet) {
     detail.textContent = connection.detail;
     copy.append(name, detail);
     row.append(icon, copy);
-    if (showStatus || connection.connected) {
+    const busy = connecting === connection._id;
+    if (showStatus || connection.connected || busy) {
       const status = document.createElement('span');
       status.className = connection.connected ? 'status active' : 'status';
-      status.textContent = connection.connected ? 'Connected' : 'Connect';
+      status.textContent = busy ? 'Connecting…' : connection.connected ? 'Connected' : 'Connect';
       row.append(status);
     }
+    if (busy) row.setAttribute('aria-disabled', 'true');
     row.setAttribute(
       'aria-label',
       `${connection.connected ? 'Disconnect from' : 'Connect to'} ${connection.name}`
     );
     row.addEventListener('click', () => {
+      if (connecting) return;
       const connect = !connection.connected;
+      const fromPicker = Boolean(row.closest('.picker'));
       clearError(connection.kind);
+      if (connection.remote) {
+        void toggleServer(connection, connect, fromPicker);
+        return;
+      }
       forge.connections.setConnected(connection._id, connect)
         .catch(error => fail(connection.kind, 'Could not change that connection.', error));
       // Picking a workspace in a picker is the end of that errand, so the sheet
       // returns to Connect where the new state shows up under Recents.
-      if (connect && row.closest('.picker')) openMenu('connections');
+      if (connect && fromPicker) openMenu('connections');
     });
     return row;
   }
@@ -793,9 +827,31 @@ if (connectionsSheet) {
     wrapper.append(row, options, menu);
     return wrapper;
   }
+  // Disconnecting is local state; connecting opens a session against the real
+  // server, which takes long enough to need a visible pending state.
+  async function toggleServer(server, connect, fromPicker) {
+    if (!connect) {
+      forge.workspaces.disconnect(server._id)
+        .catch(error => fail('cloud', 'Could not disconnect that server.', error));
+      return;
+    }
+    connecting = server._id;
+    render();
+    try {
+      const outcome = await forge.workspaces.connect(server._id);
+      if (!outcome?.ok) fail('cloud', outcome?.message ?? 'Could not reach that server.');
+      else if (fromPicker) openMenu('connections');
+    } catch (error) {
+      fail('cloud', reasonOf(error), error);
+    } finally {
+      connecting = null;
+      render();
+    }
+  }
   function render() {
+    const rows = everything();
     const term = filters.recents ?? '';
-    const recent = [...connections]
+    const recent = [...rows]
       .sort((a, b) => b.usedAt - a.usedAt)
       .filter(connection => matches(connection, term));
     recents.replaceChildren(...recent.map(connection => workspaceRow(connection, true)));
@@ -803,21 +859,23 @@ if (connectionsSheet) {
     pickerLists.forEach(list => {
       const kind = list.dataset.list;
       const search = filters[kind] ?? '';
-      const shown = connections.filter(
-        connection => connection.kind === kind && matches(connection, search)
-      );
-      list.replaceChildren(...shown.map(
-        connection => manageableRow(connection, workspaceRow(connection, kind === 'cloud'))
-      ));
+      const ofKind = rows.filter(connection => connection.kind === kind);
+      const shown = ofKind
+        .filter(connection => matches(connection, search))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      // Servers are managed in Settings, so only repo rows carry the options menu.
+      list.replaceChildren(...shown.map(connection => {
+        const row = workspaceRow(connection, kind === 'cloud');
+        return connection.remote ? row : manageableRow(connection, row);
+      }));
       const empty = document.querySelector(`[data-empty="${kind}"]`);
       if (!empty) return;
-      const noneSaved = !connections.some(connection => connection.kind === kind);
-      empty.textContent = noneSaved ? EMPTY_COPY[kind] : 'No workspaces match that search.';
+      empty.textContent = ofKind.length === 0 ? EMPTY_COPY[kind] : 'No workspaces match that search.';
       empty.hidden = shown.length > 0;
     });
     // The composer's pill reports the session's state at a glance: Connected
     // once any workspace is active, Connect while none is.
-    const active = connections.find(connection => connection.connected);
+    const active = rows.find(connection => connection.connected);
     if (connectButton) {
       connectButton.textContent = active ? 'Connected' : 'Connect';
       connectButton.setAttribute(
@@ -826,7 +884,7 @@ if (connectionsSheet) {
       );
     }
     document.querySelectorAll('[data-count]').forEach(count => {
-      const total = connections.filter(connection => connection.kind === count.dataset.count).length;
+      const total = rows.filter(connection => connection.kind === count.dataset.count).length;
       count.textContent = total ? String(total) : '';
       count.hidden = total === 0;
     });
@@ -890,12 +948,22 @@ if (connectionsSheet) {
     });
     if (changed) render();
   }
+  document.querySelectorAll('[data-wizard]').forEach(button => {
+    button.addEventListener('click', () => {
+      closeMenu();
+      startWorkspaceWizard?.();
+    });
+  });
   document.querySelectorAll('[data-open],[data-sheet-back],.dismiss')
     .forEach(button => button.addEventListener('click', resetSheets));
   backdrop.addEventListener('click', resetSheets);
   render();
   forge?.connections?.subscribe(list => {
     connections = Array.isArray(list) ? list : [];
+    render();
+  });
+  forge?.workspaces?.subscribe(list => {
+    servers = (Array.isArray(list) ? list : []).map(asRow);
     render();
   });
 }
@@ -1259,6 +1327,7 @@ if (workspacesScreen && wizardScreen) {
     }
   });
 
+  startWorkspaceWizard = openWizard;
   renderWorkspaces();
   forge?.workspaces?.subscribe(list => {
     workspaces = Array.isArray(list) ? list : [];
