@@ -142,16 +142,18 @@
 <section class="overlay domains" data-back=".domains-back" role="dialog" aria-modal="true" aria-labelledby="domains-title" hidden>
 <header class="appearance-header"><button class="appearance-back domains-back" type="button" aria-label="Back to Settings"><svg><use href="#chevron-left"/></svg></button><h2 id="domains-title">Domains</h2></header>
 <div class="appearance-scroll">
+<p class="overlay-note domain-branded" hidden>Every site you publish already answers on <code data-branded-example></code>, on any plan. A custom domain points a name you own at one instead.</p>
 <form class="appearance-stack domain-form" hidden>
 <div class="appearance-row"><select class="text-field" name="siteId" aria-label="Site" required></select></div>
 <div class="appearance-row"><input class="text-field" name="hostname" placeholder="www.example.com" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url" aria-label="Domain" required><button class="chip-button" type="submit">Add</button></div>
 </form>
+<p class="overlay-note domain-dns" hidden>Point it here first, with a CNAME record to <code data-dns-target></code>.</p>
 <p class="overlay-note domain-gate" hidden>Custom domains come with the <span data-domain-plan></span> plan and up. <button class="link-button open-plan-from-domains" type="button">See plans</button></p>
 <p class="overlay-note domain-nosites" hidden>Create a site first, then point a domain at it.</p>
 <h3>Your domains</h3>
 <div class="appearance-stack domain-list" data-domain-list></div>
 <p class="overlay-note" data-domain-empty hidden>No custom domains yet.</p>
-<p class="overlay-note">A domain stays pending until publishing verifies its DNS.</p>
+<p class="overlay-note">A domain stays pending until Forge is first asked for it, which is when your DNS record has taken effect.</p>
 <p class="overlay-error" role="alert" hidden></p>
 </div>
 </section>

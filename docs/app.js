@@ -1115,9 +1115,14 @@ if (forge?.domains && domainsScreen) {
   const empty = domainsScreen.querySelector('[data-domain-empty]');
   const gate = domainsScreen.querySelector('.domain-gate');
   const noSites = domainsScreen.querySelector('.domain-nosites');
+  const branded = domainsScreen.querySelector('.domain-branded');
+  const dns = domainsScreen.querySelector('.domain-dns');
   const error = domainsScreen.querySelector('.overlay-error');
   const STATUS_LABELS = {pending: 'Pending', active: 'Active', failed: 'Failed'};
   let domains = [];
+  // Where this deployment serves sites from. Both addresses are the
+  // deployment's to name, so they stay hidden until it has said what they are.
+  let hosting = null;
   function renderAccess() {
     const allowed = Boolean(summary?.plan.customDomains);
     const cheapest = catalog?.plans.find(plan => plan.customDomains);
@@ -1125,6 +1130,10 @@ if (forge?.domains && domainsScreen) {
     gate.hidden = allowed || !cheapest;
     noSites.hidden = !allowed || sites.length > 0;
     form.hidden = !allowed || sites.length === 0;
+    branded.hidden = !hosting?.sitesDomain;
+    setText('[data-branded-example]', hosting?.sitesDomain ? `your-site.${hosting.sitesDomain}` : '');
+    dns.hidden = form.hidden || !hosting?.dnsTarget;
+    setText('[data-dns-target]', hosting?.dnsTarget ?? '');
     const chosen = select.value;
     select.replaceChildren(...sites.map(site => new Option(site.name, site._id)));
     if (sites.some(site => site._id === chosen)) select.value = chosen;
@@ -1187,6 +1196,7 @@ if (forge?.domains && domainsScreen) {
     domains = Array.isArray(next) ? next : [];
     renderDomains();
   });
+  forge.sites.hosting(next => { hosting = next ?? null; renderAccess(); });
   document.addEventListener('forge:sites', () => { renderAccess(); renderDomains(); });
   document.addEventListener('forge:billing', renderAccess);
   renderAccess();

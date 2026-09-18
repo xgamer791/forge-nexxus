@@ -54,16 +54,24 @@ export default defineSchema({
     versionId: v.optional(v.id("siteVersions")),
   }).index("by_conversation", ["conversationId"]),
   // Custom domains pointed at a site. A domain is `pending` from the moment it
-  // is added until hosting has verified its DNS.
+  // is added until Forge serves a request for it, which is what makes it
+  // `active`: until the owner's DNS points here no request can arrive, so
+  // serving one is how the app learns the record is in place. A hostname
+  // belongs to one site across the whole deployment, so `by_hostname` is unique
+  // by use: it is how an incoming request finds its site, and how a second
+  // claim on the same name is refused.
   domains: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
     hostname: v.string(),
     status: v.union(v.literal("pending"), v.literal("active"), v.literal("failed")),
     createdAt: v.number(),
+    // When Forge first served a request for this hostname.
+    verifiedAt: v.optional(v.number()),
   })
     .index("by_user", ["userId"])
-    .index("by_site", ["siteId"]),
+    .index("by_site", ["siteId"])
+    .index("by_hostname", ["hostname"]),
   // One row per member: the plan they are on and this period's credits.
   // `credits` is what the period has left and `reserved` is held by requests
   // still running. Both go back to the plan's allowance when the period ends;

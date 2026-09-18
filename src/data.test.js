@@ -17,6 +17,7 @@ const api = {
     rename: "sites:rename",
     remove: "sites:remove",
     currentHtml: "sites:currentHtml",
+    hosting: "sites:hosting",
     publish: "sites:publish",
     unpublish: "sites:unpublish",
   },
@@ -312,6 +313,7 @@ describe("data access", () => {
     data.billing.history(callback);
     data.settings.subscribe(callback);
     data.sites.currentHtml("s1", callback);
+    data.sites.hosting(callback);
     await data.account.updateProfile("Sam");
     await data.sites.create();
     await data.sites.create("Bakery");
@@ -339,6 +341,7 @@ describe("data access", () => {
       ["billing:history", {}, callback],
       ["settings:get", {}, callback],
       ["sites:currentHtml", { siteId: "s1" }, callback],
+      ["sites:hosting", {}, callback],
     ]);
     expect(client.mutation.mock.calls).toEqual([
       ["users:updateProfile", { name: "Sam" }],

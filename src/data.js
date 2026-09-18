@@ -267,6 +267,10 @@ export function createForgeData({
         client.action(api.generate.run, { conversationId, prompt }),
       currentHtml: (siteId, callback) =>
         client.onUpdate(api.sites.currentHtml, { siteId }, callback),
+      // Where this deployment serves sites from: the apex branded addresses sit
+      // under, and what a custom domain's DNS points at. Deployment
+      // configuration, so the client never carries an address of its own.
+      hosting: (callback) => client.onUpdate(api.sites.hosting, {}, callback),
       publish: (id) => client.mutation(api.sites.publish, { id }),
       unpublish: (id) => client.mutation(api.sites.unpublish, { id }),
     },

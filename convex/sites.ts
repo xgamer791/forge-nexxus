@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { requireMemberId, requireOwnedSite } from "./access";
 import { currentPlan } from "./billing";
 import { deleteConversation } from "./conversations";
+import { brandedHostFor, deploymentHost, normalizeHostname, sitesDomain, slugFromHost } from "./hosting";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 
@@ -38,9 +39,15 @@ export function cleanSiteName(name: string | undefined) {
   return (trimmed || DEFAULT_NAME).slice(0, NAME_LIMIT);
 }
 
-// Where a published site lives: the deployment's own origin. Null when the
-// deployment has not told us its address, which only happens in tests.
+// Where a published site lives. Its branded address once the deployment has an
+// apex to hand out -- every plan publishes to one -- and the path on the
+// deployment's own origin before that. The path address keeps working either
+// way, so a link given out earlier never dies and a deployment whose DNS is not
+// ready yet still has somewhere to serve from. Null when the deployment has
+// told us neither, which only happens in tests.
 export function publishedUrlFor(slug: string) {
+  const branded = brandedHostFor(slug);
+  if (branded) return `https://${branded}`;
   const origin = process.env.CONVEX_SITE_URL?.replace(/\/+$/, "");
   return origin ? `${origin}/sites/${slug}` : null;
 }
@@ -168,7 +175,15 @@ export const unpublish = mutation({
   },
 });
 
-// What the public route serves. Null for a draft, an unknown slug, or a site
+// The published build as a visitor gets it. Null for a draft, or a site whose
+// published build has gone.
+async function servedHtml(ctx: QueryCtx, site: Doc<"sites">) {
+  if (site.status !== "published" || !site.publishedVersionId) return null;
+  const version = await ctx.db.get(site.publishedVersionId);
+  return version ? await renderedHtml(ctx, site, version.html) : null;
+}
+
+// What the path address serves. Null for a draft, an unknown slug, or a site
 // whose published build has gone.
 export const publishedHtml = internalQuery({
   args: { slug: v.string() },
@@ -177,10 +192,56 @@ export const publishedHtml = internalQuery({
       .query("sites")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
       .first();
-    if (!site || site.status !== "published" || !site.publishedVersionId) return null;
-    const version = await ctx.db.get(site.publishedVersionId);
-    return version ? await renderedHtml(ctx, site, version.html) : null;
+    return site ? await servedHtml(ctx, site) : null;
   },
+});
+
+// What a request's `Host` header asks for. A branded `<slug>.<apex>` address
+// resolves through the slug. Any other hostname has to be one a member pointed
+// at a site, and is served only while their plan still includes custom domains:
+// a domain outlives a downgrade in the list, so re-upgrading brings it back, but
+// it stops answering in the meantime. `domainId` comes back only for a custom
+// domain that has never been served, which is the one the route has to record;
+// an address already answering needs no write on every page view.
+export const hostedHtml = internalQuery({
+  args: { host: v.string() },
+  handler: async (
+    ctx,
+    { host },
+  ): Promise<{ html: string; domainId: Id<"domains"> | null } | null> => {
+    const hostname = normalizeHostname(host);
+    if (!hostname) return null;
+    const slug = slugFromHost(hostname);
+    if (slug !== null) {
+      const site = await ctx.db
+        .query("sites")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first();
+      const html = site ? await servedHtml(ctx, site) : null;
+      return html ? { html, domainId: null } : null;
+    }
+    const domain = await ctx.db
+      .query("domains")
+      .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
+      .first();
+    if (!domain || domain.status === "failed") return null;
+    const plan = await currentPlan(ctx, domain.userId);
+    if (!plan.customDomains) return null;
+    const site = await ctx.db.get(domain.siteId);
+    if (!site || site.userId !== domain.userId) return null;
+    const html = await servedHtml(ctx, site);
+    if (!html) return null;
+    return { html, domainId: domain.status === "active" ? null : domain._id };
+  },
+});
+
+// Where this deployment serves sites from: the apex that branded addresses sit
+// under, and the host a custom domain's DNS record points at. Deployment
+// configuration rather than user data, so the client reads it instead of
+// carrying its own copy of an address that differs between deployments.
+export const hosting = query({
+  args: {},
+  handler: async () => ({ sitesDomain: sitesDomain(), dnsTarget: deploymentHost() }),
 });
 
 export function slugify(name: string) {

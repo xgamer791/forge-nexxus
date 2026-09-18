@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
-import { normalizeHostname } from "./domains";
+import { normalizeHostname } from "./hosting";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");

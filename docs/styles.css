@@ -135,6 +135,7 @@ html[data-theme=light] .appearance-card,html[data-theme=light] .appearance-stack
 
 /* Shared pieces of the settings screens. */
 .overlay-note{margin:10px 12px 0;font-size:15px;line-height:20px;color:var(--subdued)}
+.overlay-note code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:var(--text);overflow-wrap:anywhere}
 .overlay-error{margin:14px 12px 0;font-size:15px;line-height:20px;color:var(--ok)}
 .overlay-error.is-bad{color:var(--danger)}
 .row-button{width:100%;min-height:52px;padding:0 16px;display:flex;align-items:center;font-size:17px;line-height:22px;color:var(--text)}
