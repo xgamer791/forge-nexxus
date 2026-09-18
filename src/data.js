@@ -19,6 +19,13 @@ export function createForgeData({
   authCode = null,
   wait = delay,
   navigate = () => {},
+  // Convex's upload URL takes the bytes with a POST; tests hand in their own.
+  upload = (url, file) =>
+    fetch(url, {
+      method: "POST",
+      headers: { "content-type": file.type || "application/octet-stream" },
+      body: file,
+    }),
 }) {
   let token = read(TOKEN_KEY);
   let refreshToken = read(REFRESH_KEY);
@@ -262,9 +269,14 @@ export function createForgeData({
       rename: (id, name) => client.mutation(api.sites.rename, { id, name }),
       remove: (id) => client.mutation(api.sites.remove, { id }),
       // One prompt, one build: the action records the prompt, holds the
-      // credits, calls the model, and answers in the thread.
-      generate: (conversationId, prompt) =>
-        client.action(api.generate.run, { conversationId, prompt }),
+      // credits, calls the model, and answers in the thread. Whatever the
+      // composer had attached goes with it.
+      generate: (conversationId, prompt, attachmentIds = []) =>
+        client.action(api.generate.run, {
+          conversationId,
+          prompt,
+          ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+        }),
       currentHtml: (siteId, callback) =>
         client.onUpdate(api.sites.currentHtml, { siteId }, callback),
       publish: (id) => client.mutation(api.sites.publish, { id }),
@@ -275,6 +287,35 @@ export function createForgeData({
         client.onUpdate(api.messages.list, { conversationId }, callback),
       send: (conversationId, body) =>
         client.mutation(api.messages.send, { conversationId, body }),
+    },
+    // Photos, camera shots and files the user gives Forge to build with. The
+    // bytes go straight from the browser to Convex storage; only the metadata
+    // comes back through here, and the server is what decides whether a file
+    // is one Forge can use.
+    attachments: {
+      subscribe: (conversationId, callback) =>
+        client.onUpdate(api.attachments.list, { conversationId }, callback),
+      upload: async (conversationId, file) => {
+        // The server judges the file before any bytes move, so a refusal is
+        // immediate and nothing is left in storage.
+        const url = await client.mutation(api.attachments.uploadUrl, {
+          conversationId,
+          name: file.name || "file",
+          mimeType: file.type || "",
+          size: file.size,
+        });
+        const response = await upload(url, file);
+        if (!response.ok) throw new Error(`Could not upload "${file.name}"`);
+        const { storageId } = await response.json();
+        return await client.mutation(api.attachments.attach, {
+          conversationId,
+          storageId,
+          name: file.name || "file",
+          mimeType: file.type || "",
+          size: file.size,
+        });
+      },
+      remove: (id) => client.mutation(api.attachments.remove, { id }),
     },
     domains: {
       subscribe: (callback) => client.onUpdate(api.domains.list, {}, callback),

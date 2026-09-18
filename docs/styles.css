@@ -215,6 +215,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 /* The active build thread. */
 .thread{display:none;position:absolute;top:max(64px,calc(env(safe-area-inset-top,0px) + 56px));bottom:172px;left:16px;right:16px;overflow:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .app.has-site-bar .thread{bottom:214px}
+.app.has-attachments .thread{bottom:264px}
+.app.has-attachments.has-site-bar .thread{bottom:306px}
 .message-pending p{color:var(--subdued);font-style:italic}
 .message-pending p::after{content:"";display:inline-block;width:6px;height:6px;margin-left:8px;border-radius:50%;background:var(--subdued);vertical-align:middle;animation:forge-pulse .9s infinite alternate}
 @keyframes forge-pulse{from{opacity:.2}to{opacity:1}}
@@ -246,6 +248,24 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .message-user{justify-content:flex-end}
 .message p{margin:0;max-width:85%;padding:10px 14px;border-radius:18px;background:var(--surface);border:1px solid var(--border);font-size:17px;line-height:22px;white-space:pre-wrap;overflow-wrap:anywhere}
 .message-assistant p,.message-system p{background:none;border:0;padding-left:0;max-width:100%}
+
+/* Attachments: what is going with the next prompt, above the composer. */
+.attachment-tray{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 4px 8px;padding:2px 4px}
+.attachment-tray::-webkit-scrollbar{display:none}
+.attachment{position:relative;flex-shrink:0;width:64px}
+.attachment-thumb{display:block;width:64px;height:64px;border:1px solid var(--border);border-radius:12px;background:var(--surface) center/cover no-repeat;display:grid;place-items:center;color:var(--subdued)}
+.attachment-thumb svg{width:22px;height:22px}
+.attachment-name{display:block;margin-top:4px;font-size:11px;line-height:14px;color:var(--subdued);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachment-drop{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:var(--bg);border:1px solid var(--border);display:grid;place-items:center;color:var(--text)}
+.attachment-drop svg{width:11px;height:11px;stroke-width:2.4}
+.attachment.is-busy .attachment-thumb{opacity:.5}
+.attachment.is-bad .attachment-thumb{border-color:var(--danger);color:var(--danger)}
+.sheet-note{margin:12px 8px 0;font-size:13px;line-height:18px;color:var(--subdued)}
+.attach-error{margin:12px 8px 0;font-size:14px;line-height:19px;color:var(--danger)}
+.message-files{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0}
+.message-file{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 9px;border:1px solid var(--border);border-radius:12px;font-size:12.5px;line-height:18px;color:var(--subdued)}
+.message-file svg{width:12px;height:12px}
+.message-file img{width:18px;height:18px;border-radius:4px;object-fit:cover}
 
 /* Account sheet: guest sign-in options or the signed-in identity. */
 .account{padding-bottom:max(24px,var(--bottom))}

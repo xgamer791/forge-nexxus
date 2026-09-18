@@ -23,6 +23,12 @@ const api = {
   generate: { run: "generate:run" },
   messages: { list: "messages:list", send: "messages:send" },
   domains: { list: "domains:list", add: "domains:add", remove: "domains:remove" },
+  attachments: {
+    list: "attachments:list",
+    uploadUrl: "attachments:uploadUrl",
+    attach: "attachments:attach",
+    remove: "attachments:remove",
+  },
   billing: {
     summary: "billing:summary",
     catalog: "billing:catalog",
@@ -294,6 +300,91 @@ describe("sign-in providers", () => {
     });
     await data.ready;
     await expect(data.auth.signInWith("google")).rejects.toThrow("did not start");
+  });
+});
+
+describe("attachments", () => {
+  test("a file is judged, uploaded, then recorded against the thread", async () => {
+    const client = fakeClient();
+    const uploads = [];
+    client.mutation = vi.fn(async (fn, args) => {
+      if (fn === "attachments:uploadUrl") return "https://upload.example/put";
+      return `${fn}-ok`;
+    });
+    const http = { auth: null, calls: [] };
+    http.setAuth = (value) => {
+      http.auth = value;
+    };
+    http.clearAuth = () => {
+      http.auth = null;
+    };
+    http.action = vi.fn(async (fn, args) => defaultHandler(fn, args));
+    const data = createForgeData({
+      client,
+      httpClient: http,
+      storage: memoryStorage(),
+      api,
+      wait: async () => {},
+      upload: async (url, file) => {
+        uploads.push({ url, name: file.name });
+        return { ok: true, json: async () => ({ storageId: "kg2-storage-id" }) };
+      },
+    });
+    await data.ready;
+    const file = { name: "storefront.png", type: "image/png", size: 2048 };
+    await data.attachments.upload("conv-1", file);
+
+    expect(client.mutation.mock.calls[0]).toEqual([
+      "attachments:uploadUrl",
+      { conversationId: "conv-1", name: "storefront.png", mimeType: "image/png", size: 2048 },
+    ]);
+    expect(uploads).toEqual([{ url: "https://upload.example/put", name: "storefront.png" }]);
+    expect(client.mutation.mock.calls[1]).toEqual([
+      "attachments:attach",
+      {
+        conversationId: "conv-1",
+        storageId: "kg2-storage-id",
+        name: "storefront.png",
+        mimeType: "image/png",
+        size: 2048,
+      },
+    ]);
+  });
+
+  test("an upload that fails is reported rather than recorded", async () => {
+    const client = fakeClient();
+    client.mutation = vi.fn(async () => "https://upload.example/put");
+    const http = { auth: null, calls: [], setAuth() {}, clearAuth() {} };
+    http.action = vi.fn(async (fn, args) => defaultHandler(fn, args));
+    const data = createForgeData({
+      client,
+      httpClient: http,
+      storage: memoryStorage(),
+      api,
+      wait: async () => {},
+      upload: async () => ({ ok: false }),
+    });
+    await data.ready;
+    await expect(
+      data.attachments.upload("conv-1", { name: "big.png", type: "image/png", size: 10 }),
+    ).rejects.toThrow('Could not upload "big.png"');
+    expect(client.mutation).toHaveBeenCalledTimes(1);
+  });
+
+  test("a prompt carries the attachments the composer had, and omits the field without them", async () => {
+    const { client, data } = harness();
+    await data.ready;
+    await data.sites.generate("conv-1", "Use my logo", ["att-1", "att-2"]);
+    expect(client.action).toHaveBeenLastCalledWith("generate:run", {
+      conversationId: "conv-1",
+      prompt: "Use my logo",
+      attachmentIds: ["att-1", "att-2"],
+    });
+    await data.sites.generate("conv-1", "Make it taller");
+    expect(client.action).toHaveBeenLastCalledWith("generate:run", {
+      conversationId: "conv-1",
+      prompt: "Make it taller",
+    });
   });
 });
 

@@ -9,13 +9,16 @@
  */
 
 import type * as access from "../access.js";
+import type * as attachments from "../attachments.js";
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
 import type * as conversations from "../conversations.js";
+import type * as crons from "../crons.js";
 import type * as domains from "../domains.js";
 import type * as generate from "../generate.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
+import type * as pdfText from "../pdfText.js";
 import type * as plans from "../plans.js";
 import type * as settings from "../settings.js";
 import type * as sites from "../sites.js";
@@ -30,13 +33,16 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
+  attachments: typeof attachments;
   auth: typeof auth;
   billing: typeof billing;
   conversations: typeof conversations;
+  crons: typeof crons;
   domains: typeof domains;
   generate: typeof generate;
   http: typeof http;
   messages: typeof messages;
+  pdfText: typeof pdfText;
   plans: typeof plans;
   settings: typeof settings;
   sites: typeof sites;

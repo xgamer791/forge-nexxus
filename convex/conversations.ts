@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { requireOwnedConversation, requireUserId } from "./access";
+import { deleteAttachmentsFor } from "./attachments";
 import type { Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 
@@ -68,6 +69,8 @@ export async function deleteConversation(ctx: MutationCtx, conversationId: Id<"c
     await Promise.all(versions.map((version) => ctx.db.delete(version._id)));
     await ctx.db.delete(site._id);
   }
+  // The files a user attached go with the thread, blobs included.
+  await deleteAttachmentsFor(ctx, conversationId);
   const messages = await ctx.db
     .query("messages")
     .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))

@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { parseReply } from "./generate";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -102,6 +103,177 @@ describe("parseReply", () => {
     expect(parseReply("Sure! Here is some CSS: body{margin:0}").html).toBe(null);
     // Naming a tag while talking shop is not an attempt to build.
     expect(parseReply("I would put a lang attribute on your <html> tag.").html).toBe(null);
+  });
+});
+
+describe("attachments reach the model", () => {
+  // The files a member attaches, as the composer would leave them.
+  async function withFiles(
+    t: ReturnType<typeof fresh>,
+    conversationId: Id<"conversations">,
+    files: { name: string; mimeType: string; body: string }[],
+  ) {
+    const ids: Id<"attachments">[] = [];
+    for (const file of files) {
+      const storageId = await t.run(
+        async (ctx) => await ctx.storage.store(new Blob([file.body], { type: file.mimeType })),
+      );
+      ids.push(
+        await t.run(
+          async (ctx) =>
+            await ctx.db.insert("attachments", {
+              userId: (await ctx.db.get(conversationId))!.userId,
+              conversationId,
+              storageId,
+              name: file.name,
+              mimeType: file.mimeType,
+              size: file.body.length,
+              kind: file.mimeType.startsWith("image/") ? "image" : "text",
+              text: file.mimeType.startsWith("image/") ? undefined : file.body,
+              createdAt: Date.now(),
+            }),
+        ),
+      );
+    }
+    return ids;
+  }
+
+  test("a photo goes to the model as a picture, and its URL is offered to the page", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
+    const attachmentIds = await withFiles(t, conversationId, [
+      { name: "storefront.png", mimeType: "image/png", body: "png-bytes" },
+    ]);
+    const calls = stubProvider(() => reply("Used your storefront photo in the hero."));
+
+    await member.as.action(api.generate.run, {
+      conversationId,
+      prompt: "Use my storefront photo in the hero",
+      attachmentIds,
+    });
+
+    const sent = calls[0].body.messages;
+    const last = sent.at(-1);
+    // The prompt carries the picture, which is what a vision endpoint reads.
+    expect(last.role).toBe("user");
+    expect(last.content[0]).toEqual({ type: "text", text: "Use my storefront photo in the hero" });
+    expect(last.content[1].type).toBe("image_url");
+    expect(last.content[1].image_url.url).toContain("/api/storage/");
+    // And the same URL is offered for the page to load.
+    const assets = sent.find(
+      (message: any) => typeof message.content === "string" && message.content.includes("storefront.png"),
+    );
+    expect(assets.content).toContain(last.content[1].image_url.url);
+
+    // The photo now belongs to the prompt it went with, so it leaves the tray.
+    const listed = await member.as.query(api.attachments.list, { conversationId });
+    expect(listed[0].messageId).toBeTruthy();
+  });
+
+  test("a text file is handed over as its contents", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
+    const attachmentIds = await withFiles(t, conversationId, [
+      { name: "brand.md", mimeType: "text/markdown", body: "# Brand\nWarm neutrals, no red." },
+    ]);
+    const calls = stubProvider(() => reply("Followed your brand notes."));
+
+    await member.as.action(api.generate.run, {
+      conversationId,
+      prompt: "Follow my brand notes",
+      attachmentIds,
+    });
+
+    const sent = calls[0].body.messages;
+    const notes = sent.find(
+      (message: any) => typeof message.content === "string" && message.content.includes("brand.md"),
+    );
+    expect(notes.content).toContain("Warm neutrals, no red.");
+    // No pictures, so the prompt stays a plain string.
+    expect(sent.at(-1).content).toBe("Follow my brand notes");
+  });
+
+  test("a file that could not be read is named rather than passed off as content", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["%PDF-scan"], { type: "application/pdf" })),
+    );
+    const id = await t.run(
+      async (ctx) =>
+        await ctx.db.insert("attachments", {
+          userId: (await ctx.db.get(conversationId))!.userId,
+          conversationId,
+          storageId,
+          name: "scan.pdf",
+          mimeType: "application/pdf",
+          size: 9,
+          kind: "text" as const,
+          textError: "No text could be read from this file.",
+          createdAt: Date.now(),
+        }),
+    );
+    const calls = stubProvider(() => reply("Built it from what you told me."));
+
+    await member.as.action(api.generate.run, {
+      conversationId,
+      prompt: "Use the menu in this PDF",
+      attachmentIds: [id],
+    });
+
+    const sent = calls[0].body.messages;
+    const note = sent.find(
+      (message: any) => typeof message.content === "string" && message.content.includes("scan.pdf"),
+    );
+    expect(note.content).toContain("could not be read");
+  });
+
+  test("a later prompt keeps the picture's URL without paying to look again", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
+    const attachmentIds = await withFiles(t, conversationId, [
+      { name: "logo.png", mimeType: "image/png", body: "png-bytes" },
+    ]);
+    const calls = stubProvider(() => reply("Done."));
+
+    await member.as.action(api.generate.run, { conversationId, prompt: "Use my logo", attachmentIds });
+    // The same ids again: they have already gone, so they are not re-sent.
+    await member.as.action(api.generate.run, { conversationId, prompt: "Make the header taller", attachmentIds });
+
+    const second = calls[1].body.messages;
+    expect(typeof second.at(-1).content).toBe("string");
+    expect(
+      second.some((message: any) => typeof message.content === "string" && message.content.includes("logo.png")),
+    ).toBe(true);
+  });
+
+  test("another member's file cannot be attached to this prompt", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const stranger = await createBuilder(t, "other@example.com");
+    const mine = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
+    const theirs = await stranger.as.mutation(api.sites.create, { name: "Their site" });
+    const [theirFile] = await withFiles(t, theirs.conversationId, [
+      { name: "secret.md", mimeType: "text/markdown", body: "their private notes" },
+    ]);
+    const calls = stubProvider(() => reply("Built it."));
+
+    await member.as.action(api.generate.run, {
+      conversationId: mine.conversationId,
+      prompt: "Build my bakery site",
+      attachmentIds: [theirFile],
+    });
+
+    const sent = calls[0].body.messages;
+    expect(JSON.stringify(sent)).not.toContain("their private notes");
+    expect(JSON.stringify(sent)).not.toContain("secret.md");
+    // And it stays theirs, unsent.
+    const stillTheirs = await t.run(async (ctx) => await ctx.db.get(theirFile));
+    expect(stillTheirs?.messageId).toBeUndefined();
   });
 });
 

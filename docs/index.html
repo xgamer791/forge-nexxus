@@ -8,16 +8,22 @@
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
 <div class="greeting"><svg class="forge-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg><h1 data-greeting>What will you build today?</h1><p class="greeting-sub">Describe a website and Forge builds it.</p></div>
 <section class="thread" role="log" aria-label="Build thread" aria-live="polite"></section>
-<div class="composer-area"><p class="composer-error" role="alert" hidden></p><div class="site-bar" hidden><span class="site-bar-copy"><strong data-site-name></strong><small data-site-status></small></span><button class="site-bar-preview" type="button">Preview</button></div><div class="composer"><textarea aria-label="Describe your site" placeholder="Describe the site you want…" rows="1" autocapitalize="sentences" autocomplete="off" spellcheck="true"></textarea><div class="toolbar"><button class="add" data-open="attachments" aria-label="Add images or files" aria-haspopup="dialog"><svg><use href="#plus"/></svg></button><button class="microphone" type="button" aria-label="Start voice input" aria-pressed="false"><svg><use href="#mic"/></svg></button></div></div></div>
+<div class="composer-area"><p class="composer-error" role="alert" hidden></p><div class="attachment-tray" aria-label="Attached files" hidden></div><div class="site-bar" hidden><span class="site-bar-copy"><strong data-site-name></strong><small data-site-status></small></span><button class="site-bar-preview" type="button">Preview</button></div><div class="composer"><textarea aria-label="Describe your site" placeholder="Describe the site you want…" rows="1" autocapitalize="sentences" autocomplete="off" spellcheck="true"></textarea><div class="toolbar"><button class="add" data-open="attachments" aria-label="Add images or files" aria-haspopup="dialog"><svg><use href="#plus"/></svg></button><button class="microphone" type="button" aria-label="Start voice input" aria-pressed="false"><svg><use href="#mic"/></svg></button></div></div></div>
 <button class="backdrop" aria-label="Close menu" hidden></button>
 <div class="status-shield" aria-hidden="true"></div>
 <section class="sheet attachments" role="dialog" aria-modal="true" aria-labelledby="context-title" hidden><div class="handle"></div><header><button class="dismiss" aria-label="Close attachments"><svg><use href="#close"/></svg></button><h2 id="context-title">Attach</h2></header>
 <p class="sheet-copy">Add photos, a logo or files for Forge to use in your site.</p>
 <div class="group add-list">
-<button aria-disabled="true"><svg><use href="#camera"/></svg><span>Camera</span></button>
-<button aria-disabled="true"><svg><use href="#photo"/></svg><span>Photos</span></button>
-<button aria-disabled="true"><svg><use href="#clip"/></svg><span>Files</span><svg class="chevron"><use href="#chevron"/></svg></button>
-</div></section>
+<button type="button" data-pick="camera"><svg><use href="#camera"/></svg><span>Camera</span></button>
+<button type="button" data-pick="photos"><svg><use href="#photo"/></svg><span>Photos</span></button>
+<button type="button" data-pick="files"><svg><use href="#clip"/></svg><span>Files</span><svg class="chevron"><use href="#chevron"/></svg></button>
+</div>
+<p class="sheet-note">Images up to 10 MB. Text files and PDFs are read; Forge can place your pictures in the page.</p>
+<p class="attach-error" role="alert" hidden></p>
+<input class="picker" type="file" accept="image/*" capture="environment" data-input="camera" hidden>
+<input class="picker" type="file" accept="image/*" multiple data-input="photos" hidden>
+<input class="picker" type="file" accept="image/*,text/plain,text/markdown,text/csv,text/html,text/css,application/json,application/xml,application/pdf,.md,.markdown,.txt,.csv,.json,.xml,.html,.css,.js,.svg,.pdf" multiple data-input="files" hidden>
+</section>
 <section class="sheet account" role="dialog" aria-modal="true" aria-labelledby="account-title" hidden><div class="handle"></div><header><button class="dismiss" aria-label="Close account"><svg><use href="#close"/></svg></button><h2 id="account-title">Account</h2></header>
 <div class="account-guest">
 <p class="account-copy">Sign in to build. Your sites, credits and settings follow your account on every device.</p>

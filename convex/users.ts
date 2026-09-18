@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { requireMemberId } from "./access";
+import { deleteAttachmentsOf } from "./attachments";
 import { deleteConversation } from "./conversations";
 import type { Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx } from "./_generated/server";
@@ -65,6 +66,8 @@ export async function purgeUser(ctx: MutationCtx, userId: Id<"users">) {
     .withIndex("by_user_updated", (q) => q.eq("userId", userId))
     .collect();
   for (const conversation of conversations) await deleteConversation(ctx, conversation._id);
+  // Anything that had lost its thread, so no uploaded file survives the account.
+  await deleteAttachmentsOf(ctx, userId);
   // Sites and domains went with their conversations; this sweeps up anything
   // that had lost its thread, plus the plan, the ledger, and preferences.
   const owned = [

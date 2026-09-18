@@ -53,6 +53,29 @@ export default defineSchema({
     status: v.optional(v.union(v.literal("pending"), v.literal("failed"))),
     versionId: v.optional(v.id("siteVersions")),
   }).index("by_conversation", ["conversationId"]),
+  // What a user attached for Forge to use in a site: a photo, a logo, a set of
+  // notes. The file itself lives in Convex storage; this row is what the thread
+  // and the model see. An attachment belongs to one build thread, and it is
+  // `pending` until a prompt carries it to the model, which is what `messageId`
+  // records. `text` is what a readable file said, pulled out once on upload so
+  // the model never has to fetch anything.
+  attachments: defineTable({
+    userId: v.id("users"),
+    conversationId: v.id("conversations"),
+    storageId: v.id("_storage"),
+    name: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    // `image` goes to the model as a picture, `text` as its contents.
+    kind: v.union(v.literal("image"), v.literal("text")),
+    text: v.optional(v.string()),
+    // Why a readable file has no text, so the thread can say so plainly.
+    textError: v.optional(v.string()),
+    messageId: v.optional(v.id("messages")),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId", "createdAt"])
+    .index("by_user", ["userId"]),
   // Custom domains pointed at a site. A domain is `pending` from the moment it
   // is added until hosting has verified its DNS.
   domains: defineTable({
