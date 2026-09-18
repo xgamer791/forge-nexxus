@@ -307,3 +307,4 @@ html[data-theme=light]{--ok:#1a7f37;--ok-soft:rgba(26,127,55,.12);--danger:#c036
 /* An app name is arbitrary length; the pill keeps its shape and truncates. */
 .connect{max-width:min(100%,260px)}
 .connect span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-error{margin:14px 8px 0;color:var(--danger);font-size:15px;line-height:20px;text-align:center}

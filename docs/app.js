@@ -1186,15 +1186,26 @@ if (forge?.account && accountSheet) {
     });
   });
   // Starting the replacement guest session still needs the network, so the
-  // button says it is working rather than looking ignored.
+  // button says it is working rather than looking ignored, and a failure is
+  // said out loud: there is no console to read on a phone.
   const signOutButton = accountSheet.querySelector('.account-signout');
+  const signOutError = accountSheet.querySelector('.account-error');
   signOutButton.addEventListener('click', () => {
     if (signOutButton.disabled) return;
     signOutButton.disabled = true;
     signOutButton.textContent = 'Signing out…';
+    if (signOutError) {
+      signOutError.textContent = '';
+      signOutError.hidden = true;
+    }
     forge.auth.signOut()
       .then(closeMenu)
-      .catch(reportError)
+      .catch(error => {
+        reportError(error);
+        if (!signOutError) return;
+        signOutError.textContent = `Could not sign out: ${error?.data ?? error?.message ?? error}`;
+        signOutError.hidden = false;
+      })
       .finally(() => {
         signOutButton.disabled = false;
         signOutButton.textContent = 'Sign out';
