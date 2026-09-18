@@ -6,6 +6,29 @@ import { deleteConversation } from "./conversations";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 
+// Sites on a plan without `removeBadge` carry a small Forge credit. It goes
+// into the page as served, never into the stored version, so upgrading takes
+// it off every build at once. Inline styles are what the public route's
+// policy allows.
+export const BADGE_TEXT = "Built with Forge";
+function withBadge(html: string) {
+  const href = process.env.SITE_URL?.replace(/\/+$/, "") ?? "#";
+  const badge =
+    `<a href="${href}/" rel="noopener" style="position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:6px 11px;border-radius:999px;background:#121315;color:#e9ebee;font:600 12px/16px -apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3)">${BADGE_TEXT}</a>`;
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${badge}</body>`) : html + badge;
+}
+
+// The page as a visitor sees it: the version's HTML, plus the badge unless the
+// owner's plan removes it.
+export async function renderedHtml(
+  ctx: QueryCtx | MutationCtx,
+  site: Doc<"sites">,
+  html: string,
+) {
+  const plan = await currentPlan(ctx, site.userId);
+  return plan.removeBadge ? html : withBadge(html);
+}
+
 const DEFAULT_NAME = "Untitled site";
 const NAME_LIMIT = 80;
 const SLUG_LIMIT = 40;
@@ -57,7 +80,7 @@ export const currentHtml = query({
     if (!version) return null;
     return {
       versionId: version._id,
-      html: version.html,
+      html: await renderedHtml(ctx, site, version.html),
       summary: version.summary,
       createdAt: version.createdAt,
       published: site.publishedVersionId === version._id,
@@ -156,7 +179,7 @@ export const publishedHtml = internalQuery({
       .first();
     if (!site || site.status !== "published" || !site.publishedVersionId) return null;
     const version = await ctx.db.get(site.publishedVersionId);
-    return version?.html ?? null;
+    return version ? await renderedHtml(ctx, site, version.html) : null;
   },
 });
 

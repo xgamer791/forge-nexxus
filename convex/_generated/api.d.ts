@@ -19,6 +19,7 @@ import type * as messages from "../messages.js";
 import type * as plans from "../plans.js";
 import type * as settings from "../settings.js";
 import type * as sites from "../sites.js";
+import type * as stripe from "../stripe.js";
 import type * as users from "../users.js";
 
 import type {
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   plans: typeof plans;
   settings: typeof settings;
   sites: typeof sites;
+  stripe: typeof stripe;
   users: typeof users;
 }>;
 

@@ -287,7 +287,7 @@ describe("billing", () => {
   test("cancel schedules the free plan for the period end; resume undoes it", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await expect(member.as.mutation(api.billing.cancel, {})).rejects.toThrow("already on the free plan");
+    await expect(member.as.action(api.billing.cancel, {})).rejects.toThrow("already on the free plan");
     await t.mutation(internal.billing.grantPlan, { email: "m@example.com", plan: "starter" });
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       plan: { key: "starter" },
@@ -295,14 +295,14 @@ describe("billing", () => {
       granted: OPENING + starter.monthlyCredits!,
       cancelAtPeriodEnd: false,
     });
-    await member.as.mutation(api.billing.cancel, {});
+    await member.as.action(api.billing.cancel, {});
     const canceled = (await member.as.query(api.billing.summary, {}))!;
     expect(canceled.cancelAtPeriodEnd).toBe(true);
     expect(canceled.plan.key).toBe("starter");
-    await member.as.mutation(api.billing.resume, {});
+    await member.as.action(api.billing.resume, {});
     expect((await member.as.query(api.billing.summary, {}))!.cancelAtPeriodEnd).toBe(false);
     const guest = await createUser(t, { isAnonymous: true });
-    await expect(guest.as.mutation(api.billing.cancel, {})).rejects.toThrow("Sign in to build");
+    await expect(guest.as.action(api.billing.cancel, {})).rejects.toThrow("Sign in to change your plan");
   });
 
   test("top-ups add to the current period and are recorded", async () => {

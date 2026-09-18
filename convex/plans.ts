@@ -27,6 +27,7 @@ export type Plan = {
   visitorsPerMonth: number | null;
   customDomains: boolean;
   removeBadge: boolean;
+  codeDownload: boolean;
   // Whether extra credits can be bought inside a period.
   topUps: boolean;
   // Extra selling points for the card, in the order they are shown.
@@ -46,6 +47,7 @@ export const PLANS: readonly Plan[] = [
     visitorsPerMonth: null,
     customDomains: false,
     removeBadge: false,
+    codeDownload: false,
     topUps: false,
     features: ["Mobile-optimized", "Forge badge on your site"],
   },
@@ -61,12 +63,12 @@ export const PLANS: readonly Plan[] = [
     visitorsPerMonth: 10000,
     customDomains: false,
     removeBadge: true,
+    codeDownload: true,
     topUps: false,
     features: [
       "Publish to a Forge address",
       "Basic custom design",
       "AI-generated images",
-      "Code download",
       "Mobile-optimized",
       "Priority support",
     ],
@@ -83,13 +85,13 @@ export const PLANS: readonly Plan[] = [
     visitorsPerMonth: null,
     customDomains: true,
     removeBadge: true,
+    codeDownload: true,
     topUps: true,
     features: [
       "Unlimited pages and visitors",
       "SSL certificate",
       "Google Analytics",
       "AI-generated images",
-      "Code download",
       "Priority support",
     ],
   },

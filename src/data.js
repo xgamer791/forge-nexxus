@@ -287,9 +287,11 @@ export function createForgeData({
       subscribe: (callback) => client.onUpdate(api.billing.summary, {}, callback),
       catalog: (callback) => client.onUpdate(api.billing.catalog, {}, callback),
       history: (callback) => client.onUpdate(api.billing.history, {}, callback),
-      cancel: () => client.mutation(api.billing.cancel, {}),
-      resume: () => client.mutation(api.billing.resume, {}),
+      // Cancelling and resuming tell Stripe too when it is billing the plan.
+      cancel: () => client.action(api.billing.cancel, {}),
+      resume: () => client.action(api.billing.resume, {}),
       checkout: (choice) => client.action(api.billing.checkout, choice),
+      portal: () => client.action(api.billing.portal, {}),
     },
     settings: {
       subscribe: (callback) => client.onUpdate(api.settings.get, {}, callback),

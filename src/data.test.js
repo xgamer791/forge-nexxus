@@ -30,6 +30,7 @@ const api = {
     cancel: "billing:cancel",
     resume: "billing:resume",
     checkout: "billing:checkout",
+    portal: "billing:portal",
   },
   settings: { get: "settings:get", update: "settings:update" },
 };
@@ -319,12 +320,13 @@ describe("data access", () => {
     await data.messages.send("c1", "hi");
     await data.domains.add("s1", "shop.example");
     await data.domains.remove("d1");
-    await data.billing.cancel();
-    await data.billing.resume();
     await data.settings.update({ theme: "light" });
     await data.sites.publish("s1");
     await data.sites.unpublish("s1");
-    await data.billing.checkout({ plan: "pro" });
+    await data.billing.checkout({ plan: "premium" });
+    await data.billing.cancel();
+    await data.billing.resume();
+    await data.billing.portal();
     await data.sites.generate("c1", "make it warm");
     expect(client.onUpdate.mock.calls).toEqual([
       ["users:me", {}, callback],
@@ -347,14 +349,15 @@ describe("data access", () => {
       ["messages:send", { conversationId: "c1", body: "hi" }],
       ["domains:add", { siteId: "s1", hostname: "shop.example" }],
       ["domains:remove", { id: "d1" }],
-      ["billing:cancel", {}],
-      ["billing:resume", {}],
       ["settings:update", { theme: "light" }],
       ["sites:publish", { id: "s1" }],
       ["sites:unpublish", { id: "s1" }],
     ]);
     expect(client.action.mock.calls).toEqual([
-      ["billing:checkout", { plan: "pro" }],
+      ["billing:checkout", { plan: "premium" }],
+      ["billing:cancel", {}],
+      ["billing:resume", {}],
+      ["billing:portal", {}],
       ["generate:run", { conversationId: "c1", prompt: "make it warm" }],
     ]);
   });

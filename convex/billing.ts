@@ -1,10 +1,11 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { requireMemberId } from "./access";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalMutation, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { createCheckoutSession, createPortalSession, stripeRequest } from "./stripe";
 import {
   PLANS,
   REQUEST_COSTS,
@@ -90,6 +91,19 @@ export async function subscriptionFor(ctx: QueryCtx | MutationCtx, userId: Id<"u
     .query("subscriptions")
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .unique();
+}
+
+// The row a Stripe subscription or customer id belongs to.
+export async function subscriptionByStripe(
+  ctx: QueryCtx | MutationCtx,
+  ids: { subscriptionId?: string; customerId?: string },
+) {
+  const rows = await ctx.db.query("subscriptions").collect();
+  return (
+    rows.find((row) => ids.subscriptionId && row.stripeSubscriptionId === ids.subscriptionId) ??
+    rows.find((row) => ids.customerId && row.stripeCustomerId === ids.customerId) ??
+    null
+  );
 }
 
 // The plan a member is on right now, for entitlement checks. Reads only, so a
@@ -180,6 +194,8 @@ export const summary = query({
       reserved: balance.reserved,
       // Null on an unlimited plan: there is no number to run out of.
       available: unlimited ? null : Math.max(0, balance.credits - balance.reserved),
+      // Whether Stripe knows this member, which is what the billing portal needs.
+      billingAccount: Boolean(stored?.stripeCustomerId),
       // What this period started with plus its top-ups: the meter's full mark.
       granted: balance.granted,
       periodStart: balance.periodStart,
@@ -209,24 +225,71 @@ export const history = query({
   },
 });
 
-// Moves to the free plan when the paid period ends; nothing is lost before then.
-export const cancel = mutation({
+// What checkout, cancelling and the portal need to know about the caller.
+export const checkoutContext = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireMemberId(ctx);
-    const sub = await ensureCurrent(ctx, userId);
-    if (sub.planKey === "free") throw new ConvexError("You're already on the free plan");
-    await ctx.db.patch(sub._id, { cancelAtPeriodEnd: true, updatedAt: Date.now() });
+    const user = await memberOrNull(ctx);
+    if (!user) return null;
+    const stored = await subscriptionFor(ctx, user._id);
+    const key = stored ? projected(stored, Date.now()).planKey : "free";
+    return {
+      userId: user._id,
+      email: user.email ?? null,
+      planKey: key,
+      plan: planFor(key),
+      stripeCustomerId: stored?.stripeCustomerId ?? null,
+      stripeSubscriptionId: stored?.stripeSubscriptionId ?? null,
+      cancelAtPeriodEnd: stored?.cancelAtPeriodEnd ?? false,
+    };
   },
 });
 
-export const resume = mutation({
+export const setCancel = internalMutation({
+  args: { userId: v.id("users"), cancel: v.boolean() },
+  handler: async (ctx, { userId, cancel: cancelAtPeriodEnd }) => {
+    const sub = await ensureCurrent(ctx, userId);
+    if (cancelAtPeriodEnd && sub.planKey === "free") throw new ConvexError("You're already on the free plan");
+    await ctx.db.patch(sub._id, { cancelAtPeriodEnd, updatedAt: Date.now() });
+  },
+});
+
+// Moves to the free plan when the paid period ends; nothing is lost before
+// then. A plan Stripe is billing is told the same thing, so the two agree.
+export const cancel = action({
   args: {},
   handler: async (ctx) => {
-    const userId = await requireMemberId(ctx);
-    const sub = await ensureCurrent(ctx, userId);
-    if (!sub.cancelAtPeriodEnd) return;
-    await ctx.db.patch(sub._id, { cancelAtPeriodEnd: false, updatedAt: Date.now() });
+    const me = await ctx.runQuery(internal.billing.checkoutContext, {});
+    if (!me) throw new ConvexError("Sign in to change your plan");
+    if (me.planKey === "free") throw new ConvexError("You're already on the free plan");
+    if (me.stripeSubscriptionId && process.env.STRIPE_SECRET_KEY) {
+      await stripeRequest(`/subscriptions/${me.stripeSubscriptionId}`, { cancel_at_period_end: "true" });
+    }
+    await ctx.runMutation(internal.billing.setCancel, { userId: me.userId, cancel: true });
+  },
+});
+
+export const resume = action({
+  args: {},
+  handler: async (ctx) => {
+    const me = await ctx.runQuery(internal.billing.checkoutContext, {});
+    if (!me) throw new ConvexError("Sign in to change your plan");
+    if (!me.cancelAtPeriodEnd) return;
+    if (me.stripeSubscriptionId && process.env.STRIPE_SECRET_KEY) {
+      await stripeRequest(`/subscriptions/${me.stripeSubscriptionId}`, { cancel_at_period_end: "false" });
+    }
+    await ctx.runMutation(internal.billing.setCancel, { userId: me.userId, cancel: false });
+  },
+});
+
+// Stripe's own billing page: payment method, invoices, and the address.
+export const portal = action({
+  args: {},
+  handler: async (ctx): Promise<{ url: string }> => {
+    const me = await ctx.runQuery(internal.billing.checkoutContext, {});
+    if (!me) throw new ConvexError("Sign in to manage billing");
+    if (!me.stripeCustomerId) throw new ConvexError("There's no billing account yet");
+    return await createPortalSession(me.stripeCustomerId);
   },
 });
 
@@ -240,18 +303,23 @@ export const checkout = action({
     interval: v.optional(v.union(v.literal("month"), v.literal("year"))),
     topUp: v.optional(v.string()),
   },
-  handler: async (ctx, { plan, topUp }): Promise<{ url: string }> => {
-    const me = await ctx.runQuery(api.users.me, {});
-    if (!me || me.isAnonymous) throw new ConvexError("Sign in to change your plan");
+  handler: async (ctx, { plan, interval, topUp }): Promise<{ url: string }> => {
+    const me = await ctx.runQuery(internal.billing.checkoutContext, {});
+    if (!me) throw new ConvexError("Sign in to change your plan");
     if (plan === "free") throw new ConvexError("Downgrading happens from Plan & credits");
     if (!plan && !topUpFor(topUp ?? "")) throw new ConvexError("Choose a plan or a credit pack");
-    if (!plan && topUp) {
-      const current = await ctx.runQuery(api.billing.summary, {});
-      if (!current?.plan.topUps) {
-        throw new ConvexError(`Extra credits come with the ${cheapestWith("topUps")} plan`);
-      }
+    if (!plan && topUp && !me.plan.topUps) {
+      throw new ConvexError(`Extra credits come with the ${cheapestWith("topUps")} plan`);
     }
-    throw new ConvexError("Payments aren't open yet. Plans and top-ups will be available soon.");
+    if (plan && plan === me.planKey) throw new ConvexError("You're already on that plan");
+    return await createCheckoutSession({
+      userId: me.userId,
+      email: me.email,
+      stripeCustomerId: me.stripeCustomerId,
+      plan,
+      interval,
+      pack: topUp,
+    });
   },
 });
 
@@ -387,24 +455,74 @@ export const grantPlan = internalMutation({
   },
   handler: async (ctx, args) => {
     const userId = await resolveUserId(ctx, args);
-    const now = Date.now();
-    const sub = await ensureCurrent(ctx, userId, now);
-    const next = opening(args.plan, now);
-    const credits = sub.credits + next.credits;
-    await ctx.db.patch(sub._id, {
-      ...next,
-      credits,
-      granted: credits,
-      reserved: sub.reserved,
-      stripeCustomerId: args.stripeCustomerId ?? sub.stripeCustomerId,
-      stripeSubscriptionId: args.stripeSubscriptionId ?? sub.stripeSubscriptionId,
-      updatedAt: now,
+    await applyPlan(ctx, userId, args.plan, {
+      stripeCustomerId: args.stripeCustomerId,
+      stripeSubscriptionId: args.stripeSubscriptionId,
     });
-    if (next.credits > 0) {
-      await record(ctx, userId, "grant", next.credits, credits, `${planFor(args.plan).name} plan credits`, now);
-    }
   },
 });
+
+// Puts a member on a plan. By default a fresh period opens now and whatever
+// the old period had left comes along; a renewal expires the leftover first,
+// and Stripe's own period boundaries are used when it supplies them.
+export async function applyPlan(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  plan: PlanKey,
+  options: {
+    now?: number;
+    periodStart?: number | null;
+    periodEnd?: number | null;
+    renewal?: boolean;
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string | null;
+  } = {},
+) {
+  const now = options.now ?? Date.now();
+  const sub = await ensureCurrent(ctx, userId, now);
+  const next = opening(plan, options.periodStart ?? now);
+  if (options.periodEnd) next.periodEnd = options.periodEnd;
+  let carried = sub.credits;
+  if (options.renewal && sub.credits > 0) {
+    await record(ctx, userId, "expire", -sub.credits, 0, "Period ended", now);
+    carried = 0;
+  }
+  const credits = carried + next.credits;
+  await ctx.db.patch(sub._id, {
+    ...next,
+    credits,
+    granted: credits,
+    reserved: sub.reserved,
+    stripeCustomerId: options.stripeCustomerId ?? sub.stripeCustomerId,
+    stripeSubscriptionId:
+      options.stripeSubscriptionId === null
+        ? undefined
+        : (options.stripeSubscriptionId ?? sub.stripeSubscriptionId),
+    updatedAt: now,
+  });
+  if (next.credits > 0) {
+    await record(ctx, userId, "grant", next.credits, credits, `${planFor(plan).name} plan credits`, now + 1);
+  }
+}
+
+export async function creditTopUp(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  credits: number,
+  note: string,
+  now = Date.now(),
+  stripeCustomerId?: string,
+) {
+  const sub = await ensureCurrent(ctx, userId, now);
+  const balance = sub.credits + credits;
+  await ctx.db.patch(sub._id, {
+    credits: balance,
+    granted: sub.granted + credits,
+    stripeCustomerId: stripeCustomerId ?? sub.stripeCustomerId,
+    updatedAt: now,
+  });
+  await record(ctx, userId, "topup", credits, balance, note, now);
+}
 
 // Adds a credit pack, or an arbitrary amount, to the current period.
 export const grantTopUp = internalMutation({
@@ -426,10 +544,6 @@ export const grantTopUp = internalMutation({
     }
     const credits = Math.round(pack?.credits ?? args.credits ?? 0);
     if (credits <= 0) throw new ConvexError("A top-up needs a pack or a credit amount");
-    const now = Date.now();
-    const sub = await ensureCurrent(ctx, userId, now);
-    const balance = sub.credits + credits;
-    await ctx.db.patch(sub._id, { credits: balance, granted: sub.granted + credits, updatedAt: now });
-    await record(ctx, userId, "topup", credits, balance, args.note ?? `${credits} credit top-up`, now);
+    await creditTopUp(ctx, userId, credits, args.note ?? `${credits} credit top-up`);
   },
 });

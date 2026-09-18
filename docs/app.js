@@ -892,6 +892,7 @@ function renderCredits() {
     setText('[data-usage-headline]', unlimited ? `Unlimited credits on ${plan.name}` : `${used} of ${granted} credits used`);
     setText('[data-usage-sub]', unlimited ? `Renews ${when}` : `${available} left · resets ${when}`);
     if (planScreen) {
+      planScreen.querySelector('.plan-billing').hidden = !summary.billingAccount;
       planScreen.querySelector('.plan-cancel').hidden = plan.key === 'free' || cancelAtPeriodEnd;
       planScreen.querySelector('.plan-resume').hidden = !cancelAtPeriodEnd;
       planScreen.querySelector('.plan-scheduled').hidden = !cancelAtPeriodEnd;
@@ -1032,6 +1033,33 @@ if (forge?.billing && planScreen) {
     showNote(error, '');
     forge.billing.resume().catch(caught => showNote(error, messageOf(caught)));
   });
+  planScreen.querySelector('.plan-billing').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    const error = planScreen.querySelector('.overlay-error');
+    showNote(error, '');
+    button.disabled = true;
+    try {
+      const {url} = await forge.billing.portal();
+      location.assign(url);
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, messageOf(caught));
+      button.disabled = false;
+    }
+  });
+  // Back from Stripe: say what happened, then drop the marker from the URL.
+  const checkoutResult = query.get('checkout');
+  if (checkoutResult === 'success' || checkoutResult === 'cancel') {
+    const cleaned = new URL(location.href);
+    cleaned.searchParams.delete('checkout');
+    history.replaceState(history.state, '', cleaned);
+    openMenu('navigation');
+    showSettings(true);
+    showSettingsScreen('plan');
+    showNote(planScreen.querySelector('.overlay-error'),
+      checkoutResult === 'success' ? 'Payment received. Your plan updates here in a moment.' : 'Checkout cancelled. Nothing was charged.',
+      checkoutResult !== 'success');
+  }
   forge.billing.subscribe(next => { summary = next ?? null; renderCredits(); });
   forge.billing.catalog(next => { catalog = next ?? null; renderCredits(); });
 }
@@ -1222,6 +1250,7 @@ if (forge?.sites && previewScreen) {
   const link = previewScreen.querySelector('[data-preview-link]');
   const publishButton = previewScreen.querySelector('.preview-publish');
   const unpublishButton = previewScreen.querySelector('.preview-unpublish');
+  const downloadButton = previewScreen.querySelector('.preview-download');
   const error = previewScreen.querySelector('.overlay-error');
   let stopHtml = null;
   let shownSiteId = null;
@@ -1237,6 +1266,7 @@ if (forge?.sites && previewScreen) {
       : 'Publish';
     if (site?.status === 'published' && current?.published) publishButton.disabled = true;
     unpublishButton.hidden = site?.status !== 'published';
+    downloadButton.hidden = !(built && current && summary?.plan.codeDownload);
     link.hidden = !site?.publishedUrl;
     if (site?.publishedUrl) { link.href = site.publishedUrl; link.textContent = site.publishedUrl.replace(/^https?:\/\//, ''); }
     status.textContent = !built
@@ -1280,6 +1310,19 @@ if (forge?.sites && previewScreen) {
       publishButton.disabled = false;
     }
   });
+  // The page as the preview shows it, as a file: what a paid plan can take away.
+  downloadButton.addEventListener('click', () => {
+    if (!current || !activeSite) return;
+    const name = (activeSite.slug || activeSite.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'site') + '.html';
+    const url = URL.createObjectURL(new Blob([current.html], {type: 'text/html'}));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = name;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
   unpublishButton.addEventListener('click', async () => {
     if (!activeSite) return;
     if (!confirm('Take this site offline? The address is kept for when you publish again.')) return;
@@ -1296,6 +1339,7 @@ if (forge?.sites && previewScreen) {
     watch();
     renderPreview();
   });
+  document.addEventListener('forge:billing', () => { if (!previewScreen.hidden) renderPreview(); });
 }
 
 // Review framing for the settings screens, once their wiring exists.

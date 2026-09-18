@@ -82,6 +82,12 @@ export default defineSchema({
     stripeSubscriptionId: v.optional(v.string()),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
+  // Stripe deliveries already applied, so a redelivery can never grant twice.
+  stripeEvents: defineTable({
+    eventId: v.string(),
+    type: v.string(),
+    receivedAt: v.number(),
+  }).index("by_event", ["eventId"]),
   // Append-only record of every credit movement, so a balance can always be
   // explained. `amount` is signed and `balanceAfter` is what was left.
   creditLedger: defineTable({

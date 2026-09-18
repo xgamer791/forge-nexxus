@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { planFor } from "./plans";
-import { slugify } from "./sites";
+import { BADGE_TEXT, slugify } from "./sites";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -172,7 +172,15 @@ describe("publishing", () => {
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toContain("text/html");
     expect(served.headers.get("content-security-policy")).toContain("default-src 'none'");
-    expect(await served.text()).toBe(PAGE);
+    // A free plan's site carries the badge, in the preview and on the address alike.
+    const badged = await served.text();
+    expect(badged).toContain(BADGE_TEXT);
+    expect(badged.endsWith("</body></html>")).toBe(true);
+    expect(badged.replace(/<a href="[^"]*" rel="noopener" style="[^"]*">Built with Forge<\/a>/, "")).toBe(PAGE);
+    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toContain(BADGE_TEXT);
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    expect(await (await t.fetch("/sites/bakery-on-main")).text()).toBe(PAGE);
+    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE);
     expect((await t.fetch("/sites/nobody-home")).status).toBe(404);
 
     // A newer draft build does not change what is served until published again.
