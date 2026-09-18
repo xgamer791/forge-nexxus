@@ -2,7 +2,8 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalMutation } from "./_generated/server";
+import { action, internalMutation, type MutationCtx } from "./_generated/server";
+import { TEXT_LIMIT, TEXT_TOTAL_LIMIT, VISION_LIMIT } from "./attachments";
 import { creditCheck, holdCredits, releaseHold, settleHold } from "./billing";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 
@@ -23,7 +24,7 @@ Return one self-contained HTML file:
 - A full document (<!doctype html> … </html>) with a <title>, a meta viewport, and all CSS in one <style> block in the <head>.
 - Mobile-first and responsive; generous whitespace; a deliberate colour palette and type scale; accessible contrast; semantic landmarks (header, nav, main, section, footer).
 - Real, specific copy written for this site — never lorem ipsum or "[placeholder]".
-- No scripts, no frameworks, no external images. For imagery use CSS gradients, inline SVG and colour blocks, and give every visual a purpose.
+- No scripts and no frameworks. The only pictures you may load are the user's own attached assets, whose exact URLs are listed for you when they have attached any; use them where they belong, with alt text. Otherwise use CSS gradients, inline SVG and colour blocks, and give every visual a purpose.
 - Google Fonts are the only allowed external resource; use at most two families.
 - Links between sections use anchors; forms are static markup.
 Reply with one sentence saying what you built or changed, then the complete HTML in a single \`\`\`html code block, and nothing after it. When the user asks for a change, apply it to the current file and return the whole updated file, keeping everything they did not ask to change.
@@ -45,19 +46,45 @@ const PENDING_LABELS: Record<RequestKind, string> = {
   video: "Making a video\u2026",
 };
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+// The provider takes either a plain string or the parts of a multimodal
+// message. Attached pictures ride along as `image_url` parts, which is how
+// every OpenAI-compatible vision endpoint takes them.
+type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string | ContentPart[] };
+
+// What the user attached, as the model gets it: pictures to look at, files to
+// read, and the URLs of every asset in the thread so a build can use them.
+type Assets = {
+  look: { name: string; url: string }[];
+  read: { name: string; text: string }[];
+  urls: { name: string; url: string }[];
+  unread: string[];
+};
 
 // One prompt in, one build out. The credits are held before the provider is
 // called and settled or released after, so a failed build costs nothing and a
 // burst of prompts cannot outrun the balance.
 export const run = action({
-  args: { conversationId: v.id("conversations"), prompt: v.string() },
-  handler: async (ctx, { conversationId, prompt }): Promise<{ messageId: Id<"messages"> }> => {
+  args: {
+    conversationId: v.id("conversations"),
+    prompt: v.string(),
+    // What the composer had attached when the prompt was sent.
+    attachmentIds: v.optional(v.array(v.id("attachments"))),
+  },
+  handler: async (
+    ctx,
+    { conversationId, prompt, attachmentIds },
+  ): Promise<{ messageId: Id<"messages"> }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError("Not signed in");
     const text = prompt.trim();
     if (!text) throw new ConvexError("Describe what you want first");
-    const job = await ctx.runMutation(internal.generate.begin, { userId, conversationId, prompt: text });
+    const job = await ctx.runMutation(internal.generate.begin, {
+      userId,
+      conversationId,
+      prompt: text,
+      attachmentIds,
+    });
     try {
       const reply = await callProvider(job.messages);
       const parsed = parseReply(reply);
@@ -82,8 +109,13 @@ export const run = action({
 // Records the prompt, holds the credits, and hands the action everything the
 // model needs, all in one transaction.
 export const begin = internalMutation({
-  args: { userId: v.id("users"), conversationId: v.id("conversations"), prompt: v.string() },
-  handler: async (ctx, { userId, conversationId, prompt }) => {
+  args: {
+    userId: v.id("users"),
+    conversationId: v.id("conversations"),
+    prompt: v.string(),
+    attachmentIds: v.optional(v.array(v.id("attachments"))),
+  },
+  handler: async (ctx, { userId, conversationId, prompt, attachmentIds }) => {
     const conversation = await ctx.db.get(conversationId);
     if (!conversation || conversation.userId !== userId) throw new ConvexError("Conversation not found");
     const site = await ctx.db
@@ -109,7 +141,14 @@ export const begin = internalMutation({
       .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
       .order("desc")
       .take(HISTORY_LIMIT);
-    await ctx.db.insert("messages", { conversationId, role: "user", body: prompt });
+    const userMessageId = await ctx.db.insert("messages", {
+      conversationId,
+      role: "user",
+      body: prompt,
+    });
+    // The files the composer sent belong to this turn from now on, so a second
+    // prompt does not pay to look at them again.
+    const assets = await collectAssets(ctx, conversationId, attachmentIds ?? [], userMessageId);
     const assistantId = await ctx.db.insert("messages", {
       conversationId,
       role: "assistant",
@@ -128,10 +167,54 @@ export const begin = internalMutation({
         ? `Building this costs ${talkOnly.needed} credits and you have ${talkOnly.available}. ` +
           "Top up or upgrade and I'll build it — until then I can help you plan it here."
         : undefined,
-      messages: buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly),
+      messages: buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, assets),
     };
   },
 });
+
+// Turns the attachments the composer sent into what the model is given, and
+// marks them as belonging to this prompt. Every image in the thread is listed
+// by URL so an edit can keep using a logo uploaded ten turns ago, but only
+// this turn's pictures are sent to be looked at again.
+async function collectAssets(
+  ctx: MutationCtx,
+  conversationId: Id<"conversations">,
+  ids: Id<"attachments">[],
+  messageId: Id<"messages">,
+): Promise<Assets> {
+  const rows = await ctx.db
+    .query("attachments")
+    .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
+    .order("asc")
+    .collect();
+  const chosen = new Set(ids.map(String));
+  const sending = rows.filter((row) => chosen.has(String(row._id)) && row.messageId === undefined);
+  for (const row of sending) await ctx.db.patch(row._id, { messageId });
+
+  const assets: Assets = { look: [], read: [], urls: [], unread: [] };
+  let budget = TEXT_TOTAL_LIMIT;
+  for (const row of rows) {
+    if (row.kind !== "image") continue;
+    const url = await ctx.storage.getUrl(row.storageId);
+    if (url) assets.urls.push({ name: row.name, url });
+  }
+  for (const row of sending) {
+    if (row.kind === "image") {
+      if (assets.look.length >= VISION_LIMIT) continue;
+      const url = await ctx.storage.getUrl(row.storageId);
+      if (url) assets.look.push({ name: row.name, url });
+      continue;
+    }
+    const text = row.text?.slice(0, Math.max(0, Math.min(TEXT_LIMIT, budget))) ?? "";
+    if (text) {
+      assets.read.push({ name: row.name, text });
+      budget -= text.length;
+    } else {
+      assets.unread.push(row.name);
+    }
+  }
+  return assets;
+}
 
 export const finish = internalMutation({
   args: {
@@ -203,6 +286,7 @@ function buildMessages(
   prompt: string,
   // Set when the balance cannot cover a build, which makes this turn TALK.
   talkOnly: { needed: number; available: number } | null,
+  assets: Assets = { look: [], read: [], urls: [], unread: [] },
 ): ChatMessage[] {
   const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
   if (currentHtml) {
@@ -221,11 +305,47 @@ function buildMessages(
         "and that topping up or upgrading is what unlocks it — then keep helping them plan.",
     });
   }
+  if (assets.urls.length > 0) {
+    messages.push({
+      role: "system",
+      content:
+        "These pictures belong to the user and are already hosted. Use the URLs exactly as written, " +
+        "in <img> tags with alt text, wherever they belong in the page:\n" +
+        assets.urls.map((asset) => `- ${asset.name}: ${asset.url}`).join("\n"),
+    });
+  }
+  for (const file of assets.read) {
+    messages.push({
+      role: "system",
+      content: `The user attached "${file.name}". Its contents:\n\n${file.text}`,
+    });
+  }
+  if (assets.unread.length > 0) {
+    messages.push({
+      role: "system",
+      content:
+        `The user attached ${assets.unread.map((name) => `"${name}"`).join(", ")}, which could not be read. ` +
+        "Say so plainly if it matters to what they asked, and work from what they told you.",
+    });
+  }
   for (const message of history) {
     if (message.role === "system" || message.status || !message.body.trim()) continue;
     messages.push({ role: message.role, content: message.body });
   }
-  messages.push({ role: "user", content: prompt });
+  // The pictures ride on the prompt itself, which is what a vision endpoint
+  // expects; a turn with none keeps the plain string a text model wants.
+  messages.push({
+    role: "user",
+    content:
+      assets.look.length > 0
+        ? [
+            { type: "text", text: prompt } as ContentPart,
+            ...assets.look.map(
+              (asset) => ({ type: "image_url", image_url: { url: asset.url } }) as ContentPart,
+            ),
+          ]
+        : prompt,
+  });
   return messages;
 }
 

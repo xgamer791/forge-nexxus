@@ -549,6 +549,8 @@ const thread = document.querySelector('.thread');
 const composerError = document.querySelector('.composer-error');
 const siteBar = document.querySelector('.site-bar');
 const siteBarPreview = document.querySelector('.site-bar-preview');
+const attachSheet = document.querySelector('.sheet.attachments');
+const attachmentTray = document.querySelector('.attachment-tray');
 let sites = [];
 // Whether the sites subscription has answered yet. Only a list that has
 // arrived can say a remembered thread is gone.
@@ -559,6 +561,11 @@ let openPreview = () => {};
 if (forge?.sites && siteList && thread) {
   let activeId = null;
   let stopMessages = null;
+  let stopAttachments = null;
+  // What the server knows is attached to this thread, and what is still on its
+  // way up from this device.
+  let attachments = [];
+  let uploading = [];
   try { activeId = localStorage.getItem('forge-conversation'); } catch { /* Private mode starts on a fresh thread. */ }
 
   function rememberActive(id) {
@@ -638,7 +645,9 @@ if (forge?.sites && siteList && thread) {
       return row;
     }));
   }
+  let lastMessages = null;
   function renderThread(messages) {
+    lastMessages = messages;
     thread.replaceChildren(...messages.map(message => {
       const row = document.createElement('div');
       row.className = `message message-${message.role}`;
@@ -649,6 +658,9 @@ if (forge?.sites && siteList && thread) {
       // request that was already in flight when that started being true.
       body.textContent = message.body || (message.status === 'pending' ? 'Working…' : '');
       row.append(body);
+      // The files that went with this prompt, named under it.
+      const sent = attachments.filter(file => file.messageId === message._id);
+      if (sent.length > 0) row.append(fileChips(sent));
       if (message.role === 'assistant' && message.versionId) {
         const view = document.createElement('button');
         view.type = 'button';
@@ -682,11 +694,23 @@ if (forge?.sites && siteList && thread) {
   function selectConversation(id) {
     stopMessages?.();
     stopMessages = null;
+    stopAttachments?.();
+    stopAttachments = null;
+    attachments = [];
+    uploading = [];
+    renderTray();
     rememberActive(id);
     renderSites();
     renderSiteBar();
     if (!id) { renderThread([]); return; }
     stopMessages = forge.messages.subscribe(id, renderThread);
+    stopAttachments = forge.attachments.subscribe(id, list => {
+      attachments = Array.isArray(list) ? list : [];
+      renderTray();
+      // A file's name belongs under the prompt it went with, so the thread
+      // repaints when the server answers.
+      if (lastMessages) renderThread(lastMessages);
+    });
   }
   forge.sites.subscribe(list => {
     sites = Array.isArray(list) ? list : [];
@@ -716,29 +740,147 @@ if (forge?.sites && siteList && thread) {
     });
   });
 
+  // The thread a prompt or an attachment belongs to, made if there isn't one.
+  // Before the list arrives, the remembered thread is still the thread:
+  // reading an empty list as "it is gone" would start a second site and charge
+  // a first build for what should have been an edit.
+  async function conversationForWork(name) {
+    if (activeId && !(sitesLoaded && !sites.some(site => site.conversationId === activeId))) return activeId;
+    return await createSite(name);
+  }
+
   // The first prompt names the site. Building needs an account, so a guest
   // who gets this far is sent to sign in rather than silently refused.
   async function sendPrompt() {
     const body = promptInput.value.trim();
     if (!body) return;
     if (forge.auth.state().kind !== 'member') { openMenu('account', promptInput); return; }
+    if (uploading.length > 0) { showNote(composerError, 'Wait for your files to finish uploading.'); return; }
+    const sending = attachments.filter(file => !file.messageId).map(file => file._id);
     promptInput.value = '';
     showNote(composerError, '');
     try {
-      let id = activeId;
-      // Before the list arrives, the remembered thread is still the thread.
-      // Reading an empty list as "it is gone" would start a second site and
-      // charge a first build for what should have been an edit.
-      if (!id || (sitesLoaded && !sites.some(site => site.conversationId === id))) {
-        id = await createSite(body.length > 48 ? `${body.slice(0, 47).trimEnd()}…` : body);
-      }
-      await forge.sites.generate(id, body);
+      const id = await conversationForWork(body.length > 48 ? `${body.slice(0, 47).trimEnd()}…` : body);
+      await forge.sites.generate(id, body, sending);
     } catch (error) {
       promptInput.value = body;
       reportError(error);
       showNote(composerError, messageOf(error));
     }
   }
+
+  // Attachments: what the user gives Forge to build with. The bytes go from
+  // this device straight to storage; the tray shows what is going with the
+  // next prompt until it has gone.
+  function fileIcon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#${name}`);
+    svg.append(use);
+    return svg;
+  }
+  function fileChips(files) {
+    const list = document.createElement('div');
+    list.className = 'message-files';
+    for (const file of files) {
+      const chip = document.createElement('span');
+      chip.className = 'message-file';
+      if (file.kind === 'image' && file.url) {
+        const thumb = document.createElement('img');
+        thumb.src = file.url;
+        thumb.alt = '';
+        chip.append(thumb);
+      } else {
+        chip.append(fileIcon('clip'));
+      }
+      const label = document.createElement('span');
+      label.textContent = file.name;
+      chip.append(label);
+      list.append(chip);
+    }
+    return list;
+  }
+  function renderTray() {
+    if (!attachmentTray) return;
+    const pending = attachments.filter(file => !file.messageId);
+    const rows = [
+      ...uploading.map(item => ({...item, busy: true})),
+      ...pending.map(file => ({...file, busy: false})),
+    ];
+    attachmentTray.hidden = rows.length === 0;
+    app.classList.toggle('has-attachments', rows.length > 0);
+    attachmentTray.replaceChildren(...rows.map(file => {
+      const item = document.createElement('div');
+      item.className = 'attachment';
+      item.classList.toggle('is-busy', Boolean(file.busy));
+      const thumb = document.createElement('span');
+      thumb.className = 'attachment-thumb';
+      if (file.kind === 'image' && file.url) thumb.style.backgroundImage = `url("${file.url}")`;
+      else thumb.append(fileIcon(file.kind === 'image' ? 'photo' : 'clip'));
+      const name = document.createElement('span');
+      name.className = 'attachment-name';
+      name.textContent = file.name;
+      item.append(thumb, name);
+      if (!file.busy) {
+        const drop = document.createElement('button');
+        drop.type = 'button';
+        drop.className = 'attachment-drop';
+        drop.setAttribute('aria-label', `Remove ${file.name}`);
+        drop.append(fileIcon('close'));
+        drop.addEventListener('click', () => {
+          forge.attachments.remove(file._id).catch(error => {
+            reportError(error);
+            showNote(composerError, messageOf(error));
+          });
+        });
+        item.append(drop);
+      }
+      return item;
+    }));
+  }
+  const attachError = attachSheet?.querySelector('.attach-error');
+  async function addFiles(fileList) {
+    const chosen = [...(fileList ?? [])];
+    if (chosen.length === 0) return;
+    showNote(attachError, '');
+    if (forge.auth.state().kind !== 'member') { openMenu('account'); return; }
+    let conversationId;
+    try {
+      conversationId = await conversationForWork(chosen[0].name);
+    } catch (error) {
+      reportError(error);
+      showNote(attachError, messageOf(error));
+      return;
+    }
+    for (const file of chosen) {
+      const ticket = {_id: `up-${Math.random().toString(36).slice(2)}`, name: file.name || 'file', kind: file.type.startsWith('image/') ? 'image' : 'file', url: null};
+      uploading = [...uploading, ticket];
+      renderTray();
+      try {
+        await forge.attachments.upload(conversationId, file);
+      } catch (error) {
+        reportError(error);
+        showNote(attachError, messageOf(error));
+      } finally {
+        uploading = uploading.filter(item => item._id !== ticket._id);
+        renderTray();
+      }
+    }
+  }
+  attachSheet?.querySelectorAll('[data-pick]').forEach(button => {
+    const input = attachSheet.querySelector(`[data-input="${button.dataset.pick}"]`);
+    button.addEventListener('click', () => input?.click());
+  });
+  attachSheet?.querySelectorAll('.picker').forEach(input => {
+    input.addEventListener('change', async () => {
+      const files = input.files;
+      input.value = '';
+      closeMenu();
+      await addFiles(files);
+      promptInput?.focus({preventScroll: true});
+    });
+  });
   promptInput?.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
