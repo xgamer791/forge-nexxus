@@ -91,8 +91,8 @@ describe("billing", () => {
     expect(catalog.plans.map((plan) => plan.key)).toEqual(["free", "starter", "premium"]);
     expect(catalog.plans.map((plan) => plan.monthlyPriceCents)).toEqual([0, 3990, 6990]);
     expect(catalog.plans.map((plan) => plan.yearlyPriceCents)).toEqual([0, 28680, 50280]);
-    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([0, 600, 2000]);
-    expect(catalog.plans[0].signupCredits).toBe(30);
+    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([10, 600, 2000]);
+    expect(catalog.plans[0].signupCredits).toBe(20);
     expect(catalog.topUps.length).toBeGreaterThan(0);
     expect(catalog.requestCosts).toEqual(REQUEST_COSTS);
   });
@@ -309,28 +309,35 @@ describe("billing", () => {
     expect(stored.credits).toBe(starter.monthlyCredits);
   });
 
-  test("the free welcome grant is one-off: when the period ends there is no new allowance", async () => {
+  test("a free period that ends can still talk, and still cannot build", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     await t.mutation(internal.billing.ensure, { userId: member.userId });
+    // The welcome grant plus the first period's allowance, and less than a build.
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING);
+    expect(OPENING).toBeLessThan(REQUEST_COSTS.generate);
     // Age the stored period by hand, the way time would.
     const past = Date.now() - 40 * DAY;
     await t.run(async (ctx) => {
       const sub = (await ctx.db.query("subscriptions").first())!;
       await ctx.db.patch(sub._id, { periodStart: past, periodEnd: addMonth(past) });
     });
-    // Free grants nothing per period, so the welcome credits expire to nothing
-    // and none arrive to replace them. A free member past their first period
-    // cannot afford even a chat until they upgrade or are topped up.
-    expect(free.monthlyCredits).toBe(0);
+    // The welcome grant is one-off, so what is left expires -- but the monthly
+    // allowance arrives, which is what keeps a free member able to talk.
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: 0,
-      available: 0,
-      granted: 0,
+      credits: free.monthlyCredits,
+      available: free.monthlyCredits,
+      granted: free.monthlyCredits,
     });
+    const { holdId } = await t.mutation(internal.billing.reserve, {
+      userId: member.userId,
+      requestKind: "chat",
+    });
+    await t.mutation(internal.billing.settle, { holdId });
+    // Talking, yes. Building, still not without upgrading.
+    expect(free.monthlyCredits!).toBeLessThan(REQUEST_COSTS.generate);
     await expect(
-      t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "chat" }),
+      t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "generate" }),
     ).rejects.toThrow("Out of credits");
   });
 

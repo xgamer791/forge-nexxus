@@ -42,8 +42,11 @@ export const PLANS: readonly Plan[] = [
     tagline: "Explore Forge and plan your site.",
     monthlyPriceCents: 0,
     yearlyPriceCents: 0,
-    monthlyCredits: 0,
-    signupCredits: 30,
+    // A small monthly allowance so planning a site out loud keeps working past
+    // the first period, and a welcome grant that together with it opens at less
+    // than a build costs. Free buys conversation, never a build.
+    monthlyCredits: 10,
+    signupCredits: 20,
     maxSites: 1,
     visitorsPerMonth: null,
     customDomains: false,
