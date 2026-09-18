@@ -27,6 +27,10 @@ function pickStorage() {
   }
 }
 
+// The web client names its own return address; the mobile client omits the
+// meta and keeps landing at SITE_URL.
+const redirectTo = document.querySelector('meta[name="forge-redirect"]')?.content || "/";
+
 const data = createForgeData({
   client: new ConvexClient(url),
   httpClient: new ConvexHttpClient(url),
@@ -34,6 +38,7 @@ const data = createForgeData({
   api,
   authCode,
   navigate: (target) => location.assign(target),
+  redirectTo,
 });
 data.ready.catch((error) => console.error("Forge Nexxus could not start a session", error));
 

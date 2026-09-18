@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { exportPKCS8, generateKeyPair } from "jose";
 import { beforeAll, describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
+import { resolveRedirect } from "./auth";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -16,6 +17,36 @@ beforeAll(async () => {
   process.env.JWT_PRIVATE_KEY = (await exportPKCS8(privateKey)).trimEnd().replace(/\n/g, " ");
   process.env.CONVEX_SITE_URL = "https://test.convex.site";
   process.env.SITE_URL = "https://example.test/forge-nexxus";
+});
+
+describe("redirects", () => {
+  test("relative targets land on the mobile client at SITE_URL", () => {
+    expect(resolveRedirect("/")).toBe("https://example.test/forge-nexxus/");
+    expect(resolveRedirect("?screen=plan")).toBe("https://example.test/forge-nexxus?screen=plan");
+  });
+
+  test("both clients may name themselves, and nothing else may", () => {
+    expect(resolveRedirect("https://example.test/forge-nexxus/?x=1")).toBe(
+      "https://example.test/forge-nexxus/?x=1",
+    );
+    expect(resolveRedirect("https://forgenexxus.com")).toBe("https://forgenexxus.com");
+    expect(resolveRedirect("https://forgenexxus.com/app/")).toBe("https://forgenexxus.com/app/");
+    expect(() => resolveRedirect("https://forgenexxus.com.example/app/")).toThrow("Invalid redirectTo");
+    expect(() => resolveRedirect("https://example.test/other")).toThrow("Invalid redirectTo");
+    expect(() => resolveRedirect("https://evil.example/")).toThrow("Invalid redirectTo");
+  });
+
+  test("WEB_URL moves the web client", () => {
+    process.env.WEB_URL = "https://staging.forgenexxus.com/";
+    try {
+      expect(resolveRedirect("https://staging.forgenexxus.com/app/")).toBe(
+        "https://staging.forgenexxus.com/app/",
+      );
+      expect(() => resolveRedirect("https://forgenexxus.com/app/")).toThrow("Invalid redirectTo");
+    } finally {
+      delete process.env.WEB_URL;
+    }
+  });
 });
 
 describe("sign-in", () => {

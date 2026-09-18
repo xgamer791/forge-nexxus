@@ -287,6 +287,36 @@ describe("sign-in providers", () => {
     expect(navigate).toHaveBeenCalledWith(redirect);
   });
 
+  test("a client can name its own return address for links and OAuth", async () => {
+    const client = fakeClient();
+    const http = { auth: null, calls: [] };
+    http.setAuth = (value) => {
+      http.auth = value;
+    };
+    http.clearAuth = () => {
+      http.auth = null;
+    };
+    http.action = vi.fn(async (fn, args) => {
+      http.calls.push({ fn, args });
+      return defaultHandler(fn, args);
+    });
+    const data = createForgeData({
+      client,
+      httpClient: http,
+      storage: memoryStorage(),
+      api,
+      wait: async () => {},
+      redirectTo: "https://forgenexxus.com/app/",
+    });
+    await data.ready;
+    await data.auth.signInWithEmail("me@example.com");
+    await data.auth.signInWith("google");
+    expect(http.calls.slice(-2).map((call) => call.args.params.redirectTo)).toEqual([
+      "https://forgenexxus.com/app/",
+      "https://forgenexxus.com/app/",
+    ]);
+  });
+
   test("a provider that does not redirect is reported", async () => {
     const { data } = harness({
       handler: async (fn, args) =>
