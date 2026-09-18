@@ -679,7 +679,10 @@ if (connectionsSheet) {
   const reasonOf = error => error?.data ?? error?.message ?? 'Something went wrong';
   let connections = [];
   let servers = [];
+  let apps = [];
   let connecting = null;
+  let currentUser = null;
+  const scannedServers = new Set();
 
   // A workspace is drawn with the same row as a repo, so it is reshaped rather
   // than given a second renderer.
@@ -694,22 +697,67 @@ if (connectionsSheet) {
       usedAt: workspace.lastConnectedAt ?? workspace.createdAt ?? 0,
     };
   }
+  // Paths on a Cloudways box all start with the master user's home, which is
+  // noise in a narrow row.
+  function shortPath(app) {
+    const server = servers.find(item => item._id === app.workspaceId);
+    const home = server ? `/home/${server.detail.split('@')[0]}/` : null;
+    return home && app.path.startsWith(home) ? `~/${app.path.slice(home.length)}` : app.path;
+  }
+  function asAppRow(app) {
+    return {
+      _id: app._id,
+      kind: 'cloud',
+      app: true,
+      workspaceId: app.workspaceId,
+      name: app.name,
+      detail: shortPath(app),
+      connected: app.active,
+      usedAt: app.usedAt ?? 0,
+      used: Boolean(app.usedAt),
+    };
+  }
   function everything() {
-    return [...connections.filter(connection => connection.kind === 'repo'), ...servers];
+    return [
+      ...connections.filter(connection => connection.kind === 'repo'),
+      ...servers,
+      ...apps.map(asAppRow),
+    ];
+  }
+  // Cloud reads server, then that server's applications beneath it, so the
+  // list mirrors where the apps actually live.
+  function cloudOrder(search) {
+    const rows = [];
+    for (const server of [...servers].sort((a, b) => a.name.localeCompare(b.name))) {
+      const beneath = apps
+        .filter(app => app.workspaceId === server._id)
+        .map(asAppRow)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const serverMatches = matches(server, search);
+      const hits = beneath.filter(app => matches(app, search));
+      if (serverMatches || hits.length > 0) rows.push(server);
+      rows.push(...(serverMatches ? beneath : hits));
+    }
+    return rows;
   }
 
-  function fail(kind, message, error) {
-    if (error) reportError(error);
+  function say(kind, message, bad) {
     const slot = document.querySelector(`[data-error="${kind}"]`);
     if (!slot) return;
     slot.textContent = message;
     slot.hidden = false;
+    slot.classList.toggle('is-bad', bad === true);
+  }
+  function fail(kind, message, error) {
+    if (error) reportError(error);
+    say(kind, message, true);
   }
   function clearError(kind) {
     const slot = document.querySelector(`[data-error="${kind}"]`);
     if (!slot) return;
     slot.textContent = '';
     slot.hidden = true;
+    slot.classList.remove('is-bad');
   }
 
   function matches(connection, term) {
@@ -726,7 +774,10 @@ if (connectionsSheet) {
     row.className = 'workspace';
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    glyph.setAttribute('href', connection.kind === 'repo' ? '#branch' : '#server');
+    glyph.setAttribute(
+      'href',
+      connection.app ? '#folder' : connection.kind === 'repo' ? '#branch' : '#server'
+    );
     icon.append(glyph);
     const copy = document.createElement('span');
     copy.className = 'workspace-copy';
@@ -736,23 +787,41 @@ if (connectionsSheet) {
     detail.textContent = connection.detail;
     copy.append(name, detail);
     row.append(icon, copy);
+    if (connection.app) row.classList.add('is-app');
     const busy = connecting === connection._id;
-    if (showStatus || connection.connected || busy) {
+    // A server is connected or not; an app or a repo is the active workspace or
+    // it is nothing, so it only carries a label once it is chosen.
+    const chosen = connection.app || !connection.remote;
+    if ((showStatus && !connection.app) || connection.connected || busy) {
       const status = document.createElement('span');
       status.className = connection.connected ? 'status active' : 'status';
-      status.textContent = busy ? 'Connecting…' : connection.connected ? 'Connected' : 'Connect';
+      status.textContent = busy
+        ? 'Connecting…'
+        : connection.connected
+          ? (chosen ? 'Active' : 'Connected')
+          : 'Connect';
       row.append(status);
     }
     if (busy) row.setAttribute('aria-disabled', 'true');
     row.setAttribute(
       'aria-label',
-      `${connection.connected ? 'Disconnect from' : 'Connect to'} ${connection.name}`
+      connection.app
+        ? `${connection.connected ? 'Leave' : 'Work on'} ${connection.name}`
+        : `${connection.connected ? 'Disconnect from' : 'Connect to'} ${connection.name}`
     );
     row.addEventListener('click', () => {
       if (connecting) return;
       const connect = !connection.connected;
       const fromPicker = Boolean(row.closest('.picker'));
       clearError(connection.kind);
+      if (connection.app) {
+        const change = connect
+          ? forge.apps.activate(connection._id)
+          : forge.apps.clearActive();
+        change.catch(error => fail('cloud', 'Could not change the active workspace.', error));
+        if (connect && fromPicker) openMenu('connections');
+        return;
+      }
       if (connection.remote) {
         void toggleServer(connection, connect, fromPicker);
         return;
@@ -839,8 +908,14 @@ if (connectionsSheet) {
     render();
     try {
       const outcome = await forge.workspaces.connect(server._id);
-      if (!outcome?.ok) fail('cloud', outcome?.message ?? 'Could not reach that server.');
-      else if (fromPicker) openMenu('connections');
+      if (!outcome?.ok) {
+        fail('cloud', outcome?.message ?? 'Could not reach that server.');
+      } else {
+        // A fresh session is the moment to re-read what is on the server.
+        scannedServers.delete(server._id);
+        scanServers();
+        if (fromPicker) openMenu('connections');
+      }
     } catch (error) {
       fail('cloud', reasonOf(error), error);
     } finally {
@@ -851,7 +926,10 @@ if (connectionsSheet) {
   function render() {
     const rows = everything();
     const term = filters.recents ?? '';
+    // Recents is what has been used, not everything that exists: an app only
+    // earns a place once it has been chosen at least once.
     const recent = [...rows]
+      .filter(connection => connection.used !== false)
       .sort((a, b) => b.usedAt - a.usedAt)
       .filter(connection => matches(connection, term));
     recents.replaceChildren(...recent.map(connection => workspaceRow(connection, true)));
@@ -860,13 +938,15 @@ if (connectionsSheet) {
       const kind = list.dataset.list;
       const search = filters[kind] ?? '';
       const ofKind = rows.filter(connection => connection.kind === kind);
-      const shown = ofKind
-        .filter(connection => matches(connection, search))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const shown = kind === 'cloud'
+        ? cloudOrder(search)
+        : ofKind
+            .filter(connection => matches(connection, search))
+            .sort((a, b) => a.name.localeCompare(b.name));
       // Servers are managed in Settings, so only repo rows carry the options menu.
       list.replaceChildren(...shown.map(connection => {
         const row = workspaceRow(connection, kind === 'cloud');
-        return connection.remote ? row : manageableRow(connection, row);
+        return connection.remote || connection.app ? row : manageableRow(connection, row);
       }));
       const empty = document.querySelector(`[data-empty="${kind}"]`);
       if (!empty) return;
@@ -958,6 +1038,30 @@ if (connectionsSheet) {
     .forEach(button => button.addEventListener('click', resetSheets));
   backdrop.addEventListener('click', resetSheets);
   render();
+  // Every connected server is re-read once per session, so the Cloud list is
+  // what is on the server now rather than what a previous login cached.
+  function scanServers() {
+    if (!forge?.workspaces?.scanApps) return;
+    for (const server of servers) {
+      if (!server.connected || scannedServers.has(server._id)) continue;
+      scannedServers.add(server._id);
+      say('cloud', `Reading applications on ${server.name}…`);
+      forge.workspaces.scanApps(server._id)
+        .then(outcome => {
+          if (outcome?.ok === false) {
+            fail('cloud', outcome.message ?? 'Could not read the applications on that server.');
+          } else if (outcome?.count === 0) {
+            say('cloud', outcome.message ?? 'No applications found on that server.');
+          } else {
+            clearError('cloud');
+          }
+        })
+        .catch(error => {
+          scannedServers.delete(server._id);
+          fail('cloud', reasonOf(error), error);
+        });
+    }
+  }
   forge?.connections?.subscribe(list => {
     connections = Array.isArray(list) ? list : [];
     render();
@@ -965,6 +1069,19 @@ if (connectionsSheet) {
   forge?.workspaces?.subscribe(list => {
     servers = (Array.isArray(list) ? list : []).map(asRow);
     render();
+    scanServers();
+  });
+  forge?.apps?.subscribe(list => {
+    apps = Array.isArray(list) ? list : [];
+    render();
+  });
+  // Signing in as someone else means their servers, so the scan runs again.
+  forge?.account?.subscribe(user => {
+    const id = user?._id ?? null;
+    if (id === currentUser) return;
+    currentUser = id;
+    scannedServers.clear();
+    scanServers();
   });
 }
 

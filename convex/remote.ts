@@ -222,3 +222,163 @@ export const connect = action({
     return { ok: true, message: `Connected to ${workspace.username}@${workspace.host}` };
   },
 });
+
+// Cloudways keeps each application under ~/applications/<app>/public_html; a
+// plain server usually keeps them under /var/www. Both are listed, and the doc
+// root is preferred over the wrapper directory when one exists.
+const LIST_APPS = [
+  'list() {',
+  '  base="$1"',
+  '  [ -d "$base" ] || return 0',
+  '  for d in "$base"/*/; do',
+  '    [ -d "$d" ] || continue',
+  '    root="${d%/}"',
+  '    name="$(basename "$root")"',
+  '    if [ -d "$root/public_html" ]; then root="$root/public_html"; fi',
+  "    printf '%s\\t%s\\n' \"$name\" \"$root\"",
+  '  done',
+  '}',
+  'list "$HOME/applications"',
+  'list /var/www',
+].join("\n");
+
+type App = { name: string; path: string };
+
+function parseApps(output: string): App[] {
+  const seen = new Set<string>();
+  const apps: App[] = [];
+  for (const line of output.split("\n")) {
+    const [name, path] = line.split("\t");
+    if (!name?.trim() || !path?.trim() || seen.has(path)) continue;
+    seen.add(path);
+    apps.push({ name: name.trim(), path: path.trim() });
+    if (apps.length >= 200) break;
+  }
+  return apps;
+}
+
+// SFTP workspaces cannot run a command, so the same two locations are walked
+// over the file protocol instead.
+function sftpApps(client: Client): Promise<App[]> {
+  return new Promise((resolve, reject) => {
+    client.sftp((error, sftp) => {
+      if (error || !sftp) return reject(error ?? new Error("Could not open SFTP"));
+      const readdir = (path: string) =>
+        new Promise<{ filename: string; longname: string; attrs: { isDirectory(): boolean } }[]>(
+          (done) => sftp.readdir(path, (listError, list) => done(listError ? [] : (list as never))),
+        );
+      const exists = (path: string) =>
+        new Promise<boolean>((done) => sftp.stat(path, (statError) => done(!statError)));
+      sftp.realpath(".", async (pathError, home) => {
+        if (pathError) return reject(pathError);
+        const apps: App[] = [];
+        for (const base of [`${home.replace(/\/$/, "")}/applications`, "/var/www"]) {
+          for (const entry of await readdir(base)) {
+            if (!entry.attrs.isDirectory()) continue;
+            const root = `${base}/${entry.filename}`;
+            const docRoot = (await exists(`${root}/public_html`)) ? `${root}/public_html` : root;
+            apps.push({ name: entry.filename, path: docRoot });
+            if (apps.length >= 200) break;
+          }
+        }
+        resolve(apps);
+      });
+    });
+  });
+}
+
+function sshApps(client: Client): Promise<App[]> {
+  return new Promise((resolve, reject) => {
+    client.exec(LIST_APPS, (error, stream) => {
+      if (error) return reject(error);
+      let output = "";
+      stream.on("data", (chunk: Buffer) => {
+        output += chunk.toString("utf8");
+      });
+      stream.stderr.resume();
+      stream.on("error", (streamError: Error) => reject(streamError));
+      stream.on("close", () => resolve(parseApps(output)));
+    });
+  });
+}
+
+// Deliberately a separate session from `probe`: the connection check is the
+// proven path and is left untouched.
+function collectApps(
+  target: { protocol: "ssh" | "sftp"; host: string; port: number; username: string },
+  credential: Credential,
+) {
+  return new Promise<App[]>((resolve, reject) => {
+    const client = new Client();
+    let settled = false;
+    const finish = (error?: Error | null, value?: App[]) => {
+      if (settled) return;
+      settled = true;
+      try {
+        client.end();
+      } catch {
+        /* Already torn down. */
+      }
+      if (error) reject(error);
+      else resolve(value ?? []);
+    };
+    client.on("ready", () => {
+      const work = target.protocol === "sftp" ? sftpApps(client) : sshApps(client);
+      work.then((apps) => finish(null, apps), (error) => finish(error));
+    });
+    client.on("error", (error) => finish(error));
+    client.on("timeout", () => finish(new Error("The server did not respond in time")));
+    try {
+      client.connect({
+        host: target.host,
+        port: target.port,
+        username: target.username,
+        readyTimeout: 15000,
+        keepaliveInterval: 0,
+        ...credential,
+      });
+    } catch (error) {
+      finish(error as Error);
+    }
+  });
+}
+
+// Every login re-reads the server rather than trusting the cache, so the list
+// reflects apps added or removed since last time.
+export const scanApps = action({
+  args: { id: v.id("workspaces") },
+  handler: async (ctx, { id }): Promise<{ ok: boolean; count: number; message: string }> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Not signed in");
+    const workspace = await ctx.runQuery(internal.workspaces.credentialFor, {
+      id: id as Id<"workspaces">,
+      userId,
+    });
+    const credential: Credential = JSON.parse(unseal(workspace.secret));
+    try {
+      const found = await collectApps(
+        {
+          protocol: workspace.protocol,
+          host: workspace.host,
+          port: workspace.port,
+          username: workspace.username,
+        },
+        credential,
+      );
+      await ctx.runMutation(internal.apps.replaceForWorkspace, {
+        userId,
+        workspaceId: id,
+        found,
+      });
+      return {
+        ok: true,
+        count: found.length,
+        message: found.length
+          ? `Found ${found.length} app${found.length === 1 ? "" : "s"}`
+          : "No applications found on that server",
+      };
+    } catch (error) {
+      return { ok: false, count: 0, message: reason(error) };
+    }
+  },
+});

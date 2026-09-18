@@ -85,6 +85,15 @@ export const setConnected = mutation({
           .filter((item) => item._id !== id && item.kind === connection.kind && item.connected)
           .map((item) => ctx.db.patch(item._id, { connected: false })),
       );
+      // One workspace is active at a time, so choosing a repo stands down an
+      // app that was the active one.
+      const apps = await ctx.db
+        .query("apps")
+        .withIndex("by_user", (q) => q.eq("userId", connection.userId))
+        .collect();
+      await Promise.all(
+        apps.filter((app) => app.active).map((app) => ctx.db.patch(app._id, { active: false })),
+      );
     }
     await ctx.db.patch(id, { connected, ...(connected ? { usedAt: Date.now() } : {}) });
   },

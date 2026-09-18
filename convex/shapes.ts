@@ -10,3 +10,5 @@ export const workspaceEnvironment = v.union(
   v.literal("staging"),
   v.literal("dev"),
 );
+
+export const appShape = v.object({ name: v.string(), path: v.string() });

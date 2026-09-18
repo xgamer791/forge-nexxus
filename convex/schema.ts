@@ -44,6 +44,22 @@ export default defineSchema({
     lastError: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
+  // Applications discovered on a server. Replaced wholesale by each scan, so
+  // the list is whatever the server reported last, never a stale accumulation.
+  // `active` marks the one workspace the app is currently working against.
+  apps: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.id("workspaces"),
+    name: v.string(),
+    path: v.string(),
+    active: v.boolean(),
+    scannedAt: v.number(),
+    // Set the first time an app is chosen. A scan alone does not make an app
+    // recent, so discovering fifty of them does not flood the Connect sheet.
+    usedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_workspace", ["workspaceId"]),
   // Appearance choices follow the account rather than the device, so they
   // survive signing out and back in.
   settings: defineTable({

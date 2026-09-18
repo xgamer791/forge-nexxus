@@ -181,6 +181,7 @@ html[data-theme=dark] .sheet.connections{background:#1c1c1e}
 .sheet-back{position:absolute;left:0;top:12px;width:36px;height:36px;border-radius:50%;background:var(--panel);display:grid;place-items:center}
 .sheet-back svg{width:18px;height:18px;stroke-width:2}
 .connections .sheet-back{background:var(--card)}
+.picker-list{margin-top:16px}
 .picker-list:empty{display:none}
 .picker-empty{margin:0;padding:26px 18px 12px;text-align:center;color:var(--subdued);font-size:15px;line-height:20px}
 .picker-actions{margin-top:14px}
@@ -188,6 +189,7 @@ html[data-theme=dark] .sheet.connections{background:#1c1c1e}
 .picker-form .search input{color:var(--text)}
 .picker-cancel{height:40px;width:100%;display:flex;align-items:center;justify-content:center;color:var(--subdued);font-size:17px}
 .picker-error{margin:12px 8px 0;color:var(--subdued);font-size:15px;line-height:20px}
+.picker-error.is-bad{color:var(--danger)}
 .picker-list{overflow:visible}
 .picker-list .workspace-row{position:relative;display:flex;align-items:center}
 .picker-list .workspace-row+.workspace-row{border-top:1px solid color-mix(in srgb,var(--text) 10%,transparent)}
@@ -285,3 +287,10 @@ html[data-theme=light]{--ok:#1a7f37;--ok-soft:rgba(26,127,55,.12);--danger:#c036
 .wizard-footer{display:flex;align-items:center;gap:14px;margin:26px 0 8px}
 .wizard-prev{height:48px;padding:0 6px;color:var(--subdued);font-size:19px}
 .wizard-create{flex:1;height:48px;border-radius:12px;width:auto}
+.picker-list .workspace.is-app{padding-left:44px}
+.connections .picker-list .workspace.is-app{padding-left:52px}
+.connections .picker-list .workspace.is-app>svg{width:18px;height:18px;color:var(--subdued)}
+.picker-list .workspace.is-app strong{font-size:16px}
+.picker-list .workspace.is-app small{font-size:13px}
+.workspace-copy{flex:1;overflow:hidden}
+.workspace strong,.workspace small{overflow:hidden;text-overflow:ellipsis}

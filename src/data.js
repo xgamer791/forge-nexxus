@@ -266,11 +266,19 @@ export function createForgeData({
       test: (details) => client.action(api.remote.test, details),
       create: (details) => client.action(api.remote.create, details),
       connect: (id) => client.action(api.remote.connect, { id }),
+      scanApps: (id) => client.action(api.remote.scanApps, { id }),
       disconnect: (id) => client.mutation(api.workspaces.disconnect, { id }),
       rename: (id, name) => client.mutation(api.workspaces.rename, { id, name }),
       setEnvironment: (id, environment) =>
         client.mutation(api.workspaces.setEnvironment, { id, environment }),
       remove: (id) => client.mutation(api.workspaces.remove, { id }),
+    },
+    // Applications found on a server. The list is whatever the last scan read,
+    // and `activate` makes one of them the workspace the app works against.
+    apps: {
+      subscribe: (callback) => client.onUpdate(api.apps.list, {}, callback),
+      activate: (id) => client.mutation(api.apps.activate, { id }),
+      clearActive: () => client.mutation(api.apps.clearActive, {}),
     },
   };
 }
