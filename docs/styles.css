@@ -187,3 +187,11 @@ html[data-theme=dark] .sheet.connections{background:#1c1c1e}
 .picker-form{display:flex;flex-direction:column;gap:12px;margin-top:14px}
 .picker-form .search input{color:var(--text)}
 .picker-cancel{height:40px;width:100%;display:flex;align-items:center;justify-content:center;color:var(--subdued);font-size:17px}
+.picker-error{margin:12px 8px 0;color:var(--subdued);font-size:15px;line-height:20px}
+.picker-list{overflow:visible}
+.picker-list .workspace-row{position:relative;display:flex;align-items:center}
+.picker-list .workspace-row+.workspace-row{border-top:1px solid color-mix(in srgb,var(--text) 10%,transparent)}
+.picker-list .workspace-row .workspace{flex:1;min-width:0;padding-right:8px}
+.row-options{margin-right:14px;width:17px;height:28px;display:grid;place-items:center;color:var(--subdued);flex-shrink:0}
+.row-options svg{width:17px;height:17px;fill:currentColor;stroke:none}
+.row-menu{right:14px;top:calc(100% - 10px)}

@@ -178,7 +178,7 @@ let settings = {...SETTING_DEFAULTS, ...readStoredSettings()};
 applyTheme(settings.theme);
 function closePopovers() {
   document.querySelectorAll('.theme-menu,.font-menu').forEach(menu => { menu.hidden = true; });
-  document.querySelectorAll('.theme-select,.font-select,.conversation-options').forEach(button => button.setAttribute('aria-expanded', 'false'));
+  document.querySelectorAll('.theme-select,.font-select,.conversation-options,.row-options').forEach(button => button.setAttribute('aria-expanded', 'false'));
 }
 function showSettings(show) {
   hideOverlay(appearance);
@@ -657,6 +657,20 @@ if (connectionsSheet) {
   const filters = {};
   let connections = [];
 
+  function fail(kind, message, error) {
+    reportError(error);
+    const slot = document.querySelector(`[data-error="${kind}"]`);
+    if (!slot) return;
+    slot.textContent = message;
+    slot.hidden = false;
+  }
+  function clearError(kind) {
+    const slot = document.querySelector(`[data-error="${kind}"]`);
+    if (!slot) return;
+    slot.textContent = '';
+    slot.hidden = true;
+  }
+
   function matches(connection, term) {
     const needle = term.trim().toLowerCase();
     if (!needle) return true;
@@ -693,12 +707,76 @@ if (connectionsSheet) {
     );
     row.addEventListener('click', () => {
       const connect = !connection.connected;
-      forge.connections.setConnected(connection._id, connect).catch(reportError);
+      clearError(connection.kind);
+      forge.connections.setConnected(connection._id, connect)
+        .catch(error => fail(connection.kind, 'Could not change that connection.', error));
       // Picking a workspace in a picker is the end of that errand, so the sheet
       // returns to Connect where the new state shows up under Recents.
       if (connect && row.closest('.picker')) openMenu('connections');
     });
     return row;
+  }
+  function optionsGlyph() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    for (const cx of [6, 12, 18]) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', cx);
+      dot.setAttribute('cy', 12);
+      dot.setAttribute('r', 1.25);
+      svg.append(dot);
+    }
+    return svg;
+  }
+  function menuItem(label, action) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitem');
+    item.textContent = label;
+    item.addEventListener('click', () => { closePopovers(); action(); });
+    return item;
+  }
+  // Only the pickers manage workspaces; Recents on the Connect sheet stays a
+  // plain list of rows.
+  function manageableRow(connection, row) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'workspace-row';
+    const options = document.createElement('button');
+    options.type = 'button';
+    options.className = 'row-options';
+    options.setAttribute('aria-label', `Options for ${connection.name}`);
+    options.setAttribute('aria-haspopup', 'menu');
+    options.setAttribute('aria-expanded', 'false');
+    options.append(optionsGlyph());
+    const menu = document.createElement('div');
+    menu.className = 'font-menu row-menu';
+    menu.setAttribute('role', 'menu');
+    menu.hidden = true;
+    menu.append(
+      menuItem('Rename', () => {
+        const next = prompt('Rename workspace', connection.name)?.trim();
+        if (!next || next === connection.name) return;
+        clearError(connection.kind);
+        forge.connections.rename(connection._id, next)
+          .catch(error => fail(connection.kind, 'Could not rename that workspace.', error));
+      }),
+      menuItem('Remove', () => {
+        if (!confirm(`Remove "${connection.name}"?`)) return;
+        clearError(connection.kind);
+        forge.connections.remove(connection._id)
+          .catch(error => fail(connection.kind, 'Could not remove that workspace.', error));
+      })
+    );
+    options.addEventListener('click', event => {
+      event.stopPropagation();
+      const open = menu.hidden;
+      closePopovers();
+      menu.hidden = !open;
+      options.setAttribute('aria-expanded', String(open));
+    });
+    wrapper.append(row, options, menu);
+    return wrapper;
   }
   function render() {
     const term = filters.recents ?? '';
@@ -713,7 +791,9 @@ if (connectionsSheet) {
       const shown = connections.filter(
         connection => connection.kind === kind && matches(connection, search)
       );
-      list.replaceChildren(...shown.map(connection => workspaceRow(connection, kind === 'cloud')));
+      list.replaceChildren(...shown.map(
+        connection => manageableRow(connection, workspaceRow(connection, kind === 'cloud'))
+      ));
       const empty = document.querySelector(`[data-empty="${kind}"]`);
       if (!empty) return;
       const noneSaved = !connections.some(connection => connection.kind === kind);
@@ -758,11 +838,12 @@ if (connectionsSheet) {
       const submit = form.querySelector('[type="submit"]');
       if (!name || !detail || submit.disabled) return;
       submit.disabled = true;
+      clearError(kind);
       try {
         await forge.connections.add(kind, name, detail);
         showAddForm(kind, false);
       } catch (error) {
-        reportError(error);
+        fail(kind, 'Could not add that workspace. Check the name and address.', error);
       } finally {
         submit.disabled = false;
       }
@@ -778,7 +859,10 @@ if (connectionsSheet) {
       filters[input.dataset.filter] = '';
       changed = true;
     });
-    document.querySelectorAll('[data-add]').forEach(trigger => showAddForm(trigger.dataset.add, false));
+    document.querySelectorAll('[data-add]').forEach(trigger => {
+      showAddForm(trigger.dataset.add, false);
+      clearError(trigger.dataset.add);
+    });
     if (changed) render();
   }
   document.querySelectorAll('[data-open],[data-sheet-back],.dismiss')
