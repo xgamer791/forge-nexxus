@@ -348,6 +348,25 @@ export const ensure = internalMutation({
   },
 });
 
+// What a request of this kind would need and whether the balance covers it,
+// without taking a hold or throwing. It lets a caller offer something cheaper
+// instead of refusing outright. An unlimited plan always covers it; a guest
+// never does, so the caller still reaches the "Sign in to build" refusal.
+export async function creditCheck(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  kind: RequestKind,
+  now = Date.now(),
+): Promise<{ affordable: boolean; needed: number; available: number | null }> {
+  const needed = REQUEST_COSTS[kind];
+  const user = await ctx.db.get(userId);
+  if (!user || user.isAnonymous) return { affordable: false, needed, available: 0 };
+  const sub = await ensureCurrent(ctx, userId, now);
+  if (planFor(sub.planKey).monthlyCredits === null) return { affordable: true, needed, available: null };
+  const available = Math.max(0, sub.credits - sub.reserved);
+  return { affordable: available >= needed, needed, available };
+}
+
 // Holds a request's credits before it runs. The check and the hold happen in
 // one transaction, so two requests racing for the last credit cannot both pass.
 export async function holdCredits(

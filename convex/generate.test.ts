@@ -35,6 +35,8 @@ const free = planFor("free");
 const starter = planFor("starter");
 // A member on Starter, holding the free welcome grant plus the month's allowance.
 const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits + starter.monthlyCredits!;
+// What a free member holds: the welcome grant, which does not cover a build.
+const FREE_OPENING = (free.monthlyCredits ?? 0) + free.signupCredits;
 const KEY = "sk-test-secret-key";
 const PAGE =
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Bakery</title><style>body{margin:0}</style></head><body><main><h1>Bakery on Main</h1></main></body></html>';
@@ -298,15 +300,77 @@ describe("generate.run", () => {
     expect(await member.as.query(api.messages.list, { conversationId })).toEqual([]);
   });
 
-  test("running out of credits refuses before the prompt is recorded", async () => {
+  test("a balance too thin to build can still talk, at the chat rate", async () => {
     const t = fresh();
     // A free member's welcome credits do not cover a build.
     const member = await createUser(t, { email: "m@example.com" });
+    expect(FREE_OPENING).toBeLessThan(REQUEST_COSTS.generate);
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Hello" });
+    const answer = "Happy to help. What is the site for?";
+    const calls = stubProvider(() => json({ choices: [{ message: { content: answer } }] }));
+
+    await member.as.action(api.generate.run, { conversationId, prompt: "Hello" });
+
+    const messages = await member.as.query(api.messages.list, { conversationId });
+    expect(messages.map((m) => [m.role, m.body, m.status ?? null])).toEqual([
+      ["user", "Hello", null],
+      ["assistant", answer, null],
+    ]);
+    // The model is told it may not build, and what standing in the way costs.
+    const system = calls[0].body.messages.filter((m: any) => m.role === "system");
+    expect(system[1].content).toContain("This turn is TALK");
+    expect(system[1].content).toContain(`${REQUEST_COSTS.generate} credits and they have ${FREE_OPENING}`);
+    // Held and settled as a chat, so the welcome credits are not eaten by one hello.
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
+      credits: FREE_OPENING - REQUEST_COSTS.chat,
+      reserved: 0,
+    });
+    const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
+    expect(holds.map((hold) => [hold.requestKind, hold.amount, hold.status])).toEqual([
+      ["chat", REQUEST_COSTS.chat, "settled"],
+    ]);
+    expect(await member.as.query(api.sites.currentHtml, { siteId })).toBe(null);
+  });
+
+  test("a talk-only turn hands over no page, even if the model builds one anyway", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    stubProvider(() => reply("Built your bakery site."));
+
+    await member.as.action(api.generate.run, { conversationId, prompt: "Build me a bakery site" });
+
+    // A build held at the chat rate would be a build for one credit.
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
+    expect(await member.as.query(api.sites.currentHtml, { siteId })).toBe(null);
+    const messages = await member.as.query(api.messages.list, { conversationId });
+    expect(messages[1].body).toBe(
+      `Building this costs ${REQUEST_COSTS.generate} credits and you have ${FREE_OPENING}. ` +
+        "Top up or upgrade and I'll build it \u2014 until then I can help you plan it here.",
+    );
+    expect(messages[1].versionId).toBeUndefined();
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
+      FREE_OPENING - REQUEST_COSTS.chat,
+    );
+  });
+
+  test("a balance too thin even to talk is refused before the prompt is recorded", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
     const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    // The row is written the first time credits are touched; spend it dry.
+    await t.mutation(internal.billing.ensure, { userId: member.userId });
+    await t.run(async (ctx) => {
+      const sub = await ctx.db
+        .query("subscriptions")
+        .withIndex("by_user", (q) => q.eq("userId", member.userId))
+        .unique();
+      await ctx.db.patch(sub!._id, { credits: 0 });
+    });
     const calls = stubProvider(() => reply("never"));
     await expect(
       member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" }),
-    ).rejects.toThrow("Out of credits: this needs 40 and you have 30. Upgrade to start building.");
+    ).rejects.toThrow(`Out of credits: this needs ${REQUEST_COSTS.chat} and you have 0`);
     expect(calls).toHaveLength(0);
     expect(await member.as.query(api.messages.list, { conversationId })).toEqual([]);
   });

@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation } from "./_generated/server";
-import { holdCredits, releaseHold, settleHold } from "./billing";
+import { creditCheck, holdCredits, releaseHold, settleHold } from "./billing";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 
 // How much of the thread the model sees, and how long a page it may write.
@@ -56,6 +56,7 @@ export const run = action({
         requestKind: job.requestKind,
         html: parsed.html ?? undefined,
         summary: parsed.summary,
+        blockedNote: job.blockedNote,
       });
     } catch (error) {
       const reason = describe(error);
@@ -79,8 +80,17 @@ export const begin = internalMutation({
       .first();
     if (!site) throw new ConvexError("This thread has no site");
     const current = site.currentVersionId ? await ctx.db.get(site.currentVersionId) : null;
-    const kind: RequestKind = current ? "edit" : "generate";
     const now = Date.now();
+    const buildKind: RequestKind = current ? "edit" : "generate";
+    // A balance too thin for a build can still afford to talk. Rather than
+    // refuse the message outright, the turn becomes talk-only: the model is
+    // told it may not build, and the hold is taken at the chat rate. Someone
+    // out of credits can still ask what Forge would do and what it costs.
+    const check = await creditCheck(ctx, userId, buildKind, now);
+    const kind: RequestKind = check.affordable ? buildKind : "chat";
+    const talkOnly = check.affordable
+      ? null
+      : { needed: check.needed, available: check.available ?? 0 };
     const { holdId } = await holdCredits(ctx, userId, kind, now);
     const recent = await ctx.db
       .query("messages")
@@ -101,7 +111,12 @@ export const begin = internalMutation({
       holdId,
       assistantId,
       requestKind: kind,
-      messages: buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt),
+      // What the thread says if the model builds anyway on a talk-only turn.
+      blockedNote: talkOnly
+        ? `Building this costs ${talkOnly.needed} credits and you have ${talkOnly.available}. ` +
+          "Top up or upgrade and I'll build it — until then I can help you plan it here."
+        : undefined,
+      messages: buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly),
     };
   },
 });
@@ -115,15 +130,19 @@ export const finish = internalMutation({
     // Absent when the model answered instead of building.
     html: v.optional(v.string()),
     summary: v.string(),
+    // Set when the turn was talk-only because a build was out of reach.
+    blockedNote: v.optional(v.string()),
   },
-  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary }) => {
+  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary, blockedNote }) => {
     const now = Date.now();
-    // No page came back, so nothing was built: the reply is the answer, the
-    // site keeps the version it had, and the build hold settles at the chat
-    // rate with the rest handed back.
-    if (html === undefined) {
+    // Nothing to store: either no page came back, or the turn was held at the
+    // chat rate because a build was unaffordable, in which case a page that
+    // came back anyway is dropped rather than handed over for a credit. Either
+    // way the site keeps the version it had and the hold settles as a chat.
+    if (html === undefined || kind === "chat") {
+      const body = html === undefined ? summary : (blockedNote ?? summary);
       if (await ctx.db.get(assistantId)) {
-        await ctx.db.patch(assistantId, { body: summary, status: undefined });
+        await ctx.db.patch(assistantId, { body, status: undefined });
       }
       await settleHold(ctx, holdId, REQUEST_COSTS.chat, now, "chat");
       return;
@@ -170,12 +189,24 @@ function buildMessages(
   currentHtml: string | null,
   history: Doc<"messages">[],
   prompt: string,
+  // Set when the balance cannot cover a build, which makes this turn TALK.
+  talkOnly: { needed: number; available: number } | null,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
   if (currentHtml) {
     messages.push({
       role: "system",
       content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated file.\n\n\`\`\`html\n${currentHtml}\n\`\`\``,
+    });
+  }
+  if (talkOnly) {
+    messages.push({
+      role: "system",
+      content:
+        `This turn is TALK, whatever the user asked for. Building would cost ${talkOnly.needed} credits and they have ${talkOnly.available}, ` +
+        "so you must not return HTML or open a code block. Answer them and help them plan the site. " +
+        "If they asked for something built or changed, say plainly what it would cost, what they have, " +
+        "and that topping up or upgrading is what unlocks it — then keep helping them plan.",
     });
   }
   for (const message of history) {
