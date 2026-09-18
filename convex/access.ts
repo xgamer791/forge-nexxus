@@ -20,3 +20,15 @@ export async function requireOwnedConversation(
   }
   return conversation;
 }
+
+export async function requireOwnedConnection(
+  ctx: QueryCtx | MutationCtx,
+  id: Id<"connections">,
+) {
+  const userId = await requireUserId(ctx);
+  const connection = await ctx.db.get(id);
+  if (!connection || connection.userId !== userId) {
+    throw new ConvexError("Connection not found");
+  }
+  return connection;
+}

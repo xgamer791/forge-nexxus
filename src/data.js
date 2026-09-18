@@ -246,5 +246,17 @@ export function createForgeData({
       send: (conversationId, body) =>
         client.mutation(api.messages.send, { conversationId, body }),
     },
+    connections: {
+      subscribe: (callback) => client.onUpdate(api.connections.list, {}, callback),
+      add: (kind, name, detail) => client.mutation(api.connections.add, { kind, name, detail }),
+      rename: (id, name) => client.mutation(api.connections.rename, { id, name }),
+      remove: (id) => client.mutation(api.connections.remove, { id }),
+      setConnected: (id, connected) =>
+        client.mutation(api.connections.setConnected, { id, connected }),
+    },
+    settings: {
+      subscribe: (callback) => client.onUpdate(api.settings.get, {}, callback),
+      update: (patch) => client.mutation(api.settings.update, patch),
+    },
   };
 }

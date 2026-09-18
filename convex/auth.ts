@@ -7,6 +7,7 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { action, internalMutation, type MutationCtx } from "./_generated/server";
+import { settingsFor } from "./settings";
 
 const convex = convexAuth({
   providers: [
@@ -69,6 +70,32 @@ export async function adoptGuestData(
     .withIndex("by_user_updated", (q) => q.eq("userId", guestId))
     .collect();
   await Promise.all(conversations.map((c) => ctx.db.patch(c._id, { userId })));
+  const connections = await ctx.db
+    .query("connections")
+    .withIndex("by_user", (q) => q.eq("userId", guestId))
+    .collect();
+  const owned = await ctx.db
+    .query("connections")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  await Promise.all(
+    connections.map((connection) => {
+      const alreadyThere = owned.some(
+        (item) => item.kind === connection.kind && item.detail === connection.detail,
+      );
+      return alreadyThere
+        ? ctx.db.delete(connection._id)
+        : ctx.db.patch(connection._id, { userId });
+    }),
+  );
+  // Appearance choices made as a guest carry over only when the account has
+  // none of its own; an existing account keeps what it already saved.
+  const guestSettings = await settingsFor(ctx, guestId);
+  if (guestSettings) {
+    const accountSettings = await settingsFor(ctx, userId);
+    if (accountSettings) await ctx.db.delete(guestSettings._id);
+    else await ctx.db.patch(guestSettings._id, { userId });
+  }
   const accounts = await ctx.db
     .query("authAccounts")
     .withIndex("userIdAndProvider", (q) => q.eq("userId", guestId))

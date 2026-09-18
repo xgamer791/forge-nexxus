@@ -10,9 +10,11 @@
 
 import type * as access from "../access.js";
 import type * as auth from "../auth.js";
+import type * as connections from "../connections.js";
 import type * as conversations from "../conversations.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
+import type * as settings from "../settings.js";
 import type * as users from "../users.js";
 
 import type {
@@ -24,9 +26,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   access: typeof access;
   auth: typeof auth;
+  connections: typeof connections;
   conversations: typeof conversations;
   http: typeof http;
   messages: typeof messages;
+  settings: typeof settings;
   users: typeof users;
 }>;
 

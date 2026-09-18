@@ -2,6 +2,8 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+export const connectionKind = v.union(v.literal("cloud"), v.literal("repo"));
+
 export default defineSchema({
   ...authTables,
   conversations: defineTable({
@@ -14,4 +16,26 @@ export default defineSchema({
     role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
     body: v.string(),
   }).index("by_conversation", ["conversationId"]),
+  // Workspaces the user has added. Nothing is seeded: the sheets stay empty
+  // until a connection exists, and `usedAt` orders the Recents list.
+  connections: defineTable({
+    userId: v.id("users"),
+    kind: connectionKind,
+    name: v.string(),
+    detail: v.string(),
+    connected: v.boolean(),
+    usedAt: v.number(),
+  }).index("by_user", ["userId"]),
+  // Appearance choices follow the account rather than the device, so they
+  // survive signing out and back in.
+  settings: defineTable({
+    userId: v.id("users"),
+    theme: v.optional(v.union(v.literal("light"), v.literal("dark"))),
+    density: v.optional(v.number()),
+    codeWrap: v.optional(v.boolean()),
+    themedDiff: v.optional(v.boolean()),
+    reduceTransparency: v.optional(v.boolean()),
+    uiFont: v.optional(v.string()),
+    codeFont: v.optional(v.string()),
+  }).index("by_user", ["userId"]),
 });

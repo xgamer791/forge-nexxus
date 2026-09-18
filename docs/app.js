@@ -148,8 +148,34 @@ function applyTheme(theme) {
 function applyTransparency(reduce) {
   app.classList.toggle('opaque-surfaces', reduce);
 }
-try { applyTheme(localStorage.getItem('forge-theme') === 'light' ? 'light' : 'dark'); }
-catch { applyTheme('dark'); }
+// Appearance preferences: the device copy paints immediately, then the copy
+// saved against the account replaces it as soon as Convex answers.
+const SETTINGS_KEY = 'forge-settings';
+const SETTING_DEFAULTS = {
+  theme: 'dark',
+  density: 64,
+  codeWrap: false,
+  themedDiff: true,
+  reduceTransparency: true,
+  uiFont: 'System font',
+  codeFont: 'System monospace',
+};
+function knownSettings(values) {
+  if (!values || typeof values !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(values).filter(([key, value]) => key in SETTING_DEFAULTS && value !== null && value !== undefined)
+  );
+}
+function readStoredSettings() {
+  try {
+    const saved = knownSettings(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null'));
+    const legacyTheme = localStorage.getItem('forge-theme');
+    if (saved.theme === undefined && legacyTheme) saved.theme = legacyTheme === 'light' ? 'light' : 'dark';
+    return saved;
+  } catch { return {}; }
+}
+let settings = {...SETTING_DEFAULTS, ...readStoredSettings()};
+applyTheme(settings.theme);
 function closePopovers() {
   document.querySelectorAll('.theme-menu,.font-menu').forEach(menu => { menu.hidden = true; });
   document.querySelectorAll('.theme-select,.font-select,.conversation-options').forEach(button => button.setAttribute('aria-expanded', 'false'));
@@ -224,6 +250,63 @@ const density = document.querySelector('.density-range');
 function syncDensity() { density.style.setProperty('--density', `${density.value}%`); }
 density.addEventListener('input', syncDensity);
 syncDensity();
+
+function applySettings(values) {
+  applyTheme(values.theme);
+  density.value = String(values.density);
+  syncDensity();
+  document.querySelectorAll('.toggle[data-setting]').forEach(button => {
+    button.setAttribute('aria-pressed', String(values[button.dataset.setting] === true));
+  });
+  applyTransparency(values.reduceTransparency === true);
+  document.querySelectorAll('.font-select[data-setting]').forEach(select => {
+    const label = select.querySelector('span');
+    if (label) label.textContent = values[select.dataset.setting];
+  });
+}
+function saveSettings(patch) {
+  settings = {...settings, ...patch};
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
+  catch { /* Private mode keeps preferences for this session only. */ }
+  applySettings(settings);
+  window.ForgeData?.settings?.update(patch).catch(reportError);
+}
+applySettings(settings);
+// These listeners run after the ones that drive the controls, so the control
+// has already settled on its new state by the time the change is recorded.
+document.querySelectorAll('.toggle[data-setting]').forEach(button => {
+  button.addEventListener('click', () => {
+    saveSettings({[button.dataset.setting]: button.getAttribute('aria-pressed') === 'true'});
+  });
+});
+document.querySelectorAll('.theme-menu [data-theme]').forEach(option => {
+  option.addEventListener('click', () => saveSettings({theme: option.dataset.theme}));
+});
+let densitySave;
+density.addEventListener('input', () => {
+  clearTimeout(densitySave);
+  densitySave = setTimeout(() => saveSettings({density: Number(density.value)}), 250);
+});
+document.querySelectorAll('.font-menu').forEach(menu => {
+  const select = document.querySelector(`.font-select[aria-controls="${menu.id}"]`);
+  if (!select?.dataset.setting) return;
+  menu.querySelectorAll('button').forEach(option => {
+    option.addEventListener('click', () => {
+      menu.querySelectorAll('button').forEach(item => item.setAttribute('aria-selected', String(item === option)));
+      saveSettings({[select.dataset.setting]: option.textContent});
+    });
+  });
+});
+// A signed-in account's saved preferences win over the device copy; a guest with
+// nothing saved keeps whatever this device is already showing.
+window.ForgeData?.settings?.subscribe(stored => {
+  const saved = knownSettings(stored);
+  if (Object.keys(saved).length === 0) return;
+  settings = {...settings, ...saved};
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
+  catch { /* Private mode keeps preferences for this session only. */ }
+  applySettings(settings);
+});
 let opener;
 function resetViewport() {
   window.scrollTo(0, 0);
@@ -279,6 +362,9 @@ document.querySelectorAll('[data-open]').forEach(button => {
   });
 });
 document.querySelectorAll('.dismiss').forEach(button => button.addEventListener('click', closeMenu));
+document.querySelectorAll('[data-sheet-back]').forEach(button => {
+  button.addEventListener('click', () => openMenu(button.dataset.sheetBack));
+});
 backdrop.addEventListener('click', closeMenu);
 document.addEventListener('click', event => {
   if (!event.target.closest('.theme-select,.theme-menu,.font-select,.font-menu')) closePopovers();
@@ -301,7 +387,7 @@ document.addEventListener('keydown', event => {
 const query = new URLSearchParams(location.search);
 if (query.has('reference')) app.classList.add('reference');
 if (query.get('theme') === 'light' || query.get('theme') === 'dark') applyTheme(query.get('theme'));
-if (['connections','models','attachments','account','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
+if (['connections','cloud-picker','repo-picker','models','attachments','account','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
 if (query.get('screen') === 'settings') { openMenu('navigation'); showSettings(true); }
 if (query.get('screen') === 'appearance') { openMenu('navigation'); showAppearance(true); }
 if (query.get('menu') === 'theme') {
@@ -552,6 +638,119 @@ if (forge?.conversations && conversationList && thread) {
       event.preventDefault();
       sendPrompt();
     }
+  });
+}
+
+// The Connect sheet and its Cloud and Repo pickers all render from the
+// workspaces saved against the account in Convex. Nothing is seeded, so a user
+// who has added nothing sees empty lists rather than examples.
+const connectionsSheet = document.querySelector('.connections');
+if (connectionsSheet) {
+  const recentsSection = connectionsSheet.querySelector('.recents-section');
+  const recents = connectionsSheet.querySelector('.recents');
+  const pickerLists = [...document.querySelectorAll('[data-list]')];
+  const filterInputs = [...document.querySelectorAll('[data-filter]')];
+  const EMPTY_COPY = {
+    cloud: 'No cloud workspaces connected yet.',
+    repo: 'No repositories connected yet.',
+  };
+  const filters = {};
+  let connections = [];
+
+  function matches(connection, term) {
+    const needle = term.trim().toLowerCase();
+    if (!needle) return true;
+    return connection.name.toLowerCase().includes(needle)
+      || connection.detail.toLowerCase().includes(needle);
+  }
+  // Cloud rows carry a Connect/Connected status; a repo row only says so once
+  // it is the active one, which is how the two lists are drawn.
+  function workspaceRow(connection, showStatus) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'workspace';
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    glyph.setAttribute('href', connection.kind === 'repo' ? '#branch' : '#server');
+    icon.append(glyph);
+    const copy = document.createElement('span');
+    copy.className = 'workspace-copy';
+    const name = document.createElement('strong');
+    name.textContent = connection.name;
+    const detail = document.createElement('small');
+    detail.textContent = connection.detail;
+    copy.append(name, detail);
+    row.append(icon, copy);
+    if (showStatus || connection.connected) {
+      const status = document.createElement('span');
+      status.className = connection.connected ? 'status active' : 'status';
+      status.textContent = connection.connected ? 'Connected' : 'Connect';
+      row.append(status);
+    }
+    row.setAttribute(
+      'aria-label',
+      `${connection.connected ? 'Disconnect from' : 'Connect to'} ${connection.name}`
+    );
+    row.addEventListener('click', () => {
+      const connect = !connection.connected;
+      forge.connections.setConnected(connection._id, connect).catch(reportError);
+      // Picking a workspace in a picker is the end of that errand, so the sheet
+      // returns to Connect where the new state shows up under Recents.
+      if (connect && row.closest('.picker')) openMenu('connections');
+    });
+    return row;
+  }
+  function render() {
+    const term = filters.recents ?? '';
+    const recent = [...connections]
+      .sort((a, b) => b.usedAt - a.usedAt)
+      .filter(connection => matches(connection, term));
+    recents.replaceChildren(...recent.map(connection => workspaceRow(connection, true)));
+    recentsSection.hidden = recent.length === 0;
+    pickerLists.forEach(list => {
+      const kind = list.dataset.list;
+      const search = filters[kind] ?? '';
+      const shown = connections.filter(
+        connection => connection.kind === kind && matches(connection, search)
+      );
+      list.replaceChildren(...shown.map(connection => workspaceRow(connection, kind === 'cloud')));
+      const empty = document.querySelector(`[data-empty="${kind}"]`);
+      if (!empty) return;
+      const noneSaved = !connections.some(connection => connection.kind === kind);
+      empty.textContent = noneSaved ? EMPTY_COPY[kind] : 'No workspaces match that search.';
+      empty.hidden = shown.length > 0;
+    });
+    document.querySelectorAll('[data-count]').forEach(count => {
+      const total = connections.filter(connection => connection.kind === count.dataset.count).length;
+      count.textContent = total ? String(total) : '';
+      count.hidden = total === 0;
+    });
+  }
+  filterInputs.forEach(input => {
+    filters[input.dataset.filter] = '';
+    input.addEventListener('input', () => {
+      filters[input.dataset.filter] = input.value;
+      render();
+    });
+  });
+  // Every sheet opens on a clean search, the same way it opens scrolled to top.
+  function clearFilters() {
+    let changed = false;
+    filterInputs.forEach(input => {
+      if (input.value === '') return;
+      input.value = '';
+      filters[input.dataset.filter] = '';
+      changed = true;
+    });
+    if (changed) render();
+  }
+  document.querySelectorAll('[data-open],[data-sheet-back],.dismiss')
+    .forEach(button => button.addEventListener('click', clearFilters));
+  backdrop.addEventListener('click', clearFilters);
+  render();
+  forge?.connections?.subscribe(list => {
+    connections = Array.isArray(list) ? list : [];
+    render();
   });
 }
 

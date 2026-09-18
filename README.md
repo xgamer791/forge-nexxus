@@ -1,6 +1,6 @@
 # Forge Nexxus
 
-Mobile UI rebuilt from the supplied screenshots, now backed by Convex. Conversations and messages persist per user: every visitor starts as an anonymous guest, and signing in (email magic link, Google, or Apple) carries the guest's conversations over to the account. The connections sheet, model sheet, attachment menu, and the rest of Settings are still presentation-only.
+Mobile UI rebuilt from the supplied screenshots, now backed by Convex. Conversations and messages persist per user: every visitor starts as an anonymous guest, and signing in (email magic link, Google, or Apple) carries the guest's conversations over to the account. Connect is backed too: Recents and the Cloud and Repo pickers render the workspaces saved against the account, nothing is seeded, and Appearance preferences follow the account rather than the device. The model sheet, attachment menu, and the rest of Settings are still presentation-only.
 
 Live app: https://xgamer791.github.io/forge-nexxus/
 
@@ -14,7 +14,9 @@ Run `npm run dev`, then open http://localhost:4173/forge-nexxus/ . Any static se
 
 ## Convex
 
-- `convex/` holds the schema, Convex Auth setup (`auth.ts`), and the conversation, message, and user functions. `npx convex dev` pushes them to the deployment named in `.env.local` (`CONVEX_DEPLOYMENT` plus `CONVEX_DEPLOY_KEY`, never committed) and regenerates `convex/_generated/`.
+- `convex/` holds the schema, Convex Auth setup (`auth.ts`), and the conversation, message, user, connection, and settings functions. `npx convex dev` pushes them to the deployment named in `.env.local` (`CONVEX_DEPLOYMENT` plus `CONVEX_DEPLOY_KEY`, never committed) and regenerates `convex/_generated/`.
+- `connections` stores each user's cloud and repo workspaces (`kind`, `name`, `detail`, `connected`, `usedAt`). The Connect sheet lists them under Recents, `Connect > Cloud` and `Connect > Repo` open filtered pickers over the same rows, and one workspace per kind is Connected at a time. No rows are seeded, so every list is empty until `connections.add` is called; the sign-in flow that supplies them comes later.
+- `settings` stores the Appearance choices (theme, tool-call density, the toggles, and the font selections) per user, so they survive signing out and back in. The device keeps a `forge-settings` copy in `localStorage` to paint before Convex answers, and a signed-in account's saved values replace it.
 - Sign-in goes through `auth.signIn`, a thin wrapper around Convex Auth's own action: when the caller is a guest and the sign-in lands on a different user, the guest's conversations move to that user. This is what makes guest → account migration work for every provider.
 - The browser talks to whichever deployment `<meta name="convex-url">` in `docs/index.html` names. Change that meta to point a build at production.
 - `src/` is the vanilla-JS client: `data.js` owns the session lifecycle (guest sign-in, token refresh, magic-link and OAuth code exchange, sign-out) and `browser.js` wires it to the real Convex clients. `npm run build` bundles it to `docs/forge-data.js`, which `docs/app.js` reads as the `ForgeData` global.
@@ -40,4 +42,4 @@ The prompt docks to the browser viewport with a 20px bottom gap. Bottom sheets m
 
 ## Review
 
-`?reference` provides a 430 × 932 logical reference frame. `&screen=connections`, `models`, `attachments`, `account`, `navigation`, `settings`, or `appearance` exposes each menu for comparison. `&theme=light` or `&theme=dark` sets the Appearance theme. Test normal production layout separately: with a 932px viewport and a deliberately shortened 873px container, the prompt bottom must remain912px and bottom sheets must end at932px. Native iOS browser behavior still requires device verification.
+`?reference` provides a 430 × 932 logical reference frame. `&screen=connections`, `cloud-picker`, `repo-picker`, `models`, `attachments`, `account`, `navigation`, `settings`, or `appearance` exposes each menu for comparison. `&theme=light` or `&theme=dark` sets the Appearance theme. Test normal production layout separately: with a 932px viewport and a deliberately shortened 873px container, the prompt bottom must remain912px and bottom sheets must end at932px. Native iOS browser behavior still requires device verification.
