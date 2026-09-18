@@ -4,28 +4,34 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation } from "./_generated/server";
 import { holdCredits, releaseHold, settleHold } from "./billing";
-import { requestKind, type RequestKind } from "./plans";
+import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 
 // How much of the thread the model sees, and how long a page it may write.
 const HISTORY_LIMIT = 12;
 const DEFAULT_MAX_TOKENS = 10000;
 const REASON_LIMIT = 300;
+// A conversational reply is the message itself, so it gets far more room than
+// the one-line summary that rides along with a build.
+const TALK_LIMIT = 4000;
 
 const SYSTEM_PROMPT = `You are Forge, a senior web designer and front-end developer. You build complete, beautiful, responsive websites for people who describe what they want in plain language.
 
-Always return one self-contained HTML file:
+You give one of two kinds of reply, and what the user asked for decides which.
+
+BUILD — when they describe a site to make, or ask for a change to the page.
+Return one self-contained HTML file:
 - A full document (<!doctype html> … </html>) with a <title>, a meta viewport, and all CSS in one <style> block in the <head>.
 - Mobile-first and responsive; generous whitespace; a deliberate colour palette and type scale; accessible contrast; semantic landmarks (header, nav, main, section, footer).
 - Real, specific copy written for this site — never lorem ipsum or "[placeholder]".
 - No scripts, no frameworks, no external images. For imagery use CSS gradients, inline SVG and colour blocks, and give every visual a purpose.
 - Google Fonts are the only allowed external resource; use at most two families.
 - Links between sections use anchors; forms are static markup.
+Reply with one sentence saying what you built or changed, then the complete HTML in a single \`\`\`html code block, and nothing after it. When the user asks for a change, apply it to the current file and return the whole updated file, keeping everything they did not ask to change.
 
-Reply format, exactly:
-1. One sentence saying what you built or changed.
-2. The complete HTML in a single \`\`\`html code block.
+TALK — when they ask a question, want an opinion, or are still working out what they want.
+Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
 
-When the user asks for a change, apply it to the current file and return the whole updated file, keeping everything they did not ask to change.`;
+If both readings are open, talk and ask which they meant.`;
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
@@ -48,7 +54,7 @@ export const run = action({
         siteId: job.siteId,
         holdId: job.holdId,
         requestKind: job.requestKind,
-        html: parsed.html,
+        html: parsed.html ?? undefined,
         summary: parsed.summary,
       });
     } catch (error) {
@@ -106,11 +112,22 @@ export const finish = internalMutation({
     siteId: v.id("sites"),
     holdId: v.id("creditHolds"),
     requestKind,
-    html: v.string(),
+    // Absent when the model answered instead of building.
+    html: v.optional(v.string()),
     summary: v.string(),
   },
   handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary }) => {
     const now = Date.now();
+    // No page came back, so nothing was built: the reply is the answer, the
+    // site keeps the version it had, and the build hold settles at the chat
+    // rate with the rest handed back.
+    if (html === undefined) {
+      if (await ctx.db.get(assistantId)) {
+        await ctx.db.patch(assistantId, { body: summary, status: undefined });
+      }
+      await settleHold(ctx, holdId, REQUEST_COSTS.chat, now, "chat");
+      return;
+    }
     const site = await ctx.db.get(siteId);
     // The site was deleted while the build ran: nothing to attach it to, and
     // the user is not charged for a page they can never see.
@@ -200,10 +217,27 @@ async function callProvider(messages: ChatMessage[]) {
 }
 
 // The page is the fenced block; the sentence before it is the summary. A
-// reply that is nothing but a document still counts.
+// reply that is nothing but a document still counts. A reply that never
+// reaches for a page at all is an answer rather than a build, and comes back
+// with `html: null` so the caller charges for a conversation instead.
 export function parseReply(content: string) {
   const fence =
     content.match(/```html\s*\n?([\s\S]*?)```/i) ?? content.match(/```\s*\n?(<!doctype[\s\S]*?)```/i);
+  // A reply that opens a page holds to the whole-page rule, so a document cut
+  // off by the token cap fails loudly instead of landing in the thread as
+  // prose. The tests are for a document being started -- an opening fence, or
+  // a reply that begins as markup -- not for a tag named in passing, since a
+  // web designer talking shop will mention <html> without building anything.
+  const reachesForPage =
+    Boolean(fence) ||
+    /```html/i.test(content) ||
+    /<!doctype html/i.test(content) ||
+    /^\s*<html[\s>]/i.test(content);
+  if (!reachesForPage) {
+    const talk = content.trim().slice(0, TALK_LIMIT);
+    if (!talk) throw new Error("The model returned an empty reply");
+    return { html: null, summary: talk };
+  }
   const html = fence
     ? fence[1].trim()
     : /^\s*(<!doctype html|<html)/i.test(content)

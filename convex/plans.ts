@@ -110,10 +110,14 @@ export const TOP_UPS: readonly TopUp[] = [
 
 // What each kind of AI request holds when it starts. Wegic prices a complete
 // site build at 40 credits and describes edits as cheaper and media as dearer
-// without numbers, so the other three are Forge's own until it publishes them.
+// without numbers, so the rest are Forge's own until it publishes them.
 // The generation pipeline reserves by kind and settles with what the request
-// actually cost, never more than the hold.
+// actually cost, never more than the hold: a prompt that turns out to be a
+// question rather than a build holds the build cost and settles at `chat`.
+// `chat` is not free because it is still a provider call, but it is a fortieth
+// of a build, so planning a site out loud is not what spends an allowance.
 export const REQUEST_COSTS = {
+  chat: 1,
   generate: 40,
   edit: 8,
   image: 15,
@@ -121,12 +125,14 @@ export const REQUEST_COSTS = {
 } as const;
 export type RequestKind = keyof typeof REQUEST_COSTS;
 export const requestKind = v.union(
+  v.literal("chat"),
   v.literal("generate"),
   v.literal("edit"),
   v.literal("image"),
   v.literal("video"),
 );
 export const REQUEST_LABELS: Record<RequestKind, string> = {
+  chat: "Chat",
   generate: "Site build",
   edit: "Edit",
   image: "Image",

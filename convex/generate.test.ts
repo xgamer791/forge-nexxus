@@ -84,9 +84,21 @@ describe("parseReply", () => {
     expect(parseReply(`\`\`\`\n${PAGE}\n\`\`\``).html).toBe(PAGE);
   });
 
-  test("refuses anything that is not a whole page", () => {
-    expect(() => parseReply("Sure! Here is some CSS: body{margin:0}")).toThrow("complete page");
+  test("refuses anything that reaches for a page and does not finish it", () => {
     expect(() => parseReply("```html\n<div>half</div>\n```")).toThrow("complete page");
+    // Cut off by the token cap: an opening fence with no closing one is a
+    // broken build, not something to file away as conversation.
+    expect(() => parseReply(`Built it.\n\n\`\`\`html\n${PAGE.slice(0, 80)}`)).toThrow("complete page");
+    expect(() => parseReply(`<html lang="en"><body>cut off here`)).toThrow("complete page");
+  });
+
+  test("prose with no page is an answer, kept whole", () => {
+    const talk = "Warm cream and a deep terracotta would suit a bakery.\n\nWant me to apply it?";
+    expect(parseReply(talk)).toEqual({ html: null, summary: talk });
+    // A fenced snippet that is not a page is still prose to the reader.
+    expect(parseReply("Sure! Here is some CSS: body{margin:0}").html).toBe(null);
+    // Naming a tag while talking shop is not an attempt to build.
+    expect(parseReply("I would put a lang attribute on your <html> tag.").html).toBe(null);
   });
 });
 
@@ -178,15 +190,75 @@ describe("generate.run", () => {
     expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
   });
 
-  test("a reply without a page is refused and costs nothing", async () => {
+  test("a reply without a page is an answer: it lands in the thread and costs the chat rate", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    const answer = "Warm cream with a deep terracotta would suit a bakery. Want me to build it?";
+    stubProvider(() => json({ choices: [{ message: { content: answer } }] }));
+
+    await member.as.action(api.generate.run, { conversationId, prompt: "What colours suit a bakery?" });
+
+    const messages = await member.as.query(api.messages.list, { conversationId });
+    expect(messages.map((m) => [m.role, m.body, m.status ?? null])).toEqual([
+      ["user", "What colours suit a bakery?", null],
+      ["assistant", answer, null],
+    ]);
+    // Nothing was built, so there is no version to point at or preview.
+    expect(messages[1].versionId).toBeUndefined();
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
+    expect(await member.as.query(api.sites.currentHtml, { siteId })).toBe(null);
+
+    // The build hold was taken and all but the chat rate handed back.
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
+      credits: OPENING - REQUEST_COSTS.chat,
+      reserved: 0,
+    });
+    const history = await member.as.query(api.billing.history, {});
+    expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.chat, note: "Chat" });
+    const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
+    expect(holds.map((hold) => [hold.requestKind, hold.amount, hold.status])).toEqual([
+      ["generate", REQUEST_COSTS.generate, "settled"],
+    ]);
+  });
+
+  test("a question about a built site keeps the page and charges chat, not an edit", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    stubProvider((_body, call) =>
+      call === 1
+        ? reply("Built the first version.")
+        : json({ choices: [{ message: { content: "I would keep the hero and tighten the menu." } }] }),
+    );
+    await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
+    await member.as.action(api.generate.run, { conversationId, prompt: "Does the menu read well?" });
+
+    // The build survives the question untouched.
+    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE);
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toHaveLength(1);
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
+      OPENING - REQUEST_COSTS.generate - REQUEST_COSTS.chat,
+    );
+    // The hold was an edit; what it settled for was a conversation.
+    const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
+    expect(holds.map((hold) => hold.requestKind)).toEqual(["generate", "edit"]);
+    const history = await member.as.query(api.billing.history, {});
+    expect(history[0]).toMatchObject({ amount: -REQUEST_COSTS.chat, note: "Chat" });
+  });
+
+  test("a page cut off mid-document fails and gives the whole hold back", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
-    stubProvider(() => json({ choices: [{ message: { content: "Sure, what colours do you like?" } }] }));
+    stubProvider(() =>
+      json({ choices: [{ message: { content: `Built it.\n\n\`\`\`html\n${PAGE.slice(0, 120)}` } }] }),
+    );
     await expect(
       member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" }),
     ).rejects.toThrow("complete page");
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING);
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
   });
 
   test("without provider settings the build is refused and nothing is charged", async () => {

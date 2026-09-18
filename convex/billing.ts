@@ -380,12 +380,15 @@ export async function holdCredits(
 }
 
 // Turns a hold into a spend. A request never costs more than it held: the hold
-// is the promise made to the user when it started.
+// is the promise made to the user when it started. `kind` renames the spend for
+// the ledger when the request turned out to be something cheaper than the hold
+// was taken for -- a prompt held as a build that came back as a conversation.
 export async function settleHold(
   ctx: MutationCtx,
   holdId: Id<"creditHolds">,
   amount?: number,
   now = Date.now(),
+  kind?: RequestKind,
 ) {
   const hold = await ctx.db.get(holdId);
   if (!hold || hold.status !== "held") return;
@@ -404,7 +407,7 @@ export async function settleHold(
   }
   await ctx.db.patch(holdId, { status: "settled" });
   if (spent > 0) {
-    const label = REQUEST_LABELS[hold.requestKind as RequestKind] ?? hold.requestKind;
+    const label = REQUEST_LABELS[kind ?? (hold.requestKind as RequestKind)] ?? hold.requestKind;
     await record(ctx, hold.userId, "spend", -spent, credits, label, now);
   }
 }
@@ -429,9 +432,13 @@ export const reserve = internalMutation({
 });
 
 export const settle = internalMutation({
-  args: { holdId: v.id("creditHolds"), amount: v.optional(v.number()) },
-  handler: async (ctx, { holdId, amount }) => {
-    await settleHold(ctx, holdId, amount);
+  args: {
+    holdId: v.id("creditHolds"),
+    amount: v.optional(v.number()),
+    requestKind: v.optional(requestKind),
+  },
+  handler: async (ctx, { holdId, amount, requestKind: kind }) => {
+    await settleHold(ctx, holdId, amount, undefined, kind);
   },
 });
 

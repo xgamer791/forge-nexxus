@@ -550,6 +550,9 @@ const composerError = document.querySelector('.composer-error');
 const siteBar = document.querySelector('.site-bar');
 const siteBarPreview = document.querySelector('.site-bar-preview');
 let sites = [];
+// Whether the sites subscription has answered yet. Only a list that has
+// arrived can say a remembered thread is gone.
+let sitesLoaded = false;
 let activeSite = null;
 // Set by the preview block below; the thread and the site bar open it.
 let openPreview = () => {};
@@ -684,6 +687,7 @@ if (forge?.sites && siteList && thread) {
   }
   forge.sites.subscribe(list => {
     sites = Array.isArray(list) ? list : [];
+    sitesLoaded = true;
     const activeGone = activeId && forge.auth.state().signedIn && !sites.some(site => site.conversationId === activeId);
     if (activeGone) selectConversation(null);
     else { renderSites(); renderSiteBar(); }
@@ -719,7 +723,10 @@ if (forge?.sites && siteList && thread) {
     showNote(composerError, '');
     try {
       let id = activeId;
-      if (!id || !sites.some(site => site.conversationId === id)) {
+      // Before the list arrives, the remembered thread is still the thread.
+      // Reading an empty list as "it is gone" would start a second site and
+      // charge a first build for what should have been an edit.
+      if (!id || (sitesLoaded && !sites.some(site => site.conversationId === id))) {
         id = await createSite(body.length > 48 ? `${body.slice(0, 47).trimEnd()}…` : body);
       }
       await forge.sites.generate(id, body);
