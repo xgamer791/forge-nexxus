@@ -167,10 +167,26 @@ describe("token lifecycle", () => {
     expect(client.setAuth).toHaveBeenCalledTimes(1);
   });
 
-  test("a rejected session falls back to a fresh guest", async () => {
+  // A refresh that fails and a refresh that comes back empty mean different
+  // things: the first is an outage to retry, the second is a real sign-out.
+  test("a failed refresh keeps the session for a later retry", async () => {
     const { client, data } = harness({
       handler: async (fn, args) => {
-        if (args.refreshToken) throw new Error("revoked");
+        if (args.refreshToken) throw new Error("network down");
+        return { tokens: tokens("guest") };
+      },
+    });
+    await data.ready;
+    const [fetchToken] = client.setAuth.mock.calls[0];
+    expect(await fetchToken({ forceRefreshToken: true })).toBeNull();
+    expect(data.auth.state().signedIn).toBe(true);
+    expect(client.clearAuth).not.toHaveBeenCalled();
+  });
+
+  test("a revoked session falls back to a fresh guest", async () => {
+    const { client, data } = harness({
+      handler: async (fn, args) => {
+        if (args.refreshToken) return { tokens: null };
         return { tokens: tokens("guest") };
       },
     });
