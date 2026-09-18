@@ -8,7 +8,7 @@
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
 <div class="greeting"><svg class="forge-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg><h1 data-greeting>What will you build today?</h1><p class="greeting-sub">Describe a website and Forge builds it.</p></div>
 <section class="thread" role="log" aria-label="Build thread" aria-live="polite"></section>
-<div class="composer-area"><p class="composer-error" role="alert" hidden></p><div class="composer"><textarea aria-label="Describe your site" placeholder="Describe the site you want…" rows="1" autocapitalize="sentences" autocomplete="off" spellcheck="true"></textarea><div class="toolbar"><button class="add" data-open="attachments" aria-label="Add images or files" aria-haspopup="dialog"><svg><use href="#plus"/></svg></button><button class="microphone" type="button" aria-label="Start voice input" aria-pressed="false"><svg><use href="#mic"/></svg></button></div></div></div>
+<div class="composer-area"><p class="composer-error" role="alert" hidden></p><div class="site-bar" hidden><span class="site-bar-copy"><strong data-site-name></strong><small data-site-status></small></span><button class="site-bar-preview" type="button">Preview</button></div><div class="composer"><textarea aria-label="Describe your site" placeholder="Describe the site you want…" rows="1" autocapitalize="sentences" autocomplete="off" spellcheck="true"></textarea><div class="toolbar"><button class="add" data-open="attachments" aria-label="Add images or files" aria-haspopup="dialog"><svg><use href="#plus"/></svg></button><button class="microphone" type="button" aria-label="Start voice input" aria-pressed="false"><svg><use href="#mic"/></svg></button></div></div></div>
 <button class="backdrop" aria-label="Close menu" hidden></button>
 <div class="status-shield" aria-hidden="true"></div>
 <section class="sheet attachments" role="dialog" aria-modal="true" aria-labelledby="context-title" hidden><div class="handle"></div><header><button class="dismiss" aria-label="Close attachments"><svg><use href="#close"/></svg></button><h2 id="context-title">Attach</h2></header>
@@ -154,5 +154,15 @@
 <p class="overlay-note">A domain stays pending until publishing verifies its DNS.</p>
 <p class="overlay-error" role="alert" hidden></p>
 </div>
+</section>
+<section class="overlay preview" data-back=".preview-back" role="dialog" aria-modal="true" aria-labelledby="preview-title" hidden>
+<header class="appearance-header"><button class="appearance-back preview-back" type="button" aria-label="Back to the thread"><svg><use href="#chevron-left"/></svg></button><h2 id="preview-title" data-site-name>Preview</h2></header>
+<div class="preview-frame"><iframe class="preview-iframe" title="Site preview" sandbox="" referrerpolicy="no-referrer"></iframe><p class="preview-empty" hidden>Nothing built yet. Describe your site and Forge will make a first version.</p></div>
+<footer class="preview-footer">
+<p class="preview-status" data-preview-status></p>
+<a class="preview-link" data-preview-link href="#" target="_blank" rel="noopener" hidden></a>
+<div class="preview-actions"><button class="chip-button preview-publish" type="button">Publish</button><button class="row-button preview-unpublish" type="button" hidden>Unpublish</button></div>
+<p class="overlay-error" role="alert" hidden></p>
+</footer>
 </section>
 </main><script src="./forge-data.js?v=29931b428395eb8b13fd172ffeda371241548cea"></script><script src="./app.js?v=29931b428395eb8b13fd172ffeda371241548cea"></script><script src="./auth.js?v=development"></script></body></html>

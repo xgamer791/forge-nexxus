@@ -3,15 +3,31 @@ import { ConvexError, v } from "convex/values";
 import { requireMemberId, requireOwnedSite } from "./access";
 import { currentPlan } from "./billing";
 import { deleteConversation } from "./conversations";
-import type { Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 
 const DEFAULT_NAME = "Untitled site";
 const NAME_LIMIT = 80;
+const SLUG_LIMIT = 40;
 
 export function cleanSiteName(name: string | undefined) {
   const trimmed = (name ?? "").replace(/\s+/g, " ").trim();
   return (trimmed || DEFAULT_NAME).slice(0, NAME_LIMIT);
+}
+
+// Where a published site lives: the deployment's own origin. Null when the
+// deployment has not told us its address, which only happens in tests.
+export function publishedUrlFor(slug: string) {
+  const origin = process.env.CONVEX_SITE_URL?.replace(/\/+$/, "");
+  return origin ? `${origin}/sites/${slug}` : null;
+}
+
+function present(site: Doc<"sites">) {
+  const { userId: _owner, ...rest } = site;
+  return {
+    ...rest,
+    publishedUrl: site.status === "published" && site.slug ? publishedUrlFor(site.slug) : null,
+  };
 }
 
 // Most recently edited first, which is how the drawer lists them.
@@ -25,7 +41,27 @@ export const list = query({
       .withIndex("by_user_updated", (q) => q.eq("userId", userId))
       .order("desc")
       .collect();
-    return sites.map(({ userId: _owner, ...site }) => site);
+    return sites.map(present);
+  },
+});
+
+// The latest build of a site, for the preview. Null rather than an error for
+// anyone but the owner, since this backs a subscription.
+export const currentHtml = query({
+  args: { siteId: v.id("sites") },
+  handler: async (ctx, { siteId }) => {
+    const userId = await getAuthUserId(ctx);
+    const site = await ctx.db.get(siteId);
+    if (!userId || !site || site.userId !== userId || !site.currentVersionId) return null;
+    const version = await ctx.db.get(site.currentVersionId);
+    if (!version) return null;
+    return {
+      versionId: version._id,
+      html: version.html,
+      summary: version.summary,
+      createdAt: version.createdAt,
+      published: site.publishedVersionId === version._id,
+    };
   },
 });
 
@@ -79,6 +115,73 @@ export const remove = mutation({
     await deleteConversation(ctx, site.conversationId);
   },
 });
+
+// Puts the latest build on the site's public address. The slug is chosen once,
+// from the name, and kept through unpublishing so links keep working.
+export const publish = mutation({
+  args: { id: v.id("sites") },
+  handler: async (ctx, { id }) => {
+    const site = await requireOwnedSite(ctx, id);
+    await requireMemberId(ctx);
+    if (!site.currentVersionId) throw new ConvexError("Build the site before publishing it");
+    const slug = site.slug ?? (await uniqueSlug(ctx, site.name));
+    const now = Date.now();
+    await ctx.db.patch(id, {
+      status: "published",
+      slug,
+      publishedVersionId: site.currentVersionId,
+      publishedAt: now,
+      updatedAt: now,
+    });
+    return { slug, url: publishedUrlFor(slug) };
+  },
+});
+
+export const unpublish = mutation({
+  args: { id: v.id("sites") },
+  handler: async (ctx, { id }) => {
+    await requireOwnedSite(ctx, id);
+    await ctx.db.patch(id, { status: "draft", publishedVersionId: undefined, updatedAt: Date.now() });
+  },
+});
+
+// What the public route serves. Null for a draft, an unknown slug, or a site
+// whose published build has gone.
+export const publishedHtml = internalQuery({
+  args: { slug: v.string() },
+  handler: async (ctx, { slug }) => {
+    const site = await ctx.db
+      .query("sites")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+    if (!site || site.status !== "published" || !site.publishedVersionId) return null;
+    const version = await ctx.db.get(site.publishedVersionId);
+    return version?.html ?? null;
+  },
+});
+
+export function slugify(name: string) {
+  return name
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, SLUG_LIMIT)
+    .replace(/-+$/, "");
+}
+
+async function uniqueSlug(ctx: QueryCtx | MutationCtx, name: string) {
+  const base = slugify(name) || "site";
+  const taken = async (slug: string) =>
+    (await ctx.db.query("sites").withIndex("by_slug", (q) => q.eq("slug", slug)).first()) !== null;
+  if (!(await taken(base))) return base;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = `${base}-${Math.random().toString(36).slice(2, 6)}`;
+    if (!(await taken(candidate))) return candidate;
+  }
+  throw new ConvexError("Could not find a free address for this site");
+}
 
 // Sending a prompt is what makes a site recently edited.
 export async function touchSite(

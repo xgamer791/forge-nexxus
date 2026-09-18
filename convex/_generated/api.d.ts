@@ -13,6 +13,7 @@ import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
 import type * as conversations from "../conversations.js";
 import type * as domains from "../domains.js";
+import type * as generate from "../generate.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
 import type * as plans from "../plans.js";
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   billing: typeof billing;
   conversations: typeof conversations;
   domains: typeof domains;
+  generate: typeof generate;
   http: typeof http;
   messages: typeof messages;
   plans: typeof plans;

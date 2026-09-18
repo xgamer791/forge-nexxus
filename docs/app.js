@@ -547,7 +547,12 @@ const sitesError = document.querySelector('.sites-error');
 const newSite = document.querySelector('.new-site');
 const thread = document.querySelector('.thread');
 const composerError = document.querySelector('.composer-error');
+const siteBar = document.querySelector('.site-bar');
+const siteBarPreview = document.querySelector('.site-bar-preview');
 let sites = [];
+let activeSite = null;
+// Set by the preview block below; the thread and the site bar open it.
+let openPreview = () => {};
 if (forge?.sites && siteList && thread) {
   let activeId = null;
   let stopMessages = null;
@@ -610,6 +615,7 @@ if (forge?.sites && siteList && thread) {
       menu.setAttribute('role', 'menu');
       menu.hidden = true;
       menu.append(
+        menuItem('Preview', () => { selectConversation(site.conversationId); openPreview(); }),
         menuItem('Rename', () => {
           const next = prompt('Rename site', site.name)?.trim();
           if (next && next !== site.name) forge.sites.rename(site._id, next).catch(error => showNote(sitesError, messageOf(error)));
@@ -633,19 +639,46 @@ if (forge?.sites && siteList && thread) {
     thread.replaceChildren(...messages.map(message => {
       const row = document.createElement('div');
       row.className = `message message-${message.role}`;
+      if (message.status) row.classList.add(`message-${message.status}`);
       const body = document.createElement('p');
-      body.textContent = message.body;
+      body.textContent = message.status === 'pending' ? 'Building your site…' : message.body;
       row.append(body);
+      if (message.role === 'assistant' && message.versionId) {
+        const view = document.createElement('button');
+        view.type = 'button';
+        view.className = 'message-view';
+        view.textContent = 'View the site';
+        view.addEventListener('click', () => openPreview());
+        row.append(view);
+      }
       return row;
     }));
     app.classList.toggle('has-thread', messages.length > 0);
     thread.scrollTop = thread.scrollHeight;
+  }
+  // The bar names the site the composer is building into.
+  function renderSiteBar() {
+    activeSite = sites.find(site => site.conversationId === activeId) ?? null;
+    if (siteBar) siteBar.hidden = !activeSite;
+    app.classList.toggle('has-site-bar', Boolean(activeSite));
+    if (activeSite) {
+      document.querySelectorAll('[data-site-name]').forEach(element => { element.textContent = activeSite.name; });
+      document.querySelectorAll('[data-site-status]').forEach(element => {
+        element.textContent = activeSite.status === 'published' ? 'Published' : activeSite.currentVersionId ? 'Draft' : 'Not built yet';
+      });
+      if (siteBarPreview) siteBarPreview.disabled = !activeSite.currentVersionId;
+    }
+    if (promptInput) {
+      promptInput.placeholder = activeSite?.currentVersionId ? 'Describe a change…' : 'Describe the site you want…';
+    }
+    document.dispatchEvent(new CustomEvent('forge:active-site'));
   }
   function selectConversation(id) {
     stopMessages?.();
     stopMessages = null;
     rememberActive(id);
     renderSites();
+    renderSiteBar();
     if (!id) { renderThread([]); return; }
     stopMessages = forge.messages.subscribe(id, renderThread);
   }
@@ -653,9 +686,10 @@ if (forge?.sites && siteList && thread) {
     sites = Array.isArray(list) ? list : [];
     const activeGone = activeId && forge.auth.state().signedIn && !sites.some(site => site.conversationId === activeId);
     if (activeGone) selectConversation(null);
-    else renderSites();
+    else { renderSites(); renderSiteBar(); }
     document.dispatchEvent(new CustomEvent('forge:sites'));
   });
+  siteBarPreview?.addEventListener('click', () => openPreview());
   if (activeId) selectConversation(activeId);
 
   function createSite(name) {
@@ -688,7 +722,7 @@ if (forge?.sites && siteList && thread) {
       if (!id || !sites.some(site => site.conversationId === id)) {
         id = await createSite(body.length > 48 ? `${body.slice(0, 47).trimEnd()}…` : body);
       }
-      await forge.messages.send(id, body);
+      await forge.sites.generate(id, body);
     } catch (error) {
       promptInput.value = body;
       reportError(error);
@@ -1157,9 +1191,96 @@ if (forge?.account && profileScreen) {
   });
 }
 
+// Preview: the latest build in a sandboxed frame, with publishing. The frame
+// gets the page as srcdoc, so nothing in a build can run or reach this origin.
+const previewScreen = document.querySelector('.overlay.preview');
+if (forge?.sites && previewScreen) {
+  const frame = previewScreen.querySelector('.preview-iframe');
+  const empty = previewScreen.querySelector('.preview-empty');
+  const status = previewScreen.querySelector('[data-preview-status]');
+  const link = previewScreen.querySelector('[data-preview-link]');
+  const publishButton = previewScreen.querySelector('.preview-publish');
+  const unpublishButton = previewScreen.querySelector('.preview-unpublish');
+  const error = previewScreen.querySelector('.overlay-error');
+  let stopHtml = null;
+  let shownSiteId = null;
+  let current = null;
+  function renderPreview() {
+    const site = activeSite;
+    const built = Boolean(site?.currentVersionId);
+    empty.hidden = built && current !== null;
+    if (!built) { frame.removeAttribute('srcdoc'); current = null; }
+    publishButton.disabled = !built;
+    publishButton.textContent = site?.status === 'published'
+      ? (current && !current.published ? 'Publish latest build' : 'Published')
+      : 'Publish';
+    if (site?.status === 'published' && current?.published) publishButton.disabled = true;
+    unpublishButton.hidden = site?.status !== 'published';
+    link.hidden = !site?.publishedUrl;
+    if (site?.publishedUrl) { link.href = site.publishedUrl; link.textContent = site.publishedUrl.replace(/^https?:\/\//, ''); }
+    status.textContent = !built
+      ? ''
+      : current
+        ? `${current.summary || 'Latest build'} · ${new Date(current.createdAt).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}`
+        : 'Loading the latest build…';
+  }
+  function watch() {
+    const siteId = activeSite?._id ?? null;
+    if (siteId === shownSiteId) return;
+    stopHtml?.();
+    stopHtml = null;
+    shownSiteId = siteId;
+    current = null;
+    frame.removeAttribute('srcdoc');
+    if (!siteId) return;
+    stopHtml = forge.sites.currentHtml(siteId, next => {
+      current = next ?? null;
+      if (current) frame.srcdoc = current.html;
+      renderPreview();
+    });
+  }
+  openPreview = () => {
+    showNote(error, '');
+    showOverlay(previewScreen);
+    navigation.setAttribute('aria-label', 'Site preview');
+    watch();
+    renderPreview();
+  };
+  previewScreen.querySelector('.preview-back').addEventListener('click', closeMenu);
+  publishButton.addEventListener('click', async () => {
+    if (!activeSite || publishButton.disabled) return;
+    showNote(error, '');
+    publishButton.disabled = true;
+    try {
+      await forge.sites.publish(activeSite._id);
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, messageOf(caught));
+      publishButton.disabled = false;
+    }
+  });
+  unpublishButton.addEventListener('click', async () => {
+    if (!activeSite) return;
+    if (!confirm('Take this site offline? The address is kept for when you publish again.')) return;
+    showNote(error, '');
+    try {
+      await forge.sites.unpublish(activeSite._id);
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, messageOf(caught));
+    }
+  });
+  document.addEventListener('forge:active-site', () => {
+    if (previewScreen.hidden) return;
+    watch();
+    renderPreview();
+  });
+}
+
 // Review framing for the settings screens, once their wiring exists.
 if (['profile', 'plan', 'usage', 'domains'].includes(query.get('screen'))) {
   openMenu('navigation');
   showSettings(true);
   showSettingsScreen(query.get('screen'));
 }
+if (query.get('screen') === 'preview') openPreview();

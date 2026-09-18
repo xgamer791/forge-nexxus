@@ -246,64 +246,81 @@ export const ensure = internalMutation({
 
 // Holds a request's credits before it runs. The check and the hold happen in
 // one transaction, so two requests racing for the last credit cannot both pass.
-export const reserve = internalMutation({
-  args: { userId: v.id("users"), requestKind },
-  handler: async (ctx, { userId, requestKind: kind }) => {
-    const user = await ctx.db.get(userId);
-    if (!user || user.isAnonymous) throw new ConvexError("Sign in to build");
-    const now = Date.now();
-    const sub = await ensureCurrent(ctx, userId, now);
-    const amount = REQUEST_COSTS[kind];
-    if (sub.credits - sub.reserved < amount) throw new ConvexError("Out of credits");
-    const holdId = await ctx.db.insert("creditHolds", {
-      userId,
-      requestKind: kind,
-      amount,
-      status: "held",
-      createdAt: now,
-    });
-    await ctx.db.patch(sub._id, { reserved: sub.reserved + amount, updatedAt: now });
-    return { holdId, amount };
-  },
-});
+export async function holdCredits(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  kind: RequestKind,
+  now = Date.now(),
+) {
+  const user = await ctx.db.get(userId);
+  if (!user || user.isAnonymous) throw new ConvexError("Sign in to build");
+  const sub = await ensureCurrent(ctx, userId, now);
+  const amount = REQUEST_COSTS[kind];
+  if (sub.credits - sub.reserved < amount) throw new ConvexError("Out of credits");
+  const holdId = await ctx.db.insert("creditHolds", {
+    userId,
+    requestKind: kind,
+    amount,
+    status: "held",
+    createdAt: now,
+  });
+  await ctx.db.patch(sub._id, { reserved: sub.reserved + amount, updatedAt: now });
+  return { holdId, amount };
+}
 
 // Turns a hold into a spend. A request never costs more than it held: the hold
 // is the promise made to the user when it started.
+export async function settleHold(
+  ctx: MutationCtx,
+  holdId: Id<"creditHolds">,
+  amount?: number,
+  now = Date.now(),
+) {
+  const hold = await ctx.db.get(holdId);
+  if (!hold || hold.status !== "held") return;
+  const sub = await ensureCurrent(ctx, hold.userId, now);
+  const spent = Math.min(hold.amount, Math.max(0, Math.round(amount ?? hold.amount)));
+  const credits = Math.max(0, sub.credits - spent);
+  await ctx.db.patch(sub._id, {
+    credits,
+    reserved: Math.max(0, sub.reserved - hold.amount),
+    updatedAt: now,
+  });
+  await ctx.db.patch(holdId, { status: "settled" });
+  if (spent > 0) {
+    const label = REQUEST_LABELS[hold.requestKind as RequestKind] ?? hold.requestKind;
+    await record(ctx, hold.userId, "spend", -spent, credits, label, now);
+  }
+}
+
+// Gives a hold back, for a request that failed before it did any work.
+export async function releaseHold(ctx: MutationCtx, holdId: Id<"creditHolds">, now = Date.now()) {
+  const hold = await ctx.db.get(holdId);
+  if (!hold || hold.status !== "held") return;
+  const sub = await ensureCurrent(ctx, hold.userId, now);
+  await ctx.db.patch(sub._id, {
+    reserved: Math.max(0, sub.reserved - hold.amount),
+    updatedAt: now,
+  });
+  await ctx.db.patch(holdId, { status: "released" });
+}
+
+export const reserve = internalMutation({
+  args: { userId: v.id("users"), requestKind },
+  handler: async (ctx, { userId, requestKind: kind }) => await holdCredits(ctx, userId, kind),
+});
+
 export const settle = internalMutation({
   args: { holdId: v.id("creditHolds"), amount: v.optional(v.number()) },
   handler: async (ctx, { holdId, amount }) => {
-    const hold = await ctx.db.get(holdId);
-    if (!hold || hold.status !== "held") return;
-    const now = Date.now();
-    const sub = await ensureCurrent(ctx, hold.userId, now);
-    const spent = Math.min(hold.amount, Math.max(0, Math.round(amount ?? hold.amount)));
-    const credits = Math.max(0, sub.credits - spent);
-    await ctx.db.patch(sub._id, {
-      credits,
-      reserved: Math.max(0, sub.reserved - hold.amount),
-      updatedAt: now,
-    });
-    await ctx.db.patch(holdId, { status: "settled" });
-    if (spent > 0) {
-      const label = REQUEST_LABELS[hold.requestKind as RequestKind] ?? hold.requestKind;
-      await record(ctx, hold.userId, "spend", -spent, credits, label, now);
-    }
+    await settleHold(ctx, holdId, amount);
   },
 });
 
-// Gives a hold back, for a request that failed before it did any work.
 export const release = internalMutation({
   args: { holdId: v.id("creditHolds") },
   handler: async (ctx, { holdId }) => {
-    const hold = await ctx.db.get(holdId);
-    if (!hold || hold.status !== "held") return;
-    const now = Date.now();
-    const sub = await ensureCurrent(ctx, hold.userId, now);
-    await ctx.db.patch(sub._id, {
-      reserved: Math.max(0, sub.reserved - hold.amount),
-      updatedAt: now,
-    });
-    await ctx.db.patch(holdId, { status: "released" });
+    await releaseHold(ctx, holdId);
   },
 });
 

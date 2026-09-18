@@ -261,6 +261,14 @@ export function createForgeData({
       create: (name) => client.mutation(api.sites.create, name ? { name } : {}),
       rename: (id, name) => client.mutation(api.sites.rename, { id, name }),
       remove: (id) => client.mutation(api.sites.remove, { id }),
+      // One prompt, one build: the action records the prompt, holds the
+      // credits, calls the model, and answers in the thread.
+      generate: (conversationId, prompt) =>
+        client.action(api.generate.run, { conversationId, prompt }),
+      currentHtml: (siteId, callback) =>
+        client.onUpdate(api.sites.currentHtml, { siteId }, callback),
+      publish: (id) => client.mutation(api.sites.publish, { id }),
+      unpublish: (id) => client.mutation(api.sites.unpublish, { id }),
     },
     messages: {
       subscribe: (conversationId, callback) =>

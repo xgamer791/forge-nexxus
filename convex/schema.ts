@@ -16,10 +16,29 @@ export default defineSchema({
     status: v.union(v.literal("draft"), v.literal("published")),
     createdAt: v.number(),
     updatedAt: v.number(),
+    // The latest build, and the build the public URL serves. A slug is
+    // assigned on first publish and kept so the address never changes.
+    currentVersionId: v.optional(v.id("siteVersions")),
+    publishedVersionId: v.optional(v.id("siteVersions")),
+    slug: v.optional(v.string()),
     publishedAt: v.optional(v.number()),
   })
     .index("by_user_updated", ["userId", "updatedAt"])
-    .index("by_conversation", ["conversationId"]),
+    .index("by_conversation", ["conversationId"])
+    .index("by_slug", ["slug"]),
+  // Every generation produces a complete single-file site. Versions are kept
+  // so a bad edit can be walked back and a published build stays put while
+  // the draft moves on.
+  siteVersions: defineTable({
+    userId: v.id("users"),
+    siteId: v.id("sites"),
+    html: v.string(),
+    summary: v.string(),
+    requestKind: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_site", ["siteId"])
+    .index("by_user", ["userId"]),
   conversations: defineTable({
     userId: v.id("users"),
     title: v.string(),
@@ -29,6 +48,10 @@ export default defineSchema({
     conversationId: v.id("conversations"),
     role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
     body: v.string(),
+    // An assistant message is `pending` while its build runs and `failed` if
+    // the build did not produce a site; a finished one points at its version.
+    status: v.optional(v.union(v.literal("pending"), v.literal("failed"))),
+    versionId: v.optional(v.id("siteVersions")),
   }).index("by_conversation", ["conversationId"]),
   // Custom domains pointed at a site. A domain is `pending` from the moment it
   // is added until hosting has verified its DNS.

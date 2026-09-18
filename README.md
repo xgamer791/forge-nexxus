@@ -1,6 +1,6 @@
 # Forge Nexxus
 
-A mobile website builder backed by Convex. A member describes the site they want in the composer, the build thread is where that conversation lives, and the drawer lists their sites. Everything runs on monthly credits: each plan grants an allowance per period, top-ups add more, and nothing rolls over. Users never see AI spend — only their credits — because the AI, image and video providers are called server-side with the deployment's own keys (the generation pipeline that does that is the next piece of work).
+A mobile website builder backed by Convex. A member describes the site they want in the composer, Forge builds it as one self-contained page, and each follow-up prompt edits it. The build thread is where that conversation lives, the drawer lists their sites, and a site can be previewed and published to a public address. Everything runs on monthly credits: each plan grants an allowance per period, top-ups add more, and nothing rolls over. Users never see AI spend — only their credits — because the model is called server-side with the deployment's own key.
 
 Live app: https://xgamer791.github.io/forge-nexxus/
 
@@ -19,7 +19,8 @@ Run `npm run dev`, then open http://localhost:4173/forge-nexxus/ . Any static se
 - **Sign-in gate** (`docs/auth.js`): guests never reach the app. Building needs an account so credits belong to someone; a magic link, Google or Apple all create one.
 - **Drawer**: New site, the account's sites (most recently edited first, with rename and delete), a credits card showing the plan, what is left of this period and when it resets, and the account footer.
 - **Settings**: Profile (name, linked sign-in methods, sign out, delete account), Appearance, Plan & credits (current plan and meter, plan cards, top-up packs, downgrade at period end), Usage (the credit ledger), and Domains (custom hostnames pointed at a site, gated by plan).
-- **Composer**: the first prompt creates a site named after it; later prompts go into that site's thread. A guest who somehow reaches it is sent to sign in.
+- **Composer**: the first prompt creates a site named after it and builds the first version; later prompts edit it. The reply appears in the thread as "Building your site…" until the build lands, and as a failure (with the reason) if it does not. A guest who somehow reaches it is sent to sign in.
+- **Site bar and preview**: the bar above the composer names the active site and its state; Preview opens the latest build in a sandboxed frame (no scripts, no access to the app's origin) with Publish, Unpublish and the public address.
 
 ## Convex
 
@@ -27,6 +28,8 @@ Run `npm run dev`, then open http://localhost:4173/forge-nexxus/ . Any static se
 - `sites` is what a user builds. Each site owns a conversation (its build thread); `sites.create` makes both, `sites.remove` deletes the thread, its messages and the site's domains, and `messages.send` bumps the site's `updatedAt` so the drawer orders by last edit. Only members create sites, and a plan caps how many an account holds.
 - `domains` are hostnames pointed at a site. `domains.add` normalises a pasted URL to its host, refuses duplicates, and needs a plan with `customDomains`. A domain is `pending` until publishing verifies its DNS.
 - `subscriptions` is one row per member: the plan, the period, `credits` left this period, `reserved` by requests still running, and `granted` (the period's allowance plus its top-ups, which is the meter's full mark). Periods are one calendar month; when one ends the leftover expires, a scheduled downgrade lands, and the new allowance is granted. `creditLedger` records every movement and `creditHolds` tracks in-flight requests.
+- `generate.run` is the build. It records the prompt and a pending reply, holds the credits for the request (`generate` for a first build, `edit` after), sends the system prompt, the current page and the recent thread to any OpenAI-compatible chat completions endpoint, and stores the returned page as a `siteVersions` row before settling the hold. A failed call marks the reply `failed` with a scrubbed reason and releases the hold, so a build that produced nothing costs nothing. The endpoint, key and model come from `AI_BASE_URL`, `AI_API_KEY` and `AI_MODEL`; until they are set the build is refused with "Site generation isn't set up on this deployment yet".
+- Publishing: `sites.publish` assigns a slug from the name once (kept through unpublishing, so links keep working) and pins the current version; `convex/http.ts` serves it at `<deployment>.convex.site/sites/<slug>` with a content-security-policy that allows markup, inline styles and Google Fonts only. `sites.currentHtml` backs the preview.
 - `plans.ts` is the catalog: the four plans, the top-up packs, and what each kind of request costs. It is product configuration rather than user data, served to the client by `billing.catalog` so nothing in `docs/` carries a price.
 - Spending is reserve → run → settle. `billing.reserve` holds a request's credits in one transaction (so a burst of requests cannot overspend), `billing.settle` turns the hold into a spend for what the request actually cost (never more than the hold), and `billing.release` gives it back after a failure. These are internal mutations for the generation pipeline; a client can only read its balance.
 - Payments are not wired yet. `billing.checkout` is the seam for Stripe Checkout and currently tells the user payments are not open. Until then, put an account on a plan or give it credits from the Convex dashboard with the internal mutations `billing.grantPlan` (`{ email, plan: "pro" }`) and `billing.grantTopUp` (`{ email, pack: "topup-50" }` or `{ email, credits: 25 }`).
@@ -49,6 +52,7 @@ Set with `npx convex env set NAME value` against the target deployment.
 | `AUTH_RESEND_KEY` | Resend API key for magic-link email; `AUTH_EMAIL_FROM` overrides the sender once a domain is verified |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | Google OAuth client. Authorized redirect URI: `https://<deployment>.convex.site/api/auth/callback/google` |
 | `AUTH_APPLE_ID`, `AUTH_APPLE_SECRET` | Sign in with Apple Services ID and client secret. Return URL: `https://<deployment>.convex.site/api/auth/callback/apple` |
+| `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` | The chat completions endpoint that builds sites: any OpenAI-compatible base URL (e.g. `https://api.openai.com/v1`, `https://api.anthropic.com/v1`, `https://api.z.ai/api/paas/v4`, an OpenRouter or Gemini compatibility URL), its key, and the model name. `AI_MAX_TOKENS` (default 10000) caps the reply. |
 | `STRIPE_SECRET_KEY` | Reserved for Stripe Checkout; nothing reads it yet. `billing.checkout` is where it will be used. |
 
 Apple's client secret is a JWT that expires within six months; generate it with `node scripts/apple-client-secret.mjs --team TEAMID --key KEYID --client SERVICES_ID --p8 ./AuthKey_KEYID.p8` and set the new value before the old one lapses.
@@ -59,4 +63,4 @@ The prompt docks to the browser viewport with a 20px bottom gap. Bottom sheets m
 
 ## Review
 
-`?reference` provides a 430 × 932 logical reference frame. `&screen=attachments`, `account`, `navigation`, `settings`, `appearance`, `profile`, `plan`, `usage`, or `domains` exposes each menu for comparison. `&theme=light` or `&theme=dark` sets the Appearance theme. Test normal production layout separately: with a 932px viewport and a deliberately shortened 873px container, the prompt bottom must remain 912px and bottom sheets must end at 932px. Native iOS browser behavior still requires device verification.
+`?reference` provides a 430 × 932 logical reference frame. `&screen=attachments`, `account`, `navigation`, `settings`, `appearance`, `profile`, `plan`, `usage`, `domains`, or `preview` exposes each menu for comparison. `&theme=light` or `&theme=dark` sets the Appearance theme. Test normal production layout separately: with a 932px viewport and a deliberately shortened 873px container, the prompt bottom must remain 912px and bottom sheets must end at 932px. Native iOS browser behavior still requires device verification.

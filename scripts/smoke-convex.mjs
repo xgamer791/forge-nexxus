@@ -19,10 +19,23 @@ function check(label, ok, detail) {
 
 try {
   check("signed-out list is empty", (await client.query(api.conversations.list, {})).length === 0);
+  check("signed-out sites are empty", (await client.query(api.sites.list, {})).length === 0);
+  check("signed-out billing summary is null", (await client.query(api.billing.summary, {})) === null);
+  const catalog = await client.query(api.billing.catalog, {});
+  check(
+    "catalog lists the plans and packs",
+    catalog.plans.map((plan) => plan.key).join(",") === "free,starter,pro,business" && catalog.topUps.length > 0,
+    catalog.plans.map((plan) => `${plan.name} ${plan.monthlyCredits}cr`).join(" / "),
+  );
 
   const signedIn = await client.action(api.auth.signIn, { provider: "anonymous" });
   check("anonymous sign-in issues tokens", Boolean(signedIn?.tokens?.token));
   client.setAuth(signedIn.tokens.token);
+
+  check("a guest still has no plan to show", (await client.query(api.billing.summary, {})) === null);
+  check("a guest sees no sites or domains", (await client.query(api.sites.list, {})).length === 0 && (await client.query(api.domains.list, {})).length === 0);
+  const refused = await client.mutation(api.sites.create, { name: "Smoke" }).then(() => null, (error) => error);
+  check("a guest cannot create a site", refused !== null && String(refused?.data ?? refused?.message).includes("Sign in to build"), String(refused?.data ?? refused?.message));
 
   const id = await client.mutation(api.conversations.create, { title: "Smoke test" });
   check("create conversation", typeof id === "string", id);

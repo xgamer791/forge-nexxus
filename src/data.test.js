@@ -16,7 +16,11 @@ const api = {
     create: "sites:create",
     rename: "sites:rename",
     remove: "sites:remove",
+    currentHtml: "sites:currentHtml",
+    publish: "sites:publish",
+    unpublish: "sites:unpublish",
   },
+  generate: { run: "generate:run" },
   messages: { list: "messages:list", send: "messages:send" },
   domains: { list: "domains:list", add: "domains:add", remove: "domains:remove" },
   billing: {
@@ -306,6 +310,7 @@ describe("data access", () => {
     data.billing.catalog(callback);
     data.billing.history(callback);
     data.settings.subscribe(callback);
+    data.sites.currentHtml("s1", callback);
     await data.account.updateProfile("Sam");
     await data.sites.create();
     await data.sites.create("Bakery");
@@ -317,7 +322,10 @@ describe("data access", () => {
     await data.billing.cancel();
     await data.billing.resume();
     await data.settings.update({ theme: "light" });
+    await data.sites.publish("s1");
+    await data.sites.unpublish("s1");
     await data.billing.checkout({ plan: "pro" });
+    await data.sites.generate("c1", "make it warm");
     expect(client.onUpdate.mock.calls).toEqual([
       ["users:me", {}, callback],
       ["users:providers", {}, callback],
@@ -328,6 +336,7 @@ describe("data access", () => {
       ["billing:catalog", {}, callback],
       ["billing:history", {}, callback],
       ["settings:get", {}, callback],
+      ["sites:currentHtml", { siteId: "s1" }, callback],
     ]);
     expect(client.mutation.mock.calls).toEqual([
       ["users:updateProfile", { name: "Sam" }],
@@ -341,8 +350,13 @@ describe("data access", () => {
       ["billing:cancel", {}],
       ["billing:resume", {}],
       ["settings:update", { theme: "light" }],
+      ["sites:publish", { id: "s1" }],
+      ["sites:unpublish", { id: "s1" }],
     ]);
-    expect(client.action.mock.calls).toEqual([["billing:checkout", { plan: "pro" }]]);
+    expect(client.action.mock.calls).toEqual([
+      ["billing:checkout", { plan: "pro" }],
+      ["generate:run", { conversationId: "c1", prompt: "make it warm" }],
+    ]);
   });
 
   test("deleting the account removes it on the server, then starts a fresh guest session", async () => {

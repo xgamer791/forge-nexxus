@@ -69,6 +69,7 @@ export async function purgeUser(ctx: MutationCtx, userId: Id<"users">) {
   // that had lost its thread, plus the plan, the ledger, and preferences.
   const owned = [
     ...(await ctx.db.query("sites").withIndex("by_user_updated", (q) => q.eq("userId", userId)).collect()),
+    ...(await ctx.db.query("siteVersions").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("domains").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("subscriptions").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("creditLedger").withIndex("by_user_created", (q) => q.eq("userId", userId)).collect()),

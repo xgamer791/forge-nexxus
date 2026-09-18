@@ -61,6 +61,11 @@ export async function deleteConversation(ctx: MutationCtx, conversationId: Id<"c
       .withIndex("by_site", (q) => q.eq("siteId", site._id))
       .collect();
     await Promise.all(domains.map((domain) => ctx.db.delete(domain._id)));
+    const versions = await ctx.db
+      .query("siteVersions")
+      .withIndex("by_site", (q) => q.eq("siteId", site._id))
+      .collect();
+    await Promise.all(versions.map((version) => ctx.db.delete(version._id)));
     await ctx.db.delete(site._id);
   }
   const messages = await ctx.db
