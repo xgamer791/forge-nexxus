@@ -6,7 +6,7 @@ import { Client } from "ssh2";
 import { internal } from "./_generated/api";
 import { action } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { workspaceEnvironment, workspaceProtocol } from "./schema";
+import { workspaceEnvironment, workspaceProtocol } from "./shapes";
 
 // Credentials are sealed with a key held only by the deployment, so a stored
 // workspace is useless to anyone reading the table and nothing goes back to a

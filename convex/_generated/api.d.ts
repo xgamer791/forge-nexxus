@@ -16,6 +16,7 @@ import type * as http from "../http.js";
 import type * as messages from "../messages.js";
 import type * as remote from "../remote.js";
 import type * as settings from "../settings.js";
+import type * as shapes from "../shapes.js";
 import type * as users from "../users.js";
 import type * as workspaces from "../workspaces.js";
 
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   messages: typeof messages;
   remote: typeof remote;
   settings: typeof settings;
+  shapes: typeof shapes;
   users: typeof users;
   workspaces: typeof workspaces;
 }>;

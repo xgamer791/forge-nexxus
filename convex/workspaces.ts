@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { requireOwnedWorkspace, requireUserId } from "./access";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { workspaceEnvironment, workspaceProtocol } from "./schema";
+import { workspaceEnvironment, workspaceProtocol } from "./shapes";
 
 // The stored credential never leaves the server. Everything a client is allowed
 // to see about a workspace goes through here.

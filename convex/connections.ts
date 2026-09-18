@@ -2,7 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { requireOwnedConnection, requireUserId } from "./access";
 import { mutation, query } from "./_generated/server";
-import { connectionKind } from "./schema";
+import { connectionKind } from "./shapes";
 
 // The sheets render whatever this returns, so a signed-out or brand-new user
 // simply sees empty lists. Names sort the pickers; Recents re-sorts by usedAt.

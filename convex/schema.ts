@@ -2,13 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-export const connectionKind = v.union(v.literal("cloud"), v.literal("repo"));
-export const workspaceProtocol = v.union(v.literal("ssh"), v.literal("sftp"));
-export const workspaceEnvironment = v.union(
-  v.literal("production"),
-  v.literal("staging"),
-  v.literal("dev"),
-);
+import { connectionKind, workspaceEnvironment, workspaceProtocol } from "./shapes";
 
 export default defineSchema({
   ...authTables,
