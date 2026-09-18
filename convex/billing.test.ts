@@ -25,6 +25,9 @@ async function createUser(
 }
 
 const free = planFor("free");
+const starter = planFor("starter");
+// What a brand-new member holds: the free period's allowance plus the welcome grant.
+const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits;
 const DAY = 24 * 3600 * 1000;
 
 describe("periods", () => {
@@ -39,7 +42,7 @@ describe("periods", () => {
   test("projected leaves a live period alone and rolls an ended one forward", () => {
     const start = Date.UTC(2026, 0, 10);
     const sub = {
-      planKey: "pro" as const,
+      planKey: "starter" as const,
       periodStart: start,
       periodEnd: addMonth(start),
       credits: 12,
@@ -52,15 +55,15 @@ describe("periods", () => {
     const later = projected(sub, twoLater + 5);
     expect(later.periodStart).toBe(twoLater);
     expect(later.periodEnd).toBe(addMonth(twoLater));
-    expect(later.credits).toBe(planFor("pro").monthlyCredits);
-    expect(later.granted).toBe(planFor("pro").monthlyCredits);
+    expect(later.credits).toBe(starter.monthlyCredits);
+    expect(later.granted).toBe(starter.monthlyCredits);
     expect(later.reserved).toBe(3);
   });
 
   test("a scheduled downgrade lands when the period ends", () => {
     const start = Date.UTC(2026, 2, 1);
     const sub = {
-      planKey: "pro" as const,
+      planKey: "starter" as const,
       periodStart: start,
       periodEnd: addMonth(start),
       credits: 0,
@@ -70,7 +73,7 @@ describe("periods", () => {
     };
     const next = projected(sub, addMonth(start));
     expect(next.planKey).toBe("free");
-    expect(next.credits).toBe(free.monthlyCredits);
+    expect(next.credits).toBe(free.monthlyCredits ?? 0);
     expect(next.cancelAtPeriodEnd).toBe(false);
   });
 });
@@ -84,29 +87,40 @@ describe("billing", () => {
     expect(await guest.as.query(api.billing.summary, {})).toBeNull();
     expect(await guest.as.query(api.billing.history, {})).toEqual([]);
     const catalog = await t.query(api.billing.catalog, {});
-    expect(catalog.plans.map((plan) => plan.key)).toEqual(["free", "starter", "pro", "business"]);
+    expect(catalog.plans.map((plan) => plan.key)).toEqual(["free", "starter", "premium"]);
+    expect(catalog.plans.map((plan) => plan.monthlyPriceCents)).toEqual([0, 3990, 6990]);
+    expect(catalog.plans.map((plan) => plan.yearlyPriceCents)).toEqual([0, 28680, 50280]);
+    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([0, 600, null]);
+    expect(catalog.plans[0].signupCredits).toBe(30);
     expect(catalog.topUps.length).toBeGreaterThan(0);
     expect(catalog.requestCosts).toEqual(REQUEST_COSTS);
   });
 
-  test("a member starts on the free plan with its monthly credits", async () => {
+  test("a member starts on the free plan with its welcome credits", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    // Before any mutation the summary is projected from nothing.
+    // Before any mutation the summary is projected from nothing: the period's
+    // allowance only, since the welcome grant is written when the row is.
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       plan: { key: "free" },
-      credits: free.monthlyCredits,
-      available: free.monthlyCredits,
+      unlimited: false,
+      credits: free.monthlyCredits ?? 0,
       reserved: 0,
       cancelAtPeriodEnd: false,
     });
     await t.mutation(internal.billing.ensure, { userId: member.userId });
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
+      credits: OPENING,
+      available: OPENING,
+      granted: OPENING,
+    });
     const history = await member.as.query(api.billing.history, {});
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({
       kind: "grant",
-      amount: free.monthlyCredits,
-      balanceAfter: free.monthlyCredits,
+      amount: OPENING,
+      balanceAfter: OPENING,
+      note: "Welcome credits",
     });
     expect(history[0]).not.toHaveProperty("userId");
     // Ensuring twice does not grant twice.
@@ -125,26 +139,28 @@ describe("billing", () => {
   test("a hold takes credits out of reach, settling spends them, releasing gives them back", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    const balance = OPENING + starter.monthlyCredits!;
     const { holdId, amount } = await t.mutation(internal.billing.reserve, {
       userId: member.userId,
       requestKind: "generate",
     });
     expect(amount).toBe(REQUEST_COSTS.generate);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: free.monthlyCredits,
+      credits: balance,
       reserved: amount,
-      available: free.monthlyCredits - amount,
+      available: balance - amount,
     });
 
     await t.mutation(internal.billing.settle, { holdId, amount: 3 });
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: free.monthlyCredits - 3,
+      credits: balance - 3,
       reserved: 0,
-      available: free.monthlyCredits - 3,
+      available: balance - 3,
     });
     // Settling the same hold again changes nothing.
     await t.mutation(internal.billing.settle, { holdId });
-    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(free.monthlyCredits - 3);
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(balance - 3);
 
     const second = await t.mutation(internal.billing.reserve, {
       userId: member.userId,
@@ -152,13 +168,13 @@ describe("billing", () => {
     });
     await t.mutation(internal.billing.release, { holdId: second.holdId });
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: free.monthlyCredits - 3,
+      credits: balance - 3,
       reserved: 0,
     });
 
     const history = await member.as.query(api.billing.history, {});
-    expect(history.map((entry) => entry.kind)).toEqual(["spend", "grant"]);
-    expect(history[0]).toMatchObject({ amount: -3, note: "Site generation" });
+    expect(history.map((entry) => entry.kind)).toEqual(["spend", "grant", "grant"]);
+    expect(history[0]).toMatchObject({ amount: -3, note: "Site build" });
     const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
     expect(holds.map((hold) => hold.status).sort()).toEqual(["released", "settled"]);
   });
@@ -171,14 +187,45 @@ describe("billing", () => {
       requestKind: "edit",
     });
     await t.mutation(internal.billing.settle, { holdId, amount: 999 });
-    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
-      free.monthlyCredits - REQUEST_COSTS.edit,
-    );
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING - REQUEST_COSTS.edit);
+  });
+
+  test("the free welcome credits cannot cover a site build, and the refusal says so", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    expect(OPENING).toBeLessThan(REQUEST_COSTS.generate);
+    await expect(
+      t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "generate" }),
+    ).rejects.toThrow(`Out of credits: this needs ${REQUEST_COSTS.generate} and you have ${OPENING}. Upgrade`);
+    expect(await t.run((ctx) => ctx.db.query("creditHolds").collect())).toEqual([]);
+  });
+
+  test("an unlimited plan never runs out, and its spends are still written down", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
+      plan: { key: "premium" },
+      unlimited: true,
+      available: null,
+    });
+    for (let i = 0; i < 5; i += 1) {
+      const { holdId } = await t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "video" });
+      await t.mutation(internal.billing.settle, { holdId });
+    }
+    const summary = (await member.as.query(api.billing.summary, {}))!;
+    expect(summary.reserved).toBe(0);
+    expect(summary.credits).toBe(OPENING);
+    const spends = (await member.as.query(api.billing.history, {})).filter((entry) => entry.kind === "spend");
+    expect(spends).toHaveLength(5);
+    expect(spends[0]).toMatchObject({ amount: -REQUEST_COSTS.video, note: "Video" });
   });
 
   test("holds stop at the balance, so a burst of requests cannot overspend", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    const balance = OPENING + starter.monthlyCredits!;
     let held = 0;
     for (;;) {
       try {
@@ -189,10 +236,10 @@ describe("billing", () => {
         break;
       }
     }
-    expect(held * REQUEST_COSTS.generate).toBeLessThanOrEqual(free.monthlyCredits);
-    expect((held + 1) * REQUEST_COSTS.generate).toBeGreaterThan(free.monthlyCredits);
+    expect(held * REQUEST_COSTS.generate).toBeLessThanOrEqual(balance);
+    expect((held + 1) * REQUEST_COSTS.generate).toBeGreaterThan(balance);
     const summary = (await member.as.query(api.billing.summary, {}))!;
-    expect(summary.credits).toBe(free.monthlyCredits);
+    expect(summary.credits).toBe(balance);
     expect(summary.available).toBeLessThan(REQUEST_COSTS.generate);
   });
 
@@ -207,7 +254,7 @@ describe("billing", () => {
   test("a period that ended expires what was left and grants the new allowance", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.ensure, { userId: member.userId });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
     // Age the stored period by hand, the way time would.
     const past = Date.now() - 40 * DAY;
     await t.run(async (ctx) => {
@@ -219,7 +266,7 @@ describe("billing", () => {
     });
     // A query reports the period as it will be once a mutation rolls it.
     const view = (await member.as.query(api.billing.summary, {}))!;
-    expect(view.credits).toBe(free.monthlyCredits);
+    expect(view.credits).toBe(starter.monthlyCredits);
     expect(view.periodEnd).toBeGreaterThan(Date.now());
     expect(view.periodStart).toBeLessThanOrEqual(Date.now());
     const { holdId } = await t.mutation(internal.billing.reserve, {
@@ -228,31 +275,30 @@ describe("billing", () => {
     });
     await t.mutation(internal.billing.release, { holdId });
     const history = await member.as.query(api.billing.history, {});
-    expect(history.map((entry) => [entry.kind, entry.amount])).toEqual([
-      ["grant", free.monthlyCredits],
+    expect(history.slice(0, 2).map((entry) => [entry.kind, entry.amount])).toEqual([
+      ["grant", starter.monthlyCredits],
       ["expire", -7],
-      ["grant", free.monthlyCredits],
     ]);
     const stored = (await t.run((ctx) => ctx.db.query("subscriptions").first()))!;
     expect(stored.periodStart).toBe(view.periodStart);
-    expect(stored.credits).toBe(free.monthlyCredits);
+    expect(stored.credits).toBe(starter.monthlyCredits);
   });
 
   test("cancel schedules the free plan for the period end; resume undoes it", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     await expect(member.as.mutation(api.billing.cancel, {})).rejects.toThrow("already on the free plan");
-    await t.mutation(internal.billing.grantPlan, { email: "m@example.com", plan: "pro" });
+    await t.mutation(internal.billing.grantPlan, { email: "m@example.com", plan: "starter" });
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      plan: { key: "pro" },
-      credits: free.monthlyCredits + planFor("pro").monthlyCredits,
-      granted: free.monthlyCredits + planFor("pro").monthlyCredits,
+      plan: { key: "starter" },
+      credits: OPENING + starter.monthlyCredits!,
+      granted: OPENING + starter.monthlyCredits!,
       cancelAtPeriodEnd: false,
     });
     await member.as.mutation(api.billing.cancel, {});
     const canceled = (await member.as.query(api.billing.summary, {}))!;
     expect(canceled.cancelAtPeriodEnd).toBe(true);
-    expect(canceled.plan.key).toBe("pro");
+    expect(canceled.plan.key).toBe("starter");
     await member.as.mutation(api.billing.resume, {});
     expect((await member.as.query(api.billing.summary, {}))!.cancelAtPeriodEnd).toBe(false);
     const guest = await createUser(t, { isAnonymous: true });
@@ -262,20 +308,24 @@ describe("billing", () => {
   test("top-ups add to the current period and are recorded", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-50" });
+    await expect(
+      t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-100" }),
+    ).rejects.toThrow("Extra credits come with the Premium plan");
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-100" });
     await t.mutation(internal.billing.grantTopUp, {
       email: "M@example.com",
       credits: 7,
       note: "Sorry about the outage",
     });
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: free.monthlyCredits + 57,
-      granted: free.monthlyCredits + 57,
+      credits: OPENING + 107,
+      granted: OPENING + 107,
     });
     const history = await member.as.query(api.billing.history, {});
     expect(history.map((entry) => entry.kind).sort()).toEqual(["grant", "topup", "topup"]);
     expect(history.find((entry) => entry.amount === 7)?.note).toBe("Sorry about the outage");
-    expect(history.find((entry) => entry.amount === 50)?.note).toBe("50 credit top-up");
+    expect(history.find((entry) => entry.amount === 100)?.note).toBe("100 credit top-up");
     await expect(
       t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-nope" }),
     ).rejects.toThrow("does not exist");
@@ -290,10 +340,18 @@ describe("billing", () => {
   test("checkout is refused until payments are open", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await expect(member.as.action(api.billing.checkout, { plan: "pro" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { plan: "premium" })).rejects.toThrow(
       "Payments aren't open yet",
     );
-    await expect(member.as.action(api.billing.checkout, { topUp: "topup-50" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { plan: "starter", interval: "year" })).rejects.toThrow(
+      "Payments aren't open yet",
+    );
+    // Packs are refused on plans without them before payments are even considered.
+    await expect(member.as.action(api.billing.checkout, { topUp: "topup-100" })).rejects.toThrow(
+      "Extra credits come with the Premium plan",
+    );
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await expect(member.as.action(api.billing.checkout, { topUp: "topup-100" })).rejects.toThrow(
       "Payments aren't open yet",
     );
     await expect(member.as.action(api.billing.checkout, {})).rejects.toThrow("Choose a plan");
@@ -301,7 +359,7 @@ describe("billing", () => {
       "Downgrading",
     );
     const guest = await createUser(t, { isAnonymous: true });
-    await expect(guest.as.action(api.billing.checkout, { plan: "pro" })).rejects.toThrow("Sign in");
+    await expect(guest.as.action(api.billing.checkout, { plan: "premium" })).rejects.toThrow("Sign in");
   });
 
   test("balances and history are private to the account", async () => {
@@ -309,8 +367,11 @@ describe("billing", () => {
     const alice = await createUser(t, { email: "a@example.com" });
     const bob = await createUser(t, { email: "b@example.com" });
     await t.mutation(internal.billing.grantTopUp, { userId: alice.userId, credits: 10 });
-    expect((await alice.as.query(api.billing.summary, {}))!.credits).toBe(free.monthlyCredits + 10);
-    expect((await bob.as.query(api.billing.summary, {}))!.credits).toBe(free.monthlyCredits);
-    expect(await bob.as.query(api.billing.history, {})).toEqual([]);
+    expect((await alice.as.query(api.billing.summary, {}))!.credits).toBe(OPENING + 10);
+    await t.mutation(internal.billing.ensure, { userId: bob.userId });
+    expect((await bob.as.query(api.billing.summary, {}))!.credits).toBe(OPENING);
+    // Bob sees his own welcome grant and nothing of Alice's top-up.
+    expect((await bob.as.query(api.billing.history, {})).map((entry) => entry.kind)).toEqual(["grant"]);
+    expect((await alice.as.query(api.billing.history, {})).map((entry) => entry.kind)).toEqual(["topup", "grant"]);
   });
 });

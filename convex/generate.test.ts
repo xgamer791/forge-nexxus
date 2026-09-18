@@ -24,7 +24,17 @@ async function createUser(
   return { userId, as: t.withIdentity({ subject: `${userId}|${sessionId}` }) };
 }
 
+// Building needs credits the free plan does not have, so members start on Starter.
+async function createBuilder(t: ReturnType<typeof fresh>, email: string) {
+  const member = await createUser(t, { email });
+  await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+  return member;
+}
+
 const free = planFor("free");
+const starter = planFor("starter");
+// A member on Starter, holding the free welcome grant plus the month's allowance.
+const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits + starter.monthlyCredits!;
 const KEY = "sk-test-secret-key";
 const PAGE =
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Bakery</title><style>body{margin:0}</style></head><body><main><h1>Bakery on Main</h1></main></body></html>';
@@ -83,7 +93,7 @@ describe("parseReply", () => {
 describe("generate.run", () => {
   test("a first prompt builds the site, charges the generate cost, and keeps the version", async () => {
     const t = fresh();
-    const member = await createUser(t, { email: "m@example.com" });
+    const member = await createBuilder(t, "m@example.com");
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
     const calls = stubProvider(() => reply("Built a warm landing page with a menu."));
 
@@ -104,11 +114,11 @@ describe("generate.run", () => {
     expect(current).toMatchObject({ html: PAGE, summary: "Built a warm landing page with a menu.", published: false });
 
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: free.monthlyCredits - REQUEST_COSTS.generate,
+      credits: OPENING - REQUEST_COSTS.generate,
       reserved: 0,
     });
     const history = await member.as.query(api.billing.history, {});
-    expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.generate, note: "Site generation" });
+    expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.generate, note: "Site build" });
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://ai.example/v1/chat/completions");
@@ -122,7 +132,7 @@ describe("generate.run", () => {
 
   test("a second prompt is an edit: the current page goes along and the edit cost is charged", async () => {
     const t = fresh();
-    const member = await createUser(t, { email: "m@example.com" });
+    const member = await createBuilder(t, "m@example.com");
     const { conversationId, siteId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
     const calls = stubProvider((_body, call) =>
       call === 1 ? reply("Built the first version.") : reply("Added opening hours.", PAGE_TWO),
@@ -140,13 +150,13 @@ describe("generate.run", () => {
     expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE_TWO);
     expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toHaveLength(2);
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
-      free.monthlyCredits - REQUEST_COSTS.generate - REQUEST_COSTS.edit,
+      OPENING - REQUEST_COSTS.generate - REQUEST_COSTS.edit,
     );
   });
 
   test("a provider failure marks the reply failed, gives the hold back, and never leaks the key", async () => {
     const t = fresh();
-    const member = await createUser(t, { email: "m@example.com" });
+    const member = await createBuilder(t, "m@example.com");
     const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
     stubProvider(() => new Response(`upstream said no to ${KEY}`, { status: 502 }));
 
@@ -159,9 +169,9 @@ describe("generate.run", () => {
     expect(messages[1].body).toContain("[key]");
     expect(messages[1].body).not.toContain(KEY);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: free.monthlyCredits,
+      credits: OPENING,
       reserved: 0,
-      available: free.monthlyCredits,
+      available: OPENING,
     });
     const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
     expect(holds.map((hold) => hold.status)).toEqual(["released"]);
@@ -170,19 +180,19 @@ describe("generate.run", () => {
 
   test("a reply without a page is refused and costs nothing", async () => {
     const t = fresh();
-    const member = await createUser(t, { email: "m@example.com" });
+    const member = await createBuilder(t, "m@example.com");
     const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
     stubProvider(() => json({ choices: [{ message: { content: "Sure, what colours do you like?" } }] }));
     await expect(
       member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" }),
     ).rejects.toThrow("complete page");
-    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(free.monthlyCredits);
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING);
   });
 
   test("without provider settings the build is refused and nothing is charged", async () => {
     delete process.env.AI_API_KEY;
     const t = fresh();
-    const member = await createUser(t, { email: "m@example.com" });
+    const member = await createBuilder(t, "m@example.com");
     const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
     const calls = stubProvider(() => reply("never"));
     await expect(
@@ -191,13 +201,13 @@ describe("generate.run", () => {
     expect(calls).toHaveLength(0);
     const messages = await member.as.query(api.messages.list, { conversationId });
     expect(messages[1]).toMatchObject({ role: "assistant", status: "failed" });
-    expect((await member.as.query(api.billing.summary, {}))!.available).toBe(free.monthlyCredits);
+    expect((await member.as.query(api.billing.summary, {}))!.available).toBe(OPENING);
   });
 
   test("guests, strangers, and empty prompts are refused before anything is written", async () => {
     const t = fresh();
-    const member = await createUser(t, { email: "m@example.com" });
-    const stranger = await createUser(t, { email: "s@example.com" });
+    const member = await createBuilder(t, "m@example.com");
+    const stranger = await createBuilder(t, "s@example.com");
     const guest = await createUser(t, { isAnonymous: true });
     const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
     stubProvider(() => reply("never"));
@@ -218,19 +228,27 @@ describe("generate.run", () => {
 
   test("running out of credits refuses before the prompt is recorded", async () => {
     const t = fresh();
+    // A free member's welcome credits do not cover a build.
     const member = await createUser(t, { email: "m@example.com" });
     const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
-    for (;;) {
-      try {
-        await t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "generate" });
-      } catch {
-        break;
-      }
-    }
-    stubProvider(() => reply("never"));
+    const calls = stubProvider(() => reply("never"));
     await expect(
       member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" }),
-    ).rejects.toThrow("Out of credits");
+    ).rejects.toThrow("Out of credits: this needs 40 and you have 30. Upgrade to start building.");
+    expect(calls).toHaveLength(0);
     expect(await member.as.query(api.messages.list, { conversationId })).toEqual([]);
+  });
+
+  test("an unlimited plan builds without a balance", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    stubProvider(() => reply("Built it."));
+    await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
+    const summary = (await member.as.query(api.billing.summary, {}))!;
+    expect(summary).toMatchObject({ unlimited: true, reserved: 0 });
+    const history = await member.as.query(api.billing.history, {});
+    expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.generate });
   });
 });

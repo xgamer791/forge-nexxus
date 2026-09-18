@@ -24,7 +24,7 @@ try {
   const catalog = await client.query(api.billing.catalog, {});
   check(
     "catalog lists the plans and packs",
-    catalog.plans.map((plan) => plan.key).join(",") === "free,starter,pro,business" && catalog.topUps.length > 0,
+    catalog.plans.map((plan) => plan.key).join(",") === "free,starter,premium" && catalog.topUps.length > 0,
     catalog.plans.map((plan) => `${plan.name} ${plan.monthlyCredits}cr`).join(" / "),
   );
 

@@ -2,6 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { requireOwnedDomain, requireOwnedSite } from "./access";
 import { currentPlan } from "./billing";
+import { PLANS } from "./plans";
 import { mutation, query } from "./_generated/server";
 
 // Labels of letters, digits and inner hyphens, then a real top-level domain.
@@ -36,7 +37,10 @@ export const add = mutation({
   handler: async (ctx, { siteId, hostname }) => {
     const site = await requireOwnedSite(ctx, siteId);
     const plan = await currentPlan(ctx, site.userId);
-    if (!plan.customDomains) throw new ConvexError("Custom domains need a paid plan");
+    if (!plan.customDomains) {
+      const needed = PLANS.find((candidate) => candidate.customDomains)?.name ?? "Premium";
+      throw new ConvexError(`Custom domains come with the ${needed} plan`);
+    }
     const host = normalizeHostname(hostname);
     if (!HOSTNAME.test(host)) throw new ConvexError("Enter a domain like example.com");
     const owned = await ctx.db

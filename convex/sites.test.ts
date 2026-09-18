@@ -64,6 +64,7 @@ describe("sites", () => {
   test("sending a prompt moves a site to the top of the list", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
     const first = await member.as.mutation(api.sites.create, { name: "First" });
     const second = await member.as.mutation(api.sites.create, { name: "Second" });
     await t.run(async (ctx) => {
@@ -87,7 +88,7 @@ describe("sites", () => {
       await member.as.mutation(api.sites.create, { name: `Site ${i}` });
     }
     await expect(member.as.mutation(api.sites.create, {})).rejects.toThrow(`holds ${cap} sites`);
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
     await member.as.mutation(api.sites.create, { name: "One more" });
     expect(await member.as.query(api.sites.list, {})).toHaveLength(cap + 1);
   });
@@ -111,7 +112,7 @@ describe("sites", () => {
   test("deleting a thread directly takes its site and domains with it", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     await member.as.mutation(api.domains.add, { siteId, hostname: "shop.example" });
     await member.as.mutation(api.conversations.remove, { id: conversationId });

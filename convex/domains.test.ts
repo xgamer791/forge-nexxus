@@ -41,14 +41,18 @@ describe("domains", () => {
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     await expect(
       member.as.mutation(api.domains.add, { siteId, hostname: "shop.example" }),
-    ).rejects.toThrow("paid plan");
+    ).rejects.toThrow("Custom domains come with the Premium plan");
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    await expect(
+      member.as.mutation(api.domains.add, { siteId, hostname: "shop.example" }),
+    ).rejects.toThrow("Custom domains come with the Premium plan");
     expect(await member.as.query(api.domains.list, {})).toEqual([]);
   });
 
   test("a pasted URL becomes a hostname; duplicates and nonsense are refused", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     const id = await member.as.mutation(api.domains.add, {
       siteId,
@@ -73,8 +77,8 @@ describe("domains", () => {
     const t = fresh();
     const alice = await createUser(t, { email: "a@example.com" });
     const bob = await createUser(t, { email: "b@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "starter" });
-    await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "starter" });
+    await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "premium" });
     const { siteId } = await alice.as.mutation(api.sites.create, { name: "Alice's" });
     const id = await alice.as.mutation(api.domains.add, { siteId, hostname: "alice.example" });
     expect(await bob.as.query(api.domains.list, {})).toEqual([]);

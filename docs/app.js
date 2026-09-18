@@ -864,26 +864,33 @@ function renderCredits() {
   if (creditsCard) creditsCard.hidden = !summary;
   setText('[data-settings-plan]', summary ? summary.plan.name : '');
   if (summary) {
-    const {plan, available, granted, periodEnd, cancelAtPeriodEnd} = summary;
-    const used = Math.max(0, granted - available);
+    const {plan, unlimited, granted, periodEnd, cancelAtPeriodEnd} = summary;
+    const available = unlimited ? null : summary.available;
+    const used = unlimited ? null : Math.max(0, granted - available);
+    const when = shortDate(periodEnd);
+    const top = catalog?.plans[catalog.plans.length - 1]?.key ?? null;
     setText('[data-credits-plan]', `${plan.name} plan`);
-    setText('[data-credits-available]', String(available));
-    setText('[data-credits-granted]', ` of ${granted}`);
-    setFill('[data-credits-fill]', available, granted);
-    setText('[data-credits-resets]', cancelAtPeriodEnd ? `Moving to Free ${shortDate(periodEnd)}` : `Resets ${shortDate(periodEnd)}`);
-    setText('[data-credits-cta]', plan.key === 'business' ? 'Top up' : 'Upgrade');
+    setText('[data-credits-available]', unlimited ? 'Unlimited' : String(available));
+    setText('[data-credits-granted]', unlimited ? ' credits' : ` of ${granted}`);
+    setFill('[data-credits-fill]', unlimited ? 1 : available, unlimited ? 1 : granted);
+    setText('[data-credits-resets]', cancelAtPeriodEnd
+      ? `Moving to Free ${when}`
+      : plan.monthlyPriceCents ? `Renews ${when}` : granted > 0 ? `Expires ${when}` : 'Upgrade to start building');
+    setText('[data-credits-cta]', plan.key === top ? (plan.topUps && !unlimited ? 'Top up' : 'Manage') : 'Upgrade');
     setText('[data-plan-name]', `${plan.name} plan`);
     setText('[data-plan-renews]', cancelAtPeriodEnd
-      ? `Ends ${shortDate(periodEnd)}`
-      : plan.monthlyPriceCents ? `Renews ${shortDate(periodEnd)}` : `Credits reset ${shortDate(periodEnd)}`);
+      ? `Ends ${when}`
+      : plan.monthlyPriceCents ? `Renews ${when}` : granted > 0 ? `Credits expire ${when}` : 'No monthly credits');
     setText('[data-plan-price]', plan.monthlyPriceCents ? `${money(plan.monthlyPriceCents)}/mo` : 'Free');
-    setText('[data-plan-available]', String(available));
-    setText('[data-plan-granted]', String(granted));
-    setFill('[data-plan-fill]', available, granted);
-    setText('[data-plan-resets]', `${used} used · resets ${shortDate(periodEnd)}`);
-    setText('[data-plan-end]', shortDate(periodEnd));
-    setText('[data-usage-headline]', `${used} of ${granted} credits used`);
-    setText('[data-usage-sub]', `${available} left · resets ${shortDate(periodEnd)}`);
+    setText('[data-plan-meter-label]', unlimited ? 'Credits' : 'Credits remaining');
+    setText('[data-plan-meter]', unlimited ? 'Unlimited' : `${available} of ${granted}`);
+    setFill('[data-plan-fill]', unlimited ? 1 : available, unlimited ? 1 : granted);
+    setText('[data-plan-resets]', unlimited
+      ? `No credit limit on ${plan.name} · renews ${when}`
+      : `${used} used · resets ${when} · unused credits don't roll over`);
+    setText('[data-plan-end]', when);
+    setText('[data-usage-headline]', unlimited ? `Unlimited credits on ${plan.name}` : `${used} of ${granted} credits used`);
+    setText('[data-usage-sub]', unlimited ? `Renews ${when}` : `${available} left · resets ${when}`);
     if (planScreen) {
       planScreen.querySelector('.plan-cancel').hidden = plan.key === 'free' || cancelAtPeriodEnd;
       planScreen.querySelector('.plan-resume').hidden = !cancelAtPeriodEnd;
@@ -942,13 +949,24 @@ function renderPlanCards() {
     const per = document.createElement('span');
     per.textContent = plan.monthlyPriceCents ? '/ month' : 'forever';
     price.append(amount, per);
+    const yearly = document.createElement('small');
+    yearly.className = 'plan-yearly';
+    yearly.hidden = !plan.yearlyPriceCents;
+    if (plan.yearlyPriceCents) {
+      yearly.textContent = `or ${money(Math.round(plan.yearlyPriceCents / 12))}/mo billed yearly (${money(plan.yearlyPriceCents)}/yr)`;
+    }
     const features = document.createElement('ul');
     features.className = 'plan-features';
     [
-      `${plan.monthlyCredits} credits a month`,
-      plan.maxSites === null ? 'Unlimited sites' : `Up to ${plan.maxSites} sites`,
-      plan.customDomains ? 'Custom domains' : null,
+      plan.monthlyCredits === null
+        ? 'Unlimited credits'
+        : plan.monthlyCredits > 0 ? `${plan.monthlyCredits} credits a month` : `${plan.signupCredits} credits to start`,
+      plan.maxSites === null ? 'Unlimited sites' : plan.maxSites === 1 ? '1 site' : `Up to ${plan.maxSites} sites`,
+      plan.visitorsPerMonth ? `Up to ${plan.visitorsPerMonth.toLocaleString('en-US')} visitors a month` : null,
+      plan.customDomains ? 'Custom domain' : null,
       plan.removeBadge ? 'No Forge badge' : null,
+      plan.topUps ? 'Buy extra credits any time' : null,
+      ...(plan.features ?? []),
     ].filter(Boolean).forEach(text => {
       const item = document.createElement('li');
       const label = document.createElement('span');
@@ -979,9 +997,12 @@ function renderPlanCards() {
       if (!upgrade) cta.classList.add('is-secondary');
       cta.addEventListener('click', () => startCheckout({plan: plan.key}, cta));
     }
-    card.append(title, tagline, price, features, cta);
+    card.append(title, tagline, price, yearly, features, cta);
     return card;
   }));
+  // Extra credits are a plan entitlement, and pointless on an unlimited plan.
+  const showTopUps = Boolean(summary?.plan.topUps) && !summary?.unlimited;
+  planScreen.querySelectorAll('.topup-heading,[data-topup-list],.topup-note').forEach(element => { element.hidden = !showTopUps; });
   topUps.replaceChildren(...catalog.topUps.map(pack => {
     const row = document.createElement('button');
     row.type = 'button';

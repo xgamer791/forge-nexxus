@@ -45,14 +45,19 @@ type Balance = {
   cancelAtPeriodEnd: boolean;
 };
 
+// A period's allowance: zero on an unlimited plan, where nothing is counted.
+function allowance(key: PlanKey) {
+  return planFor(key).monthlyCredits ?? 0;
+}
+
 function opening(key: PlanKey, now: number): Balance {
   return {
     planKey: key,
     periodStart: now,
     periodEnd: addMonth(now),
-    credits: planFor(key).monthlyCredits,
+    credits: allowance(key),
     reserved: 0,
-    granted: planFor(key).monthlyCredits,
+    granted: allowance(key),
     cancelAtPeriodEnd: false,
   };
 }
@@ -73,9 +78,9 @@ export function projected(sub: Balance, now: number): Balance {
     planKey: key,
     periodStart,
     periodEnd,
-    credits: planFor(key).monthlyCredits,
+    credits: allowance(key),
     reserved: sub.reserved,
-    granted: planFor(key).monthlyCredits,
+    granted: allowance(key),
     cancelAtPeriodEnd: false,
   };
 }
@@ -111,9 +116,19 @@ async function record(
 export async function ensureCurrent(ctx: MutationCtx, userId: Id<"users">, now = Date.now()) {
   const existing = await subscriptionFor(ctx, userId);
   if (!existing) {
+    // The first plan is free, and it comes with a one-time welcome grant on
+    // top of whatever the period allows.
+    const plan = planFor("free");
     const fresh = opening("free", now);
-    const id = await ctx.db.insert("subscriptions", { userId, ...fresh, updatedAt: now });
-    await record(ctx, userId, "grant", fresh.credits, fresh.credits, "Free plan credits", now);
+    const credits = fresh.credits + plan.signupCredits;
+    const id = await ctx.db.insert("subscriptions", {
+      userId,
+      ...fresh,
+      credits,
+      granted: credits,
+      updatedAt: now,
+    });
+    if (credits > 0) await record(ctx, userId, "grant", credits, credits, "Welcome credits", now);
     return (await ctx.db.get(id))!;
   }
   if (now < existing.periodEnd) return existing;
@@ -121,17 +136,24 @@ export async function ensureCurrent(ctx: MutationCtx, userId: Id<"users">, now =
   if (existing.credits > 0) {
     await record(ctx, userId, "expire", -existing.credits, 0, "Period ended", now);
   }
-  await record(
-    ctx,
-    userId,
-    "grant",
-    next.credits,
-    next.credits,
-    `${planFor(next.planKey).name} plan credits`,
-    now + 1,
-  );
+  if (next.credits > 0) {
+    await record(
+      ctx,
+      userId,
+      "grant",
+      next.credits,
+      next.credits,
+      `${planFor(next.planKey).name} plan credits`,
+      now + 1,
+    );
+  }
   await ctx.db.patch(existing._id, { ...next, updatedAt: now });
   return (await ctx.db.get(existing._id))!;
+}
+
+// The cheapest plan that has an entitlement, for messages that point at it.
+function cheapestWith(entitlement: "topUps" | "customDomains") {
+  return PLANS.find((plan) => plan[entitlement])?.name ?? "Premium";
 }
 
 async function memberOrNull(ctx: QueryCtx) {
@@ -149,11 +171,15 @@ export const summary = query({
     const now = Date.now();
     const stored = await subscriptionFor(ctx, user._id);
     const balance = stored ? projected(stored, now) : opening("free", now);
+    const plan = planFor(balance.planKey);
+    const unlimited = plan.monthlyCredits === null;
     return {
-      plan: planFor(balance.planKey),
+      plan,
+      unlimited,
       credits: balance.credits,
       reserved: balance.reserved,
-      available: Math.max(0, balance.credits - balance.reserved),
+      // Null on an unlimited plan: there is no number to run out of.
+      available: unlimited ? null : Math.max(0, balance.credits - balance.reserved),
       // What this period started with plus its top-ups: the meter's full mark.
       granted: balance.granted,
       periodStart: balance.periodStart,
@@ -209,12 +235,22 @@ export const resume = mutation({
 // webhook in http.ts then calls grantPlan or grantTopUp. Until the keys are
 // set, the app is told plainly that payments are not open.
 export const checkout = action({
-  args: { plan: v.optional(planKey), topUp: v.optional(v.string()) },
+  args: {
+    plan: v.optional(planKey),
+    interval: v.optional(v.union(v.literal("month"), v.literal("year"))),
+    topUp: v.optional(v.string()),
+  },
   handler: async (ctx, { plan, topUp }): Promise<{ url: string }> => {
     const me = await ctx.runQuery(api.users.me, {});
     if (!me || me.isAnonymous) throw new ConvexError("Sign in to change your plan");
     if (plan === "free") throw new ConvexError("Downgrading happens from Plan & credits");
     if (!plan && !topUpFor(topUp ?? "")) throw new ConvexError("Choose a plan or a credit pack");
+    if (!plan && topUp) {
+      const current = await ctx.runQuery(api.billing.summary, {});
+      if (!current?.plan.topUps) {
+        throw new ConvexError(`Extra credits come with the ${cheapestWith("topUps")} plan`);
+      }
+    }
     throw new ConvexError("Payments aren't open yet. Plans and top-ups will be available soon.");
   },
 });
@@ -256,7 +292,14 @@ export async function holdCredits(
   if (!user || user.isAnonymous) throw new ConvexError("Sign in to build");
   const sub = await ensureCurrent(ctx, userId, now);
   const amount = REQUEST_COSTS[kind];
-  if (sub.credits - sub.reserved < amount) throw new ConvexError("Out of credits");
+  const unlimited = planFor(sub.planKey).monthlyCredits === null;
+  const available = sub.credits - sub.reserved;
+  if (!unlimited && available < amount) {
+    throw new ConvexError(
+      `Out of credits: this needs ${amount} and you have ${Math.max(0, available)}. ` +
+        (sub.planKey === "free" ? "Upgrade to start building." : "Top up or upgrade to keep building."),
+    );
+  }
   const holdId = await ctx.db.insert("creditHolds", {
     userId,
     requestKind: kind,
@@ -264,7 +307,7 @@ export async function holdCredits(
     status: "held",
     createdAt: now,
   });
-  await ctx.db.patch(sub._id, { reserved: sub.reserved + amount, updatedAt: now });
+  if (!unlimited) await ctx.db.patch(sub._id, { reserved: sub.reserved + amount, updatedAt: now });
   return { holdId, amount };
 }
 
@@ -279,13 +322,18 @@ export async function settleHold(
   const hold = await ctx.db.get(holdId);
   if (!hold || hold.status !== "held") return;
   const sub = await ensureCurrent(ctx, hold.userId, now);
+  const unlimited = planFor(sub.planKey).monthlyCredits === null;
   const spent = Math.min(hold.amount, Math.max(0, Math.round(amount ?? hold.amount)));
-  const credits = Math.max(0, sub.credits - spent);
-  await ctx.db.patch(sub._id, {
-    credits,
-    reserved: Math.max(0, sub.reserved - hold.amount),
-    updatedAt: now,
-  });
+  // An unlimited plan still writes the spend down, so Usage shows the work,
+  // but the balance it never drew on stays where it was.
+  const credits = unlimited ? sub.credits : Math.max(0, sub.credits - spent);
+  if (!unlimited) {
+    await ctx.db.patch(sub._id, {
+      credits,
+      reserved: Math.max(0, sub.reserved - hold.amount),
+      updatedAt: now,
+    });
+  }
   await ctx.db.patch(holdId, { status: "settled" });
   if (spent > 0) {
     const label = REQUEST_LABELS[hold.requestKind as RequestKind] ?? hold.requestKind;
@@ -298,10 +346,12 @@ export async function releaseHold(ctx: MutationCtx, holdId: Id<"creditHolds">, n
   const hold = await ctx.db.get(holdId);
   if (!hold || hold.status !== "held") return;
   const sub = await ensureCurrent(ctx, hold.userId, now);
-  await ctx.db.patch(sub._id, {
-    reserved: Math.max(0, sub.reserved - hold.amount),
-    updatedAt: now,
-  });
+  if (planFor(sub.planKey).monthlyCredits !== null) {
+    await ctx.db.patch(sub._id, {
+      reserved: Math.max(0, sub.reserved - hold.amount),
+      updatedAt: now,
+    });
+  }
   await ctx.db.patch(holdId, { status: "released" });
 }
 
@@ -350,7 +400,9 @@ export const grantPlan = internalMutation({
       stripeSubscriptionId: args.stripeSubscriptionId ?? sub.stripeSubscriptionId,
       updatedAt: now,
     });
-    await record(ctx, userId, "grant", next.credits, credits, `${planFor(args.plan).name} plan credits`, now);
+    if (next.credits > 0) {
+      await record(ctx, userId, "grant", next.credits, credits, `${planFor(args.plan).name} plan credits`, now);
+    }
   },
 });
 
@@ -367,6 +419,11 @@ export const grantTopUp = internalMutation({
     const userId = await resolveUserId(ctx, args);
     const pack = args.pack ? topUpFor(args.pack) : null;
     if (args.pack && !pack) throw new ConvexError("That credit pack does not exist");
+    if (pack) {
+      const current = await subscriptionFor(ctx, userId);
+      const key = current ? projected(current, Date.now()).planKey : "free";
+      if (!planFor(key).topUps) throw new ConvexError(`Extra credits come with the ${cheapestWith("topUps")} plan`);
+    }
     const credits = Math.round(pack?.credits ?? args.credits ?? 0);
     if (credits <= 0) throw new ConvexError("A top-up needs a pack or a credit amount");
     const now = Date.now();

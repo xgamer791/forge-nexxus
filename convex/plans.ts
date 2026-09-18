@@ -1,91 +1,121 @@
-// The plan catalog. This is product configuration rather than user data, so it
-// lives here and reaches the client through `billing.catalog`: nothing in
-// `docs/` hardcodes a price, an allowance, or what a request costs. Stripe
-// price ids attach to these entries when checkout is wired up.
+// The plan catalog, modelled on Wegic's plans and credits (help.wegic.ai, "Plan
+// and Credits", and wegic.ai/pricing). This is product configuration rather
+// than user data, so it lives here and reaches the client through
+// `billing.catalog`: nothing in `docs/` hardcodes a price, an allowance, or
+// what a request costs. Stripe price ids attach to these entries when checkout
+// is wired up.
 import { v } from "convex/values";
 
-export const planKey = v.union(
-  v.literal("free"),
-  v.literal("starter"),
-  v.literal("pro"),
-  v.literal("business"),
-);
-export type PlanKey = "free" | "starter" | "pro" | "business";
+export const planKey = v.union(v.literal("free"), v.literal("starter"), v.literal("premium"));
+export type PlanKey = "free" | "starter" | "premium";
 
 export type Plan = {
   key: PlanKey;
   name: string;
   tagline: string;
-  // Cents per month; zero is the free plan.
+  // Cents per month, and cents per year when billed yearly; zero is free.
   monthlyPriceCents: number;
-  monthlyCredits: number;
+  yearlyPriceCents: number;
+  // Credits granted each period; null means the plan is unlimited and no
+  // request is ever held against a balance.
+  monthlyCredits: number | null;
+  // A one-time grant when the account first gets a plan.
+  signupCredits: number;
   // How many sites the plan holds at once; null is unlimited.
   maxSites: number | null;
+  // Shown on the plan card; nothing enforces it yet.
+  visitorsPerMonth: number | null;
   customDomains: boolean;
   removeBadge: boolean;
+  // Whether extra credits can be bought inside a period.
+  topUps: boolean;
+  // Extra selling points for the card, in the order they are shown.
+  features: string[];
 };
 
 export const PLANS: readonly Plan[] = [
   {
     key: "free",
     name: "Free",
-    tagline: "Build your first site and see how Forge works.",
+    tagline: "Explore Forge and plan your site.",
     monthlyPriceCents: 0,
-    monthlyCredits: 20,
-    maxSites: 3,
+    yearlyPriceCents: 0,
+    monthlyCredits: 0,
+    signupCredits: 30,
+    maxSites: 1,
+    visitorsPerMonth: null,
     customDomains: false,
     removeBadge: false,
+    topUps: false,
+    features: ["Mobile-optimized", "Forge badge on your site"],
   },
   {
     key: "starter",
     name: "Starter",
-    tagline: "For a personal site or a small business.",
-    monthlyPriceCents: 1900,
-    monthlyCredits: 100,
-    maxSites: 10,
-    customDomains: true,
-    removeBadge: false,
+    tagline: "Build and publish real sites every month.",
+    monthlyPriceCents: 3990,
+    yearlyPriceCents: 28680,
+    monthlyCredits: 600,
+    signupCredits: 0,
+    maxSites: 15,
+    visitorsPerMonth: 10000,
+    customDomains: false,
+    removeBadge: true,
+    topUps: false,
+    features: [
+      "Publish to a Forge address",
+      "Basic custom design",
+      "AI-generated images",
+      "Code download",
+      "Mobile-optimized",
+      "Priority support",
+    ],
   },
   {
-    key: "pro",
-    name: "Pro",
-    tagline: "For people who ship a new site every week.",
-    monthlyPriceCents: 4900,
-    monthlyCredits: 300,
+    key: "premium",
+    name: "Premium",
+    tagline: "No limits, your own domain, and analytics.",
+    monthlyPriceCents: 6990,
+    yearlyPriceCents: 50280,
+    monthlyCredits: null,
+    signupCredits: 0,
     maxSites: null,
+    visitorsPerMonth: null,
     customDomains: true,
     removeBadge: true,
-  },
-  {
-    key: "business",
-    name: "Business",
-    tagline: "For agencies and teams building for clients.",
-    monthlyPriceCents: 9900,
-    monthlyCredits: 800,
-    maxSites: null,
-    customDomains: true,
-    removeBadge: true,
+    topUps: true,
+    features: [
+      "Unlimited pages and visitors",
+      "SSL certificate",
+      "Google Analytics",
+      "AI-generated images",
+      "Code download",
+      "Priority support",
+    ],
   },
 ];
 
 export type TopUp = { key: string; credits: number; priceCents: number };
 
-// Extra credits bought inside a period. They expire with the period, like the
-// monthly allowance does.
+// Extra credits bought inside a period, on plans that allow it. They expire
+// with the period, like the monthly allowance does. Wegic does not publish its
+// pack prices; these are ours until it does.
 export const TOP_UPS: readonly TopUp[] = [
-  { key: "topup-50", credits: 50, priceCents: 1000 },
-  { key: "topup-150", credits: 150, priceCents: 2500 },
-  { key: "topup-400", credits: 400, priceCents: 6000 },
+  { key: "topup-100", credits: 100, priceCents: 990 },
+  { key: "topup-300", credits: 300, priceCents: 2490 },
+  { key: "topup-1000", credits: 1000, priceCents: 6990 },
 ];
 
-// What each kind of AI request holds when it starts. The generation pipeline
-// reserves by kind and settles with what the request actually cost, never more
-// than the hold.
+// What each kind of AI request holds when it starts. Wegic prices a complete
+// site build at 40 credits and describes edits as cheaper and media as dearer
+// without numbers, so the other three are Forge's own until it publishes them.
+// The generation pipeline reserves by kind and settles with what the request
+// actually cost, never more than the hold.
 export const REQUEST_COSTS = {
-  generate: 5,
-  edit: 1,
-  image: 2,
-  video: 10,
+  generate: 40,
+  edit: 8,
+  image: 15,
+  video: 40,
 } as const;
 export type RequestKind = keyof typeof REQUEST_COSTS;
 export const requestKind = v.union(
@@ -95,7 +125,7 @@ export const requestKind = v.union(
   v.literal("video"),
 );
 export const REQUEST_LABELS: Record<RequestKind, string> = {
-  generate: "Site generation",
+  generate: "Site build",
   edit: "Edit",
   image: "Image",
   video: "Video",
