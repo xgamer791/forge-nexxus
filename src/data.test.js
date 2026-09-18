@@ -199,6 +199,24 @@ describe("token lifecycle", () => {
     expect(client.setAuth).toHaveBeenCalledTimes(2);
   });
 
+  test("signing out does not wait on the deployment to let the session go", async () => {
+    let stall;
+    const { data, http } = harness({
+      storage: memoryStorage(stored("member", "member")),
+      handler: async (fn, args) => {
+        // The revoke never answers, as a slow or unreachable deployment.
+        if (fn === "auth:signOut") return new Promise((resolve) => { stall = resolve; });
+        if (args.provider === "anonymous") return { tokens: tokens("guest") };
+        throw new Error(`unexpected call ${fn}`);
+      },
+    });
+    await data.ready;
+    await data.auth.signOut();
+    expect(http.calls[0]).toEqual({ fn: "auth:signOut", args: {}, auth: "member-token" });
+    expect(data.auth.state()).toEqual({ signedIn: true, kind: "guest" });
+    stall?.();
+  });
+
   test("signing out revokes the session and starts a new guest", async () => {
     const { client, http, data } = harness({ storage: memoryStorage(stored("member", "member")) });
     await data.ready;

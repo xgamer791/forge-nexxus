@@ -210,13 +210,15 @@ export function createForgeData({
     retryAttempt = 0;
     refreshing = null;
     restoring = null;
+    // Revoking the server session is best effort and was never allowed to fail
+    // the sign-out, so it must not be allowed to delay it either: awaiting a
+    // stalled request left the session in place and the button looking dead.
+    // The request is dispatched while the token is still set, then dropped.
     if (token !== null) {
       httpClient.setAuth(token);
-      try {
-        await httpClient.action(api.auth.signOut, {});
-      } catch {
-        /* Already signed out server-side. */
-      }
+      void httpClient.action(api.auth.signOut, {}).catch(() => {
+        /* Already signed out server-side, or unreachable. */
+      });
     }
     applyTokens(null, null, { reconnect: true });
     signingOut = false;

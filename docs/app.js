@@ -1185,8 +1185,20 @@ if (forge?.account && accountSheet) {
       });
     });
   });
-  accountSheet.querySelector('.account-signout').addEventListener('click', () => {
-    forge.auth.signOut().then(closeMenu).catch(reportError);
+  // Starting the replacement guest session still needs the network, so the
+  // button says it is working rather than looking ignored.
+  const signOutButton = accountSheet.querySelector('.account-signout');
+  signOutButton.addEventListener('click', () => {
+    if (signOutButton.disabled) return;
+    signOutButton.disabled = true;
+    signOutButton.textContent = 'Signing out…';
+    forge.auth.signOut()
+      .then(closeMenu)
+      .catch(reportError)
+      .finally(() => {
+        signOutButton.disabled = false;
+        signOutButton.textContent = 'Sign out';
+      });
   });
 }
 
