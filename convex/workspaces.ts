@@ -47,6 +47,12 @@ export const remove = mutation({
   args: { id: v.id("workspaces") },
   handler: async (ctx, { id }) => {
     await requireOwnedWorkspace(ctx, id);
+    // The server's applications go with it; nothing else references them.
+    const apps = await ctx.db
+      .query("apps")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", id))
+      .collect();
+    await Promise.all(apps.map((app) => ctx.db.delete(app._id)));
     await ctx.db.delete(id);
   },
 });

@@ -141,6 +141,51 @@ describe("apps", () => {
     expect((await alice.as.query(api.apps.list, {}))[0].active).toBe(false);
   });
 
+  test("removing a server takes its apps with it", async () => {
+    const t = fresh();
+    const alice = await createUser(t);
+    const doomed = await addServer(t, alice.userId);
+    const kept = await addServer(t, alice.userId);
+    await t.mutation(internal.apps.replaceForWorkspace, {
+      userId: alice.userId,
+      workspaceId: doomed,
+      found: [{ name: "going", path: "/srv/going" }],
+    });
+    await t.mutation(internal.apps.replaceForWorkspace, {
+      userId: alice.userId,
+      workspaceId: kept,
+      found: [{ name: "staying", path: "/srv/staying" }],
+    });
+
+    await alice.as.mutation(api.workspaces.remove, { id: doomed });
+
+    // Orphans would vanish from Cloud, which groups by server, but still count
+    // and still reach Recents once used.
+    expect((await alice.as.query(api.apps.list, {})).map((app) => app.name)).toEqual(["staying"]);
+    expect(await t.run((ctx) => ctx.db.query("apps").collect())).toHaveLength(1);
+  });
+
+  test("a guest's apps follow them into the account", async () => {
+    const t = fresh();
+    const guest = await createUser(t);
+    const memberId = await t.run((ctx) =>
+      ctx.db.insert("users", { email: "member@example.com" }),
+    );
+    const server = await addServer(t, guest.userId);
+    await t.mutation(internal.apps.replaceForWorkspace, {
+      userId: guest.userId,
+      workspaceId: server,
+      found: [{ name: "carried", path: "/srv/carried" }],
+    });
+
+    await t.mutation(internal.auth.adoptGuest, { guestId: guest.userId, userId: memberId });
+
+    const moved = await t.run((ctx) => ctx.db.query("apps").collect());
+    expect(moved).toHaveLength(1);
+    expect(moved[0]).toMatchObject({ userId: memberId, name: "carried" });
+    expect(await t.run((ctx) => ctx.db.get(guest.userId))).toBeNull();
+  });
+
   test("another account cannot see or activate an app", async () => {
     const t = fresh();
     const alice = await createUser(t);

@@ -93,6 +93,11 @@ export async function adoptGuestData(
     .withIndex("by_user", (q) => q.eq("userId", guestId))
     .collect();
   await Promise.all(workspaces.map((workspace) => ctx.db.patch(workspace._id, { userId })));
+  const apps = await ctx.db
+    .query("apps")
+    .withIndex("by_user", (q) => q.eq("userId", guestId))
+    .collect();
+  await Promise.all(apps.map((app) => ctx.db.patch(app._id, { userId })));
   // Appearance choices made as a guest carry over only when the account has
   // none of its own; an existing account keeps what it already saved.
   const guestSettings = await settingsFor(ctx, guestId);
