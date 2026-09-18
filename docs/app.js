@@ -6,6 +6,13 @@ const attemptedVersion = cleanUrl.searchParams.get('_update');
 cleanUrl.searchParams.delete('_update');
 cleanUrl.searchParams.delete('v');
 history.replaceState(history.state, '', cleanUrl);
+// GitHub Pages serves HTML through a CDN cache, so the reload that chases a new
+// release can be handed the same old page back. Refusing to retry avoids a
+// reload loop but leaves the tab on a stale build for as long as it lives, so
+// allow exactly one more attempt once the cache window has passed.
+const RETRY_AFTER_MS = 300000;
+const openedAt = Date.now();
+let retriedUpdate = false;
 let checkingRelease = false;
 async function checkRelease() {
   if (!loadedVersion || loadedVersion === 'development' || checkingRelease || document.hidden) return;
@@ -16,11 +23,14 @@ async function checkRelease() {
     const response = await fetch(url, {cache:'no-store'});
     if (!response.ok) return;
     const {version} = await response.json();
-    if (/^[a-f0-9]{40}$/.test(version) && version !== loadedVersion && version !== attemptedVersion) {
-      const next = new URL(location.href);
-      next.searchParams.set('_update', version);
-      location.replace(next);
+    if (!/^[a-f0-9]{40}$/.test(version) || version === loadedVersion) return;
+    if (version === attemptedVersion) {
+      if (retriedUpdate || Date.now() - openedAt < RETRY_AFTER_MS) return;
+      retriedUpdate = true;
     }
+    const next = new URL(location.href);
+    next.searchParams.set('_update', version);
+    location.replace(next);
   } catch { /* Offline use keeps the current interface available. */ }
   finally { checkingRelease = false; }
 }
