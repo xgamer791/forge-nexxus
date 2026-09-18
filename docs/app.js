@@ -655,6 +655,7 @@ if (connectionsSheet) {
     repo: 'No repositories connected yet.',
   };
   const filters = {};
+  const connectButton = document.querySelector('.composer-area .connect');
   let connections = [];
 
   function fail(kind, message, error) {
@@ -800,6 +801,16 @@ if (connectionsSheet) {
       empty.textContent = noneSaved ? EMPTY_COPY[kind] : 'No workspaces match that search.';
       empty.hidden = shown.length > 0;
     });
+    // The composer's pill reports the session's state at a glance: Connected
+    // once any workspace is active, Connect while none is.
+    const active = connections.find(connection => connection.connected);
+    if (connectButton) {
+      connectButton.textContent = active ? 'Connected' : 'Connect';
+      connectButton.setAttribute(
+        'aria-label',
+        active ? `Connected to ${active.name}. Open connections` : 'Connect a workspace'
+      );
+    }
     document.querySelectorAll('[data-count]').forEach(count => {
       const total = connections.filter(connection => connection.kind === count.dataset.count).length;
       count.textContent = total ? String(total) : '';
