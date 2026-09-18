@@ -309,6 +309,31 @@ describe("billing", () => {
     expect(stored.credits).toBe(starter.monthlyCredits);
   });
 
+  test("the free welcome grant is one-off: when the period ends there is no new allowance", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.ensure, { userId: member.userId });
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING);
+    // Age the stored period by hand, the way time would.
+    const past = Date.now() - 40 * DAY;
+    await t.run(async (ctx) => {
+      const sub = (await ctx.db.query("subscriptions").first())!;
+      await ctx.db.patch(sub._id, { periodStart: past, periodEnd: addMonth(past) });
+    });
+    // Free grants nothing per period, so the welcome credits expire to nothing
+    // and none arrive to replace them. A free member past their first period
+    // cannot afford even a chat until they upgrade or are topped up.
+    expect(free.monthlyCredits).toBe(0);
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
+      credits: 0,
+      available: 0,
+      granted: 0,
+    });
+    await expect(
+      t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "chat" }),
+    ).rejects.toThrow("Out of credits");
+  });
+
   test("cancel schedules the free plan for the period end; resume undoes it", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });

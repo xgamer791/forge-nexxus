@@ -333,6 +333,42 @@ describe("generate.run", () => {
     expect(await member.as.query(api.sites.currentHtml, { siteId })).toBe(null);
   });
 
+  test("a free member can keep talking, a credit at a time, and is remembered between turns", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Hello" });
+    const calls = stubProvider((_body, call) =>
+      json({ choices: [{ message: { content: `Answer ${call}.` } }] }),
+    );
+
+    for (const prompt of ["Hello", "What would a bakery site need?", "How much would that cost?"]) {
+      await member.as.action(api.generate.run, { conversationId, prompt });
+    }
+
+    // Three turns, three credits, and nothing still held.
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
+      credits: FREE_OPENING - 3 * REQUEST_COSTS.chat,
+      reserved: 0,
+    });
+    const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
+    expect(holds.map((hold) => [hold.requestKind, hold.status])).toEqual([
+      ["chat", "settled"],
+      ["chat", "settled"],
+      ["chat", "settled"],
+    ]);
+    // Earlier turns come along, so the conversation has a memory.
+    const third = calls[2].body.messages;
+    expect(third.filter((m: any) => m.role !== "system").map((m: any) => m.content)).toEqual([
+      "Hello",
+      "Answer 1.",
+      "What would a bakery site need?",
+      "Answer 2.",
+      "How much would that cost?",
+    ]);
+    // Talking is not building.
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
+  });
+
   test("a talk-only turn hands over no page, even if the model builds one anyway", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
