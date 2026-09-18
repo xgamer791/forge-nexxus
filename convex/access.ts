@@ -32,3 +32,15 @@ export async function requireOwnedConnection(
   }
   return connection;
 }
+
+export async function requireOwnedWorkspace(
+  ctx: QueryCtx | MutationCtx,
+  id: Id<"workspaces">,
+) {
+  const userId = await requireUserId(ctx);
+  const workspace = await ctx.db.get(id);
+  if (!workspace || workspace.userId !== userId) {
+    throw new ConvexError("Workspace not found");
+  }
+  return workspace;
+}

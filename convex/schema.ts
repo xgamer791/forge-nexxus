@@ -3,6 +3,12 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export const connectionKind = v.union(v.literal("cloud"), v.literal("repo"));
+export const workspaceProtocol = v.union(v.literal("ssh"), v.literal("sftp"));
+export const workspaceEnvironment = v.union(
+  v.literal("production"),
+  v.literal("staging"),
+  v.literal("dev"),
+);
 
 export default defineSchema({
   ...authTables,
@@ -25,6 +31,24 @@ export default defineSchema({
     detail: v.string(),
     connected: v.boolean(),
     usedAt: v.number(),
+  }).index("by_user", ["userId"]),
+  // Remote servers the user can open a shell on. Credentials live in `secret`
+  // as ciphertext and are never returned to a client; everything else here is
+  // metadata the workspace list renders.
+  workspaces: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    protocol: workspaceProtocol,
+    host: v.string(),
+    port: v.number(),
+    username: v.string(),
+    environment: v.optional(workspaceEnvironment),
+    authKind: v.union(v.literal("key"), v.literal("password")),
+    secret: v.string(),
+    connected: v.boolean(),
+    lastConnectedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
   }).index("by_user", ["userId"]),
   // Appearance choices follow the account rather than the device, so they
   // survive signing out and back in.

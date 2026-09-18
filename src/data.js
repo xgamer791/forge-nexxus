@@ -258,5 +258,19 @@ export function createForgeData({
       subscribe: (callback) => client.onUpdate(api.settings.get, {}, callback),
       update: (patch) => client.mutation(api.settings.update, patch),
     },
+    // Credentials only ever travel towards the deployment: `list` returns
+    // metadata, and `test`/`create` hand the secret straight to a Node action
+    // that seals it before it is stored.
+    workspaces: {
+      subscribe: (callback) => client.onUpdate(api.workspaces.list, {}, callback),
+      test: (details) => client.action(api.remote.test, details),
+      create: (details) => client.action(api.remote.create, details),
+      connect: (id) => client.action(api.remote.connect, { id }),
+      disconnect: (id) => client.mutation(api.workspaces.disconnect, { id }),
+      rename: (id, name) => client.mutation(api.workspaces.rename, { id, name }),
+      setEnvironment: (id, environment) =>
+        client.mutation(api.workspaces.setEnvironment, { id, environment }),
+      remove: (id) => client.mutation(api.workspaces.remove, { id }),
+    },
   };
 }

@@ -31,7 +31,10 @@ setInterval(checkRelease, 60000);
 const app = document.querySelector('.app');
 const backdrop = document.querySelector('.backdrop');
 const appearance = document.querySelector('.appearance');
-const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel => panel !== appearance);
+// Full-screen overlays sit above the drawer and are driven by their own back
+// buttons rather than the sheet machinery, so they stay out of `panels`.
+const overlays = [appearance, ...document.querySelectorAll('.overlay')].filter(Boolean);
+const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel => !overlays.includes(panel));
 const navigation = document.querySelector('.navigation');
 const historyContent = document.querySelector('.nav-content');
 const settingsContent = document.querySelector('.settings-content');
@@ -180,8 +183,20 @@ function closePopovers() {
   document.querySelectorAll('.theme-menu,.font-menu').forEach(menu => { menu.hidden = true; });
   document.querySelectorAll('.theme-select,.font-select,.conversation-options,.row-options').forEach(button => button.setAttribute('aria-expanded', 'false'));
 }
+function closeOverlays() {
+  overlays.forEach(hideOverlay);
+}
+function showOverlay(element) {
+  closeOverlays();
+  closePopovers();
+  historyContent.hidden = true;
+  settingsContent.hidden = true;
+  element.hidden = false;
+  element.classList.add('is-open');
+  element.querySelector('button')?.focus({preventScroll:true});
+}
 function showSettings(show) {
-  hideOverlay(appearance);
+  closeOverlays();
   closePopovers();
   historyContent.hidden = show;
   settingsContent.hidden = !show;
@@ -189,16 +204,10 @@ function showSettings(show) {
   document.querySelector('.settings').setAttribute('aria-expanded', String(show));
 }
 function showAppearance(show) {
-  closePopovers();
   if (show) {
-    historyContent.hidden = true;
-    settingsContent.hidden = true;
-    appearance.hidden = false;
-    appearance.classList.add('is-open');
+    showOverlay(appearance);
     navigation.setAttribute('aria-label', 'Appearance settings');
-    document.querySelector('.appearance-back').focus({preventScroll:true});
   } else {
-    hideOverlay(appearance);
     showSettings(true);
     document.querySelector('.open-appearance').focus({preventScroll:true});
   }
@@ -323,7 +332,7 @@ function closeMenu() {
   closePopovers();
   const active = document.activeElement;
   if (active && app.contains(active) && active !== document.body) active.blur();
-  hideOverlay(appearance);
+  closeOverlays();
   panels.forEach(hideOverlay);
   hideOverlay(backdrop);
   app.classList.remove('navigation-open', 'sheet-open');
@@ -372,11 +381,16 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     if (![...document.querySelectorAll('.theme-menu,.font-menu')].every(menu => menu.hidden)) { closePopovers(); return; }
-    if (!appearance.hidden) { showAppearance(false); return; }
+    const overlay = overlays.find(item => !item.hidden);
+    if (overlay) {
+      const back = overlay.dataset.back ? document.querySelector(overlay.dataset.back) : null;
+      if (back) back.click(); else showAppearance(false);
+      return;
+    }
     closeMenu();
   }
   if (event.key !== 'Tab') return;
-  const panel = appearance.hidden ? panels.find(item => !item.hidden) : appearance;
+  const panel = overlays.find(item => !item.hidden) ?? panels.find(item => !item.hidden);
   if (!panel) return;
   const controls = [...panel.querySelectorAll('button,input')].filter(control => !control.closest('[hidden]'));
   const first = controls[0], last = controls.at(-1);
@@ -938,5 +952,316 @@ if (forge?.account && accountSheet) {
   });
   accountSheet.querySelector('.account-signout').addEventListener('click', () => {
     forge.auth.signOut().then(closeMenu).catch(reportError);
+  });
+}
+
+// Remote Workspaces: real servers saved against the account. The credential is
+// handed to Convex once and never comes back, so what is rendered here is
+// metadata plus whatever the last handshake reported.
+const workspacesScreen = document.querySelector('.workspaces');
+const wizardScreen = document.querySelector('.workspace-wizard');
+if (workspacesScreen && wizardScreen) {
+  const cards = workspacesScreen.querySelector('.workspace-cards');
+  const emptyNote = workspacesScreen.querySelector('.workspaces-empty');
+  const listError = workspacesScreen.querySelector('.workspaces-error');
+  const openEntry = document.querySelector('.open-workspaces');
+  const wizardForm = wizardScreen.querySelector('.wizard-form');
+  const typeStep = wizardScreen.querySelector('[data-step="type"]');
+  const detailsTitle = wizardScreen.querySelector('[data-details-title]');
+  const passwordLabel = wizardScreen.querySelector('[data-password-label]');
+  const passwordHint = wizardScreen.querySelector('[data-password-hint]');
+  const keyFields = wizardScreen.querySelector('[data-auth="key"]');
+  const result = wizardScreen.querySelector('.wizard-result');
+  const testButton = wizardScreen.querySelector('.test-button');
+  const createButton = wizardScreen.querySelector('.wizard-create');
+  const wizardScroll = wizardScreen.querySelector('.appearance-scroll');
+  const ENVIRONMENTS = {production: 'Production', staging: 'Staging', dev: 'Dev'};
+  const field = name => wizardForm.querySelector(`[name="${name}"]`);
+  let workspaces = [];
+  let protocol = 'ssh';
+  let connecting = null;
+
+  function glyph(id, className) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    if (className) svg.setAttribute('class', className);
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#${id}`);
+    svg.append(use);
+    return svg;
+  }
+  // A ConvexError arrives with its message on `data`; anything else is a
+  // transport failure worth reporting in the same place.
+  function messageOf(error) {
+    reportError(error);
+    return error?.data ?? error?.message ?? 'Something went wrong';
+  }
+  function showListError(message) {
+    listError.textContent = message ?? '';
+    listError.hidden = !message;
+  }
+  function optionsFor(workspace) {
+    const options = document.createElement('button');
+    options.type = 'button';
+    options.className = 'row-options';
+    options.setAttribute('aria-label', `Options for ${workspace.name}`);
+    options.setAttribute('aria-haspopup', 'menu');
+    options.setAttribute('aria-expanded', 'false');
+    const dots = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    dots.setAttribute('viewBox', '0 0 24 24');
+    dots.setAttribute('aria-hidden', 'true');
+    for (const cy of [6, 12, 18]) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', 12);
+      dot.setAttribute('cy', cy);
+      dot.setAttribute('r', 1.25);
+      dots.append(dot);
+    }
+    options.append(dots);
+    const menu = document.createElement('div');
+    menu.className = 'font-menu row-menu';
+    menu.setAttribute('role', 'menu');
+    menu.hidden = true;
+    const item = (label, action) => {
+      const entry = document.createElement('button');
+      entry.type = 'button';
+      entry.setAttribute('role', 'menuitem');
+      entry.textContent = label;
+      entry.addEventListener('click', () => { closePopovers(); action(); });
+      return entry;
+    };
+    menu.append(
+      item('Rename', () => {
+        const next = prompt('Rename workspace', workspace.name)?.trim();
+        if (!next || next === workspace.name) return;
+        showListError(null);
+        forge.workspaces.rename(workspace._id, next).catch(error => showListError(messageOf(error)));
+      }),
+      item('Remove', () => {
+        if (!confirm(`Remove "${workspace.name}"? Its stored credentials are deleted too.`)) return;
+        showListError(null);
+        forge.workspaces.remove(workspace._id).catch(error => showListError(messageOf(error)));
+      })
+    );
+    options.addEventListener('click', event => {
+      event.stopPropagation();
+      const open = menu.hidden;
+      closePopovers();
+      menu.hidden = !open;
+      options.setAttribute('aria-expanded', String(open));
+    });
+    return [options, menu];
+  }
+  function workspaceCard(workspace) {
+    const article = document.createElement('article');
+    article.className = 'workspace-card';
+    article.classList.toggle('is-connected', workspace.connected);
+
+    const head = document.createElement('div');
+    head.className = 'workspace-card-head';
+    const badge = document.createElement('span');
+    badge.className = 'workspace-badge';
+    badge.append(glyph('server'));
+    const copy = document.createElement('div');
+    copy.className = 'workspace-card-copy';
+    const name = document.createElement('strong');
+    name.textContent = workspace.name;
+    const address = document.createElement('code');
+    address.textContent = `${workspace.username}@${workspace.host}:${workspace.port}`;
+    copy.append(name, address);
+    head.append(badge, copy, ...optionsFor(workspace));
+
+    const meta = document.createElement('div');
+    meta.className = 'workspace-meta';
+    const state = document.createElement('span');
+    state.className = 'workspace-state';
+    if (workspace.connected) {
+      const dot = document.createElement('span');
+      dot.className = 'state-dot';
+      state.append(dot, document.createTextNode('Connected'));
+    } else {
+      state.append(glyph('wifi-off'), document.createTextNode('Disconnected'));
+    }
+    const protocolChip = document.createElement('span');
+    protocolChip.className = 'chip protocol';
+    protocolChip.append(
+      glyph(workspace.protocol === 'sftp' ? 'folder' : 'terminal'),
+      document.createTextNode(workspace.protocol.toUpperCase())
+    );
+    meta.append(state, protocolChip);
+    if (workspace.environment) {
+      const tag = document.createElement('span');
+      tag.className = `chip env-${workspace.environment}`;
+      tag.textContent = ENVIRONMENTS[workspace.environment];
+      meta.append(tag);
+    }
+
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = workspace.connected ? 'workspace-action is-secondary' : 'workspace-action';
+    const working = connecting === workspace._id;
+    action.disabled = working;
+    if (working) action.textContent = 'Connecting…';
+    else action.append(
+      glyph(workspace.connected ? 'wifi-off' : 'wifi'),
+      document.createTextNode(workspace.connected ? 'Disconnect' : 'Connect')
+    );
+    action.addEventListener('click', () => toggleConnection(workspace));
+
+    article.append(head, meta, action);
+    if (workspace.lastError && !workspace.connected) {
+      const note = document.createElement('p');
+      note.className = 'workspaces-error';
+      note.textContent = workspace.lastError;
+      article.append(note);
+    }
+    return article;
+  }
+  function renderWorkspaces() {
+    cards.replaceChildren(...workspaces.map(workspaceCard));
+    emptyNote.hidden = workspaces.length > 0;
+  }
+  async function toggleConnection(workspace) {
+    showListError(null);
+    if (workspace.connected) {
+      forge.workspaces.disconnect(workspace._id).catch(error => showListError(messageOf(error)));
+      return;
+    }
+    connecting = workspace._id;
+    renderWorkspaces();
+    try {
+      const outcome = await forge.workspaces.connect(workspace._id);
+      if (!outcome?.ok) showListError(outcome?.message ?? 'Could not reach that server');
+    } catch (error) {
+      showListError(messageOf(error));
+    } finally {
+      connecting = null;
+      renderWorkspaces();
+    }
+  }
+  function setResult(message, ok) {
+    result.textContent = message ?? '';
+    result.hidden = !message;
+    result.classList.toggle('is-ok', ok === true);
+    result.classList.toggle('is-bad', ok === false);
+  }
+  function setProtocol(next) {
+    protocol = next === 'sftp' ? 'sftp' : 'ssh';
+    detailsTitle.textContent = `Connection Details (${protocol.toUpperCase()})`;
+    keyFields.hidden = protocol !== 'ssh';
+    const password = field('password');
+    password.placeholder = protocol === 'sftp' ? 'Enter SFTP password' : 'Enter SSH password';
+    password.required = protocol === 'sftp';
+    passwordLabel.textContent = 'Password';
+    if (protocol === 'sftp') {
+      const star = document.createElement('i');
+      star.textContent = '*';
+      passwordLabel.append(' ', star);
+    }
+    passwordHint.textContent = protocol === 'sftp'
+      ? 'Password for SFTP authentication'
+      : 'Less secure than key-based authentication';
+    wizardScreen.querySelectorAll('.type-card').forEach(card => {
+      card.setAttribute('aria-pressed', String(card.dataset.protocol === protocol));
+    });
+  }
+  function showStep(step) {
+    typeStep.hidden = step !== 'type';
+    wizardForm.hidden = step !== 'details';
+    if (wizardScroll) wizardScroll.scrollTop = 0;
+  }
+  function openWorkspaces() {
+    showListError(null);
+    showOverlay(workspacesScreen);
+    navigation.setAttribute('aria-label', 'Remote workspaces');
+  }
+  function openWizard() {
+    wizardForm.reset();
+    wizardForm.classList.remove('is-collapsed');
+    wizardScreen.querySelector('.section-toggle').setAttribute('aria-expanded', 'true');
+    setResult(null);
+    setProtocol('ssh');
+    showStep('type');
+    showOverlay(wizardScreen);
+    navigation.setAttribute('aria-label', 'New remote workspace');
+  }
+  // Only the parts the chosen protocol actually uses are sent, so an SFTP
+  // workspace never carries an SSH key it ignored.
+  function credentials() {
+    const key = protocol === 'ssh' ? field('privateKey').value.trim() : '';
+    const passphrase = protocol === 'ssh' ? field('passphrase').value : '';
+    const password = field('password').value;
+    return {
+      ...(key ? {privateKey: key} : {}),
+      ...(key && passphrase ? {passphrase} : {}),
+      ...(password ? {password} : {}),
+    };
+  }
+  function target() {
+    return {
+      protocol,
+      host: field('host').value.trim(),
+      port: Number(field('port').value),
+      username: field('username').value.trim(),
+    };
+  }
+
+  openEntry?.addEventListener('click', openWorkspaces);
+  workspacesScreen.querySelector('.workspaces-back').addEventListener('click', () => {
+    showSettings(true);
+    openEntry?.focus({preventScroll:true});
+  });
+  workspacesScreen.querySelector('.new-workspace').addEventListener('click', openWizard);
+  wizardScreen.querySelector('.wizard-back').addEventListener('click', () => {
+    if (!wizardForm.hidden) { showStep('type'); return; }
+    openWorkspaces();
+  });
+  wizardScreen.querySelector('.wizard-prev').addEventListener('click', () => showStep('type'));
+  wizardScreen.querySelectorAll('.type-card').forEach(card => {
+    card.addEventListener('click', () => {
+      setProtocol(card.dataset.protocol);
+      showStep('details');
+    });
+  });
+  wizardScreen.querySelector('.section-toggle').addEventListener('click', event => {
+    event.preventDefault();
+    const collapsed = wizardForm.classList.toggle('is-collapsed');
+    event.currentTarget.setAttribute('aria-expanded', String(!collapsed));
+  });
+  testButton.addEventListener('click', async () => {
+    setResult('Testing the connection…');
+    testButton.disabled = true;
+    try {
+      const outcome = await forge.workspaces.test({...target(), ...credentials()});
+      setResult(outcome.message, outcome.ok);
+    } catch (error) {
+      setResult(messageOf(error), false);
+    } finally {
+      testButton.disabled = false;
+    }
+  });
+  wizardForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    createButton.disabled = true;
+    setResult('Saving the workspace…');
+    try {
+      await forge.workspaces.create({
+        name: field('name').value.trim(),
+        environment: field('environment').value || undefined,
+        ...target(),
+        ...credentials(),
+      });
+      setResult(null);
+      openWorkspaces();
+    } catch (error) {
+      setResult(messageOf(error), false);
+    } finally {
+      createButton.disabled = false;
+    }
+  });
+
+  renderWorkspaces();
+  forge?.workspaces?.subscribe(list => {
+    workspaces = Array.isArray(list) ? list : [];
+    renderWorkspaces();
   });
 }

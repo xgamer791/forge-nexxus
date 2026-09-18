@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
-const modules = import.meta.glob("./**/*.*s");
+const modules = import.meta.glob(["./**/*.*s", "!./remote.ts"]);
 const fresh = () => convexTest(schema, modules);
 
 const subjectOf = (token: string) =>
