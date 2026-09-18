@@ -4,6 +4,8 @@ Mobile UI rebuilt from the supplied screenshots, now backed by Convex. Conversat
 
 Live app: https://xgamer791.github.io/forge-nexxus/
 
+`CLAUDE.md` holds the standing rules for working on this repository, the first being that all user data lives in Convex.
+
 ## Hosting
 
 Standard GitHub Pages only, using the existing `.github/workflows/pages.yml` workflow and `docs/` output. Keep all asset paths relative to support `/forge-nexxus/`. `docs/forge-data.js` is a built artifact (see below) and is committed so Pages needs no build step.
