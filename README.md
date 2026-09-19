@@ -23,6 +23,19 @@ Run `npm run dev`, then open http://localhost:4173/forge-nexxus/ . Any static se
 - **Composer**: the first prompt creates a site named after it and builds the first version; later prompts edit it. The reply appears in the thread as "Building your site…" until the build lands, and as a failure (with the reason) if it does not. A guest who somehow reaches it is sent to sign in.
 - **Site bar and preview**: the bar above the composer names the active site and its state; Preview opens the latest build in a sandboxed frame (no scripts, no access to the app's origin) with Publish, Unpublish, the public address, and Download code on plans that include it. Sites on a plan without `removeBadge` carry a small "Built with Forge" badge, added as the page is served rather than stored, so upgrading takes it off every build at once. Publish is disabled on a plan without `publicAddress`, and says why, because there is nowhere to publish to.
 
+## Both surfaces
+
+`docs/` is one app: the same page serves the phone and the desktop website, so
+a feature is never on one and missing from the other. Width is what differs.
+`--shell` is the content column — 640px, 860px from 900px up — and the
+composer, sheets, drawer and overlays are all positioned from it. The desktop
+layer is a single `@media(min-width:900px)` block at the end of
+`docs/styles.css`: the column widens, bottom sheets become centred dialogs, the
+domain panel becomes a card under the globe, the drawer docks to the window as
+a sidebar, and the preview opens at a website's width. `@media(hover:hover)`
+adds the pointer affordances. Both widths get checked before a change is done;
+`CLAUDE.md` holds that as a standing rule.
+
 ## Convex
 
 - `convex/` holds the schema, Convex Auth setup (`auth.ts`), and the site, conversation, message, domain, billing, user, and settings functions. `npx convex dev` pushes them to the deployment named in `.env.local` (`CONVEX_DEPLOYMENT` plus `CONVEX_DEPLOY_KEY`, never committed) and regenerates `convex/_generated/`.

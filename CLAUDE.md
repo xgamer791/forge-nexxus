@@ -59,6 +59,34 @@ Secrets never belong to a browser and never belong to a user row:
 A user who has added nothing sees an empty list and an empty state, never an
 example. Sections with no rows hide themselves; counts hide at zero.
 
+## Rule 3: both surfaces, every time
+
+**Never ship a change to one surface only.** Anything a user can see or do —
+a flow, a control, a layout, a piece of copy — lands on the phone *and* on the
+desktop website in the same session. "Mobile first" is not "mobile only", and
+desktop is never caught up later.
+
+`docs/` is one app, so this is a layout obligation rather than a second
+codebase: the same HTML, CSS and JS serve both. What differs is width.
+
+- `--shell` is the content column: 640px, widened at the desktop breakpoint.
+  Everything that docks to it — composer, sheets, drawer, overlays — is
+  positioned from that variable, never from a hardcoded width.
+- The desktop layer lives in one `@media(min-width:900px)` block at the end of
+  `docs/styles.css`, with the pointer affordances in `@media(hover:hover)`
+  beside it. Add to those rather than starting a second design: the tokens,
+  radii, type scale and components are shared, and a component that needs a
+  desktop shape gets it there.
+- Check a change at a phone width *and* at a desktop width before calling it
+  done. If a feature only makes sense on one, say so out loud rather than
+  quietly leaving the other behind.
+
+## The name
+
+The product is **Forge Nexxus**. Do not rename or rebrand it — not the title,
+the sign-in hero, the sender name, the badge, the docs, or anything else.
+"Forge" on its own is its short form and stays as it is.
+
 ## Adding a new kind of user data
 
 1. Add the table to `convex/schema.ts` with a `userId` field and a `by_user`
