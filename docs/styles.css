@@ -286,6 +286,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .address-suffix{flex-shrink:0;padding:0 10px 0 2px;font-size:15px;line-height:20px;color:var(--subdued);white-space:nowrap;max-width:55%;overflow:hidden;text-overflow:ellipsis}
 .address-form .chip-button,.address-domain-form .chip-button{height:44px;border-radius:22px}
 .address-note{margin:10px 10px 0;font-size:15px;line-height:20px;color:var(--subdued)}
+.address-warning span{color:var(--text)}
+.address-upsell .sheet-copy{margin-bottom:20px}
 .address-live{display:inline-block;margin:8px 10px 0;font-size:15px;line-height:20px;color:var(--text);text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:calc(100% - 20px)}
 .address-domains{margin-top:4px;border-radius:22px}
 .address-domain{padding:14px 16px;display:grid;gap:8px}

@@ -153,6 +153,11 @@ describe("publishing", () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
+    // Free is for planning and building: there is no address to publish to.
+    await expect(member.as.mutation(api.sites.publish, { id: siteId })).rejects.toThrow(
+      "A site address comes with the Starter plan",
+    );
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
     await expect(member.as.mutation(api.sites.publish, { id: siteId })).rejects.toThrow(
       "Build the site before publishing",
     );
@@ -177,14 +182,9 @@ describe("publishing", () => {
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toContain("text/html");
     expect(served.headers.get("content-security-policy")).toContain("default-src 'none'");
-    // A free plan's site carries the badge, in the preview and on the address alike.
-    const badged = await served.text();
-    expect(badged).toContain(BADGE_TEXT);
-    expect(badged.endsWith("</body></html>")).toBe(true);
-    expect(badged.replace(/<a href="[^"]*" rel="noopener" style="[^"]*">Built with Forge<\/a>/, "")).toBe(PAGE);
-    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toContain(BADGE_TEXT);
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
-    expect(await (await t.fetch("/sites/bakery-on-main")).text()).toBe(PAGE);
+    // Every plan that has an address also takes the badge off, so what is
+    // served is the build itself.
+    expect(await served.text()).toBe(PAGE);
     expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE);
     expect((await t.fetch("/sites/nobody-home")).status).toBe(404);
 
@@ -210,10 +210,26 @@ describe("publishing", () => {
     delete process.env.CONVEX_SITE_URL;
   });
 
+  test("a free plan's build carries the badge in the preview it does get", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    const { siteId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    await build(t, siteId);
+    const badged = (await member.as.query(api.sites.currentHtml, { siteId }))!.html;
+    expect(badged).toContain(BADGE_TEXT);
+    expect(badged.endsWith("</body></html>")).toBe(true);
+    expect(badged.replace(/<a href="[^"]*" rel="noopener" style="[^"]*">Built with Forge<\/a>/, "")).toBe(PAGE);
+    // A plan with an address takes the badge off every build at once.
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE);
+  });
+
   test("addresses are unique across accounts, and only the owner publishes", async () => {
     const t = fresh();
     const alice = await createUser(t, { email: "a@example.com" });
     const bob = await createUser(t, { email: "b@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "starter" });
+    await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "starter" });
     const a = await alice.as.mutation(api.sites.create, { name: "Shop" });
     const b = await bob.as.mutation(api.sites.create, { name: "Shop" });
     await build(t, a.siteId);
@@ -244,6 +260,12 @@ describe("publishing", () => {
     const member = await createUser(t, { email: "m@example.com" });
     const other = await createUser(t, { email: "o@example.com" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
+    // Choosing an address is the same entitlement as publishing to one.
+    await expect(
+      member.as.mutation(api.sites.setSlug, { id: siteId, slug: "The Bakery!" }),
+    ).rejects.toThrow("A site address comes with the Starter plan");
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    await t.mutation(internal.billing.grantPlan, { userId: other.userId, plan: "starter" });
     const mine = await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "The Bakery!" });
     expect(mine).toEqual({
       slug: "the-bakery",

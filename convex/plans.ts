@@ -24,6 +24,10 @@ export type Plan = {
   signupCredits: number;
   // How many sites the plan holds at once; null is unlimited.
   maxSites: number | null;
+  // Whether the plan gets a public address at all. Free is for planning and
+  // building a site; putting one on an address of its own, and pointing a
+  // domain at that, start with the first paid plan.
+  publicAddress: boolean;
   // Shown on the plan card; nothing enforces it yet.
   visitorsPerMonth: number | null;
   customDomains: boolean;
@@ -49,6 +53,7 @@ export const PLANS: readonly Plan[] = [
     signupCredits: 20,
     maxSites: 1,
     visitorsPerMonth: null,
+    publicAddress: false,
     customDomains: false,
     removeBadge: false,
     codeDownload: false,
@@ -65,12 +70,12 @@ export const PLANS: readonly Plan[] = [
     signupCredits: 0,
     maxSites: 15,
     visitorsPerMonth: 10000,
+    publicAddress: true,
     customDomains: false,
     removeBadge: true,
     codeDownload: true,
     topUps: false,
     features: [
-      "Publish to a Forge address",
       "Basic custom design",
       "AI-generated images",
       "Mobile-optimized",
@@ -90,6 +95,7 @@ export const PLANS: readonly Plan[] = [
     signupCredits: 0,
     maxSites: null,
     visitorsPerMonth: null,
+    publicAddress: true,
     customDomains: true,
     removeBadge: true,
     codeDownload: true,

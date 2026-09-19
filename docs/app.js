@@ -974,6 +974,7 @@ function renderPlanCards() {
         : plan.monthlyCredits > 0 ? `${plan.monthlyCredits} credits a month` : `${plan.signupCredits} credits to start`,
       plan.maxSites === null ? 'Unlimited sites' : plan.maxSites === 1 ? '1 site' : `Up to ${plan.maxSites} sites`,
       plan.visitorsPerMonth ? `Up to ${plan.visitorsPerMonth.toLocaleString('en-US')} visitors a month` : null,
+      plan.publicAddress ? 'Publish to an address of your own' : null,
       plan.customDomains ? 'Custom domain' : null,
       plan.removeBadge ? 'No Forge badge' : null,
       plan.topUps ? 'Buy extra credits any time' : null,
@@ -1289,9 +1290,10 @@ if (forge?.sites && previewScreen) {
   function renderPreview() {
     const site = activeSite;
     const built = Boolean(site?.currentVersionId);
+    const addressable = Boolean(summary?.plan.publicAddress);
     empty.hidden = built && current !== null;
     if (!built) { frame.removeAttribute('srcdoc'); current = null; }
-    publishButton.disabled = !built;
+    publishButton.disabled = !built || !addressable;
     publishButton.textContent = site?.status === 'published'
       ? (current && !current.published ? 'Publish latest build' : 'Published')
       : 'Publish';
@@ -1302,9 +1304,11 @@ if (forge?.sites && previewScreen) {
     if (site?.publishedUrl) { link.href = site.publishedUrl; link.textContent = site.publishedUrl.replace(/^https?:\/\//, ''); }
     status.textContent = !built
       ? ''
-      : current
-        ? `${current.summary || 'Latest build'} · ${new Date(current.createdAt).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}`
-        : 'Loading the latest build…';
+      : !addressable
+        ? 'Publishing to an address of your own comes with a paid plan.'
+        : current
+          ? `${current.summary || 'Latest build'} · ${new Date(current.createdAt).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}`
+          : 'Loading the latest build…';
   }
   function watch() {
     const siteId = activeSite?._id ?? null;
@@ -1391,6 +1395,9 @@ if (forge?.sites && addressSheet) {
   const domainList = addressSheet.querySelector('[data-address-domains]');
   const domainEmpty = addressSheet.querySelector('.address-empty');
   const error = addressSheet.querySelector('.address-error');
+  const upsell = addressSheet.querySelector('.address-upsell');
+  const addressBody = addressSheet.querySelector('.address-body');
+  const warning = addressSheet.querySelector('.address-warning');
   const STATUS_LABELS = {pending: 'Pending', active: 'Active', failed: 'Failed'};
   let hosting = null;
   let accountDomains = [];
@@ -1410,7 +1417,19 @@ if (forge?.sites && addressSheet) {
     return activeSite ? accountDomains.filter(domain => domain.siteId === activeSite._id) : [];
   }
   function renderAddress() {
-    if (globeButton) globeButton.hidden = !activeSite;
+    // An address is a plan entitlement. On a plan without one the globe still
+    // opens -- it is how a member finds out what it costs -- but it shows the
+    // upsell and the way to the plan screen instead of the picker.
+    const addressable = Boolean(summary?.plan.publicAddress);
+    const paid = catalog?.plans.find(plan => plan.publicAddress);
+    if (globeButton) globeButton.hidden = !(activeSite || !addressable);
+    if (upsell) upsell.hidden = addressable;
+    if (addressBody) addressBody.hidden = !addressable;
+    if (!addressable) {
+      setText('[data-address-upsell-domain]', hosting?.domain ? ` on ${hosting.domain}` : '');
+      setText('[data-address-upsell-plan]', paid?.name ?? '');
+      return;
+    }
     if (!activeSite) return;
     if (suffix) suffix.textContent = hosting?.domain ? `.${hosting.domain}` : '';
     if (document.activeElement !== slugField) {
@@ -1422,6 +1441,13 @@ if (forge?.sites && addressSheet) {
     if (address) {
       live.href = address;
       live.textContent = address.replace(/^https?:\/\//, '');
+    }
+    // Moving a site takes its old address down, so the form says so first.
+    if (warning) {
+      warning.hidden = !activeSite.slug;
+      setText('[data-address-old]', activeSite.address
+        ? activeSite.address.replace(/^https?:\/\//, '')
+        : activeSite.slug ?? '');
     }
     note.textContent = !activeSite.slug
       ? 'Pick an address. It is saved now and used the moment you publish.'
@@ -1532,11 +1558,13 @@ if (forge?.sites && addressSheet) {
       submit.disabled = false;
     }
   });
-  addressSheet.querySelector('.open-plan-from-address')?.addEventListener('click', () => {
-    closeMenu();
-    openMenu('navigation');
-    showSettings(true);
-    showSettingsScreen('plan');
+  addressSheet.querySelectorAll('.open-plan-from-address').forEach(button => {
+    button.addEventListener('click', () => {
+      closeMenu();
+      openMenu('navigation');
+      showSettings(true);
+      showSettingsScreen('plan');
+    });
   });
   forge.sites.hosting?.(next => { hosting = next ?? null; renderAddress(); });
   forge.domains?.subscribe(next => {

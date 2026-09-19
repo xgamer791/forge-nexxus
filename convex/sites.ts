@@ -2,6 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { requireMemberId, requireOwnedSite } from "./access";
 import { currentPlan } from "./billing";
+import { PLANS } from "./plans";
 import { deleteConversation } from "./conversations";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -194,11 +195,24 @@ export const remove = mutation({
 // The address is the user's to choose, not just whatever the name made. Taking
 // one holds it for this site until they change it, published or not, and a
 // published site moves to the new address as soon as it is saved.
+// An address is a plan entitlement. Free is for planning and building a site;
+// choosing an address and publishing one both go through here, so a free
+// account cannot reach an address by a route the client happens not to offer.
+async function requireAddressPlan(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
+  const plan = await currentPlan(ctx, userId);
+  if (!plan.publicAddress) {
+    const needed = PLANS.find((candidate) => candidate.publicAddress)?.name ?? "Starter";
+    throw new ConvexError(`A site address comes with the ${needed} plan`);
+  }
+  return plan;
+}
+
 export const setSlug = mutation({
   args: { id: v.id("sites"), slug: v.string() },
   handler: async (ctx, { id, slug }) => {
     const site = await requireOwnedSite(ctx, id);
     await requireMemberId(ctx);
+    await requireAddressPlan(ctx, site.userId);
     const wanted = slugify(slug);
     const problem = slugProblem(wanted);
     if (problem) throw new ConvexError(problem);
@@ -244,6 +258,7 @@ export const publish = mutation({
   handler: async (ctx, { id }) => {
     const site = await requireOwnedSite(ctx, id);
     await requireMemberId(ctx);
+    await requireAddressPlan(ctx, site.userId);
     if (!site.currentVersionId) throw new ConvexError("Build the site before publishing it");
     const slug = site.slug ?? (await uniqueSlug(ctx, site.name));
     const now = Date.now();
