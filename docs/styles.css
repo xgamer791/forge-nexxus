@@ -213,8 +213,16 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .icon-button svg{width:16px;height:16px}
 
 /* The active build thread. */
-.thread{display:none;position:absolute;top:max(64px,calc(env(safe-area-inset-top,0px) + 56px));bottom:172px;left:16px;right:16px;overflow:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-.app.has-site-bar .thread{bottom:214px}
+.thread{display:none;position:absolute;top:max(64px,calc(env(safe-area-inset-top,0px) + 56px));bottom:var(--composer-space,157px);left:16px;right:16px;overflow:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+/* A short conversation sits on the composer rather than hanging from the top
+   of the screen. `margin-top:auto` on the first message does it without
+   `justify-content:flex-end`, which clips the top of an overflowing column. */
+.thread{flex-direction:column}
+.thread>:first-child{margin-top:auto}
+/* The thread ends where the composer begins. `--composer-space` is measured
+   from the composer area itself, so the site bar appearing, an error showing
+   or the keyboard resizing the viewport never leaves a band of dead
+   background between the last message and the box. */
 .message-pending p{color:var(--subdued);font-style:italic}
 .message-pending p::after{content:"";display:inline-block;width:6px;height:6px;margin-left:8px;border-radius:50%;background:var(--subdued);vertical-align:middle;animation:forge-pulse .9s infinite alternate}
 @keyframes forge-pulse{from{opacity:.2}to{opacity:1}}
@@ -240,7 +248,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .preview-actions .row-button{width:auto;min-height:44px;padding:0 14px;color:var(--subdued)}
 .preview-footer .overlay-error{margin:0}
 .thread::-webkit-scrollbar{display:none}
-.app.has-thread .thread{display:block}
+.app.has-thread .thread{display:flex}
 .app.has-thread .greeting{display:none}
 .message{display:flex;margin:6px 0}
 .message-user{justify-content:flex-end}

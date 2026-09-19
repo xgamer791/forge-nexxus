@@ -548,6 +548,27 @@ const newSite = document.querySelector('.new-site');
 const thread = document.querySelector('.thread');
 const composerError = document.querySelector('.composer-error');
 const siteBar = document.querySelector('.site-bar');
+// The thread ends where the composer area begins. Measuring it rather than
+// assuming a height keeps the two flush whatever the box is carrying — the
+// site bar, an error, a taller safe area — instead of leaving a band of empty
+// background above the composer.
+const composerArea = document.querySelector('.composer-area');
+const THREAD_GAP = 8;
+function measureComposerSpace() {
+  if (!composerArea) return;
+  const rect = composerArea.getBoundingClientRect();
+  if (rect.height === 0) return;
+  const below = Math.max(0, window.innerHeight - rect.bottom);
+  const space = Math.round(rect.height + below + THREAD_GAP);
+  document.documentElement.style.setProperty('--composer-space', `${space}px`);
+}
+measureComposerSpace();
+if (composerArea && 'ResizeObserver' in window) {
+  new ResizeObserver(measureComposerSpace).observe(composerArea);
+}
+window.addEventListener('resize', measureComposerSpace);
+window.addEventListener('orientationchange', measureComposerSpace);
+window.visualViewport?.addEventListener('resize', measureComposerSpace);
 const siteBarPreview = document.querySelector('.site-bar-preview');
 let sites = [];
 // Whether the sites subscription has answered yet. Only a list that has
