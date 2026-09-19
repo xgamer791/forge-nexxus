@@ -269,6 +269,12 @@ export function createForgeData({
         client.onUpdate(api.sites.currentHtml, { siteId }, callback),
       publish: (id) => client.mutation(api.sites.publish, { id }),
       unpublish: (id) => client.mutation(api.sites.unpublish, { id }),
+      // The address a site answers on. The domain it sits under is the
+      // deployment's, so the browser is told it rather than carrying it.
+      hosting: (callback) => client.onUpdate(api.sites.hosting, {}, callback),
+      setSlug: (id, slug) => client.mutation(api.sites.setSlug, { id, slug }),
+      slugAvailable: (slug, siteId) =>
+        client.query(api.sites.slugAvailable, siteId ? { slug, siteId } : { slug }),
     },
     messages: {
       subscribe: (conversationId, callback) =>
@@ -280,6 +286,9 @@ export function createForgeData({
       subscribe: (callback) => client.onUpdate(api.domains.list, {}, callback),
       add: (siteId, hostname) => client.mutation(api.domains.add, { siteId, hostname }),
       remove: (id) => client.mutation(api.domains.remove, { id }),
+      // One button: the server looks the domain up in DNS and writes back what
+      // it found, so a browser can never mark its own domain verified.
+      verify: (id) => client.action(api.domains.verify, { id }),
     },
     // The plan, the balance, and the catalog all come from the deployment; the
     // client never carries a price or an allowance of its own.

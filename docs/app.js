@@ -1143,11 +1143,32 @@ if (forge?.domains && domainsScreen) {
       const host = document.createElement('strong');
       host.textContent = domain.hostname;
       const site = document.createElement('small');
-      site.textContent = sites.find(item => item._id === domain.siteId)?.name ?? 'Site removed';
+      const named = sites.find(item => item._id === domain.siteId)?.name ?? 'Site removed';
+      // One record is all a domain needs, so the row carries it rather than
+      // sending the user somewhere else to read it.
+      site.textContent = domain.record?.value
+        ? `${named} · ${domain.record.type} ${domain.record.name} → ${domain.record.value}`
+        : named;
       copy.append(host, site);
+      if (domain.note) {
+        const said = document.createElement('small');
+        said.textContent = domain.note;
+        copy.append(said);
+      }
       const status = document.createElement('span');
       status.className = `status-chip is-${domain.status}`;
       status.textContent = STATUS_LABELS[domain.status] ?? domain.status;
+      const verify = document.createElement('button');
+      verify.type = 'button';
+      verify.className = 'link-button';
+      verify.textContent = domain.status === 'active' ? 'Recheck' : 'Verify';
+      verify.addEventListener('click', async () => {
+        showNote(error, '');
+        verify.disabled = true;
+        try { await forge.domains.verify(domain._id); }
+        catch (caught) { reportError(caught); showNote(error, messageOf(caught)); }
+        finally { verify.disabled = false; }
+      });
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'icon-button';
@@ -1163,7 +1184,7 @@ if (forge?.domains && domainsScreen) {
         showNote(error, '');
         forge.domains.remove(domain._id).catch(caught => showNote(error, messageOf(caught)));
       });
-      row.append(copy, status, remove);
+      row.append(copy, status, verify, remove);
       return row;
     }));
   }
@@ -1350,6 +1371,182 @@ if (forge?.sites && previewScreen) {
     renderPreview();
   });
   document.addEventListener('forge:billing', () => { if (!previewScreen.hidden) renderPreview(); });
+}
+
+// The globe by the composer: where this site lives. The address under the
+// hosting domain is the site's to choose, and a domain of their own is pointed
+// at it with one record. Everything here is the account's, so it comes from
+// Convex — the sheet carries no domain, price or example of its own.
+const addressSheet = document.querySelector('.sheet.address');
+const globeButton = document.querySelector('.globe-button');
+if (forge?.sites && addressSheet) {
+  const slugForm = addressSheet.querySelector('.address-form');
+  const slugField = slugForm.elements.slug;
+  const saveButton = addressSheet.querySelector('.address-save');
+  const suffix = addressSheet.querySelector('[data-address-domain]');
+  const note = addressSheet.querySelector('[data-address-note]');
+  const live = addressSheet.querySelector('[data-address-live]');
+  const domainForm = addressSheet.querySelector('.address-domain-form');
+  const gate = addressSheet.querySelector('.address-gate');
+  const domainList = addressSheet.querySelector('[data-address-domains]');
+  const domainEmpty = addressSheet.querySelector('.address-empty');
+  const error = addressSheet.querySelector('.address-error');
+  const STATUS_LABELS = {pending: 'Pending', active: 'Active', failed: 'Failed'};
+  let hosting = null;
+  let accountDomains = [];
+  // What the server would make of a name, so the field can suggest an address
+  // before one has been taken. The server decides what is actually saved.
+  function suggestSlug(name) {
+    return (name ?? '')
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, hosting?.maxLength ?? 40)
+      .replace(/-+$/, '');
+  }
+  function siteDomains() {
+    return activeSite ? accountDomains.filter(domain => domain.siteId === activeSite._id) : [];
+  }
+  function renderAddress() {
+    if (globeButton) globeButton.hidden = !activeSite;
+    if (!activeSite) return;
+    if (suffix) suffix.textContent = hosting?.domain ? `.${hosting.domain}` : '';
+    if (document.activeElement !== slugField) {
+      slugField.value = activeSite.slug ?? '';
+      slugField.placeholder = suggestSlug(activeSite.name) || 'your-site';
+    }
+    const address = activeSite.address;
+    live.hidden = !address;
+    if (address) {
+      live.href = address;
+      live.textContent = address.replace(/^https?:\/\//, '');
+    }
+    note.textContent = !activeSite.slug
+      ? 'Pick an address. It is saved now and used the moment you publish.'
+      : activeSite.status === 'published'
+        ? 'Live at this address.'
+        : 'Reserved for this site. Publish to put the latest build on it.';
+    const allowed = Boolean(summary?.plan.customDomains);
+    const cheapest = catalog?.plans.find(plan => plan.customDomains);
+    setText('[data-address-plan]', cheapest?.name ?? '');
+    domainForm.hidden = !allowed;
+    gate.hidden = allowed || !cheapest;
+    renderDomainRows();
+  }
+  function recordLine(domain) {
+    return domain.record?.value
+      ? `${domain.record.type} · ${domain.record.name} → ${domain.record.value}`
+      : 'Give the site an address first.';
+  }
+  function renderDomainRows() {
+    const rows = siteDomains();
+    domainEmpty.hidden = rows.length > 0 || domainForm.hidden;
+    domainList.hidden = rows.length === 0;
+    domainList.replaceChildren(...rows.map(domain => {
+      const row = document.createElement('div');
+      row.className = 'address-domain';
+      const head = document.createElement('div');
+      head.className = 'address-domain-head';
+      const host = document.createElement('strong');
+      host.textContent = domain.hostname;
+      const status = document.createElement('span');
+      status.className = `status-chip is-${domain.status}`;
+      status.textContent = STATUS_LABELS[domain.status] ?? domain.status;
+      head.append(host, status);
+      const record = document.createElement('code');
+      record.className = 'address-record';
+      record.textContent = recordLine(domain);
+      row.append(head, record);
+      if (domain.note) {
+        const said = document.createElement('small');
+        said.className = 'address-said';
+        said.textContent = domain.note;
+        row.append(said);
+      }
+      const actions = document.createElement('div');
+      actions.className = 'address-domain-actions';
+      const verify = document.createElement('button');
+      verify.type = 'button';
+      verify.className = 'chip-button is-quiet';
+      verify.textContent = domain.status === 'active' ? 'Check again' : 'Verify';
+      verify.addEventListener('click', async () => {
+        showNote(error, '');
+        verify.disabled = true;
+        verify.textContent = 'Checking…';
+        try {
+          await forge.domains.verify(domain._id);
+        } catch (caught) {
+          reportError(caught);
+          showNote(error, messageOf(caught));
+        } finally {
+          verify.disabled = false;
+          renderDomainRows();
+        }
+      });
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'link-button address-remove';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => {
+        if (!confirm(`Remove ${domain.hostname}?`)) return;
+        showNote(error, '');
+        forge.domains.remove(domain._id).catch(caught => showNote(error, messageOf(caught)));
+      });
+      actions.append(verify, remove);
+      row.append(actions);
+      return row;
+    }));
+  }
+  slugForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!activeSite || saveButton.disabled) return;
+    const wanted = slugField.value.trim() || slugField.placeholder;
+    showNote(error, '');
+    saveButton.disabled = true;
+    try {
+      await forge.sites.setSlug(activeSite._id, wanted);
+      slugField.blur();
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, messageOf(caught));
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+  domainForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!activeSite) return;
+    const submit = domainForm.querySelector('.chip-button');
+    if (submit.disabled) return;
+    showNote(error, '');
+    submit.disabled = true;
+    try {
+      await forge.domains.add(activeSite._id, domainForm.elements.hostname.value);
+      domainForm.elements.hostname.value = '';
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, messageOf(caught));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  addressSheet.querySelector('.open-plan-from-address')?.addEventListener('click', () => {
+    closeMenu();
+    openMenu('navigation');
+    showSettings(true);
+    showSettingsScreen('plan');
+  });
+  forge.sites.hosting?.(next => { hosting = next ?? null; renderAddress(); });
+  forge.domains?.subscribe(next => {
+    accountDomains = Array.isArray(next) ? next : [];
+    renderAddress();
+  });
+  document.addEventListener('forge:active-site', renderAddress);
+  document.addEventListener('forge:sites', renderAddress);
+  document.addEventListener('forge:billing', renderAddress);
+  renderAddress();
 }
 
 // Review framing for the settings screens, once their wiring exists.

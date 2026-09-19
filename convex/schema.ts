@@ -61,9 +61,15 @@ export default defineSchema({
     hostname: v.string(),
     status: v.union(v.literal("pending"), v.literal("active"), v.literal("failed")),
     createdAt: v.number(),
+    // What the last DNS check saw. `note` is what the user is told to fix.
+    checkedAt: v.optional(v.number()),
+    verifiedAt: v.optional(v.number()),
+    note: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
-    .index("by_site", ["siteId"]),
+    .index("by_site", ["siteId"])
+    // A visitor arrives by hostname, so serving a custom domain is one lookup.
+    .index("by_hostname", ["hostname"]),
   // One row per member: the plan they are on and this period's credits.
   // `credits` is what the period has left and `reserved` is held by requests
   // still running. Both go back to the plan's allowance when the period ends;

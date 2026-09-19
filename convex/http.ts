@@ -12,6 +12,34 @@ http.route({ path: "/stripe/webhook", method: "POST", handler: webhook });
 
 const NOT_FOUND = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not published</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;background:#121315;color:#e9ebee;text-align:center}p{color:#9fa1a4}</style></head><body><main><h1>Nothing here yet</h1><p>This site isn't published, or the address has changed.</p></main></body></html>`;
 
+const PAGE_HEADERS = {
+  "content-type": "text/html; charset=utf-8",
+  "cache-control": "public, max-age=60",
+  "x-content-type-options": "nosniff",
+  "content-security-policy":
+    "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data: https:; base-uri 'none'; form-action 'none'",
+} as const;
+
+function page(html: string | null) {
+  if (!html) {
+    return new Response(NOT_FOUND, {
+      status: 404,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+  return new Response(html, { status: 200, headers: PAGE_HEADERS });
+}
+
+// A site's own address — `<slug>.sites.forgenexxus.com` — and any custom domain
+// pointed at it land on the root of this deployment with their own Host. The
+// host is what says which site the visitor asked for.
+const byHost = httpAction(async (ctx, request) => {
+  const host = request.headers.get("host") ?? new URL(request.url).host;
+  return page(await ctx.runQuery(internal.sites.publishedHtmlForHost, { host }));
+});
+http.route({ path: "/", method: "GET", handler: byHost });
+http.route({ path: "/index.html", method: "GET", handler: byHost });
+
 // Published sites are served from the deployment's own origin at /sites/<slug>.
 // The page is the model's single file; the policy keeps it to markup, styles
 // and fonts, so a stray script in a build can never run on this origin.
@@ -20,23 +48,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     const slug = new URL(request.url).pathname.slice("/sites/".length).split("/")[0];
-    const html = slug ? await ctx.runQuery(internal.sites.publishedHtml, { slug }) : null;
-    if (!html) {
-      return new Response(NOT_FOUND, {
-        status: 404,
-        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-      });
-    }
-    return new Response(html, {
-      status: 200,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "public, max-age=60",
-        "x-content-type-options": "nosniff",
-        "content-security-policy":
-          "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data: https:; base-uri 'none'; form-action 'none'",
-      },
-    });
+    return page(slug ? await ctx.runQuery(internal.sites.publishedHtml, { slug }) : null);
   }),
 });
 

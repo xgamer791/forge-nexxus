@@ -58,7 +58,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .credits-bar{display:block;height:6px;border-radius:3px;background:var(--toggle-off);overflow:hidden}
 .credits-fill{display:block;height:100%;width:0;border-radius:3px;background:var(--text);transition:width .3s}
 .credits-resets{display:block;font-size:13px;line-height:16px;color:var(--subdued)}
-.credits-cta{height:38px;border-radius:10px;background:var(--text);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+.credits-cta{height:38px;border-radius:19px;background:var(--text);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
 
 /* Settings list, grouped. */
 .settings-content{flex:1;min-height:0;overflow:auto;padding:max(20px,calc(env(safe-area-inset-top) + 16px)) 12px 16px;color:var(--muted)}
@@ -104,7 +104,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .appearance-copy strong{display:block;font-size:17px;line-height:22px;font-weight:600}
 .appearance-copy p{margin:3px 0 0;font-size:17px;line-height:18px;font-weight:400;color:var(--muted)}
 .appearance h3,.overlay h3{margin:22px 12px 8px;font-size:17px;line-height:18px;font-weight:400;letter-spacing:.2px;text-transform:uppercase;color:var(--muted)}
-.theme-select,.font-select{flex-shrink:0;height:32px;max-width:168px;margin-top:2px;padding:0 10px 0 12px;border-radius:10px;background:var(--chip);border:1px solid var(--border);display:flex;align-items:center;gap:6px;font-size:17px;line-height:20px;color:var(--text)}
+.theme-select,.font-select{flex-shrink:0;height:32px;max-width:168px;margin-top:2px;padding:0 12px 0 14px;border-radius:16px;background:var(--chip);border:1px solid var(--border);display:flex;align-items:center;gap:6px;font-size:17px;line-height:20px;color:var(--text)}
 .theme-select svg,.font-select svg{width:12px;height:12px;stroke-width:2.2;color:var(--muted)}
 .theme-select span,.font-select span{max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .theme-menu,.font-menu{position:absolute;right:16px;z-index:6;width:168px;padding:6px 0;background:var(--menu);border:1px solid var(--border);border-radius:14px;box-shadow:var(--menu-shadow)}
@@ -141,11 +141,11 @@ html[data-theme=light] .appearance-card,html[data-theme=light] .appearance-stack
 .row-button+.row-button{border-top:1px solid var(--divider)}
 .row-button.danger{color:var(--danger)}
 .row-button[disabled]{opacity:.5;cursor:default}
-.text-field{flex:1;min-width:0;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:17px;outline:none}
+.text-field{flex:1;min-width:0;height:40px;padding:0 14px;border:1px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text);font-size:17px;outline:none}
 .text-field::placeholder{color:var(--subdued);opacity:1}
 .text-field:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;background-image:linear-gradient(45deg,transparent 50%,var(--subdued) 50%),linear-gradient(135deg,var(--subdued) 50%,transparent 50%);background-position:calc(100% - 18px) 17px,calc(100% - 13px) 17px;background-size:5px 5px;background-repeat:no-repeat}
-.chip-button{flex-shrink:0;height:40px;padding:0 16px;border-radius:10px;background:var(--text);color:var(--bg);font-size:15px;font-weight:600;display:flex;align-items:center}
+.chip-button{flex-shrink:0;height:40px;padding:0 18px;border-radius:20px;background:var(--text);color:var(--bg);font-size:15px;font-weight:600;display:flex;align-items:center}
 .chip-button[disabled]{opacity:.5;cursor:default}
 .link-button{color:var(--text);text-decoration:underline;text-underline-offset:2px;font:inherit}
 
@@ -172,7 +172,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .plan-card{border:1px solid var(--border);border-radius:18px;background:var(--elevated);padding:16px}
 .plan-card.is-current{border-color:var(--text)}
 .plan-card h4{margin:0;font-size:19px;line-height:24px;font-weight:600;display:flex;align-items:center;gap:8px}
-.plan-current-badge{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;padding:2px 8px;border-radius:8px;background:var(--chip);color:var(--muted)}
+.plan-current-badge{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;padding:2px 9px;border-radius:10px;background:var(--chip);color:var(--muted)}
 .plan-tagline{margin:4px 0 12px;font-size:15px;line-height:20px;color:var(--subdued)}
 .plan-price{margin:0 0 12px;display:flex;align-items:baseline;gap:6px}
 .plan-price strong{font-size:28px;line-height:32px;font-weight:700}
@@ -181,7 +181,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .plan-features{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:8px;font-size:15px;line-height:20px;color:var(--muted)}
 .plan-features li{display:flex;align-items:center;gap:9px}
 .plan-features svg{width:16px;height:16px;stroke-width:2.4;color:var(--ok)}
-.plan-cta{width:100%;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;background:var(--text);color:var(--bg)}
+.plan-cta{width:100%;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;background:var(--text);color:var(--bg)}
 .plan-cta.is-secondary{background:none;color:var(--text);border:1px solid var(--border)}
 .plan-cta[disabled]{opacity:.55;cursor:default}
 .topup-row{width:100%;min-height:60px;padding:10px 16px;display:flex;align-items:center;gap:12px}
@@ -205,7 +205,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .domain-copy{min-width:0;flex:1}
 .domain-copy strong{display:block;font-size:16px;line-height:21px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .domain-copy small{display:block;font-size:13px;line-height:16px;color:var(--subdued)}
-.status-chip{flex-shrink:0;height:26px;padding:0 10px;border-radius:8px;display:inline-flex;align-items:center;font-size:13px;font-weight:600}
+.status-chip{flex-shrink:0;height:26px;padding:0 11px;border-radius:13px;display:inline-flex;align-items:center;font-size:13px;font-weight:600}
 .status-chip.is-pending{background:var(--chip);color:var(--muted)}
 .status-chip.is-active{background:var(--ok-soft);color:var(--ok)}
 .status-chip.is-failed{background:var(--danger-soft);color:var(--danger)}
@@ -244,7 +244,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .app.has-thread .greeting{display:none}
 .message{display:flex;margin:6px 0}
 .message-user{justify-content:flex-end}
-.message p{margin:0;max-width:85%;padding:10px 14px;border-radius:18px;background:var(--surface);border:1px solid var(--border);font-size:17px;line-height:22px;white-space:pre-wrap;overflow-wrap:anywhere}
+.message p{margin:0;max-width:85%;padding:11px 16px;border-radius:22px;background:var(--surface);border:1px solid var(--border);font-size:17px;line-height:22px;white-space:pre-wrap;overflow-wrap:anywhere}
 .message-assistant p,.message-system p{background:none;border:0;padding-left:0;max-width:100%}
 
 /* Account sheet: guest sign-in options or the signed-in identity. */
@@ -268,3 +268,35 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 /* A sheet title is centred, so it has to stop short of the close button on
    both sides rather than run into it. */
 .sheet header h2{max-width:calc(100% - 96px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* The globe: the site's address, opposite the drawer button. It appears only
+   once there is a site to have an address. */
+.globe-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
+.globe-button svg{width:25px;height:25px;fill:none;stroke:currentColor}
+.app.reference .globe-button{top:61px}
+
+/* Address sheet: the forge address, then a domain of their own. */
+.address{padding-bottom:max(24px,var(--bottom))}
+.address .address-heading{margin:22px 8px 8px;font-size:15px;line-height:20px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:var(--subdued)}
+.address-form,.address-domain-form{display:flex;align-items:center;gap:10px}
+.address-field{flex:1;min-width:0;display:flex;align-items:center;height:44px;padding:0 4px 0 14px;border:1px solid var(--border);border-radius:22px;background:var(--surface)}
+.address-field input{min-width:0;width:100%;height:100%;padding:0;border:0;background:none;font-size:17px;line-height:22px;outline:none}
+.address-field input::placeholder{color:var(--subdued);opacity:1}
+.address-field:focus-within{outline:2px solid var(--focus);outline-offset:2px}
+.address-suffix{flex-shrink:0;padding:0 10px 0 2px;font-size:15px;line-height:20px;color:var(--subdued);white-space:nowrap;max-width:55%;overflow:hidden;text-overflow:ellipsis}
+.address-form .chip-button,.address-domain-form .chip-button{height:44px;border-radius:22px}
+.address-note{margin:10px 10px 0;font-size:15px;line-height:20px;color:var(--subdued)}
+.address-live{display:inline-block;margin:8px 10px 0;font-size:15px;line-height:20px;color:var(--text);text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:calc(100% - 20px)}
+.address-domains{margin-top:4px;border-radius:22px}
+.address-domain{padding:14px 16px;display:grid;gap:8px}
+.address-domain+.address-domain{border-top:1px solid var(--divider)}
+.address-domain-head{display:flex;align-items:center;gap:10px}
+.address-domain-head strong{min-width:0;flex:1;font-size:17px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.address-record{display:block;padding:9px 12px;border-radius:14px;background:var(--chip);color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:18px;overflow-wrap:anywhere}
+.address-said{display:block;font-size:14px;line-height:19px;color:var(--subdued)}
+.address-domain-actions{display:flex;align-items:center;gap:14px}
+.address-domain-actions .chip-button{height:36px;border-radius:18px;font-size:15px}
+.chip-button.is-quiet{background:var(--chip);color:var(--text)}
+.address-remove{color:var(--danger);text-decoration:none;font-size:15px}
+.address-error{margin:14px 8px 0;color:var(--danger);font-size:15px;line-height:20px}
+.address .sheet-copy{margin:4px 8px 12px}

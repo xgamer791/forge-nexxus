@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { planFor } from "./plans";
-import { BADGE_TEXT, slugify } from "./sites";
+import { BADGE_TEXT, siteHostFor, slugProblem, slugify } from "./sites";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -158,13 +158,18 @@ describe("publishing", () => {
     );
     const first = await build(t, siteId);
     const published = await member.as.mutation(api.sites.publish, { id: siteId });
-    expect(published).toEqual({ slug: "bakery-on-main", url: "https://test.convex.site/sites/bakery-on-main" });
+    expect(published).toEqual({
+      slug: "bakery-on-main",
+      url: "https://bakery-on-main.sites.forgenexxus.com",
+    });
     const [site] = await member.as.query(api.sites.list, {});
     expect(site).toMatchObject({
       status: "published",
       slug: "bakery-on-main",
       publishedVersionId: first,
-      publishedUrl: "https://test.convex.site/sites/bakery-on-main",
+      publishedUrl: "https://bakery-on-main.sites.forgenexxus.com",
+      address: "https://bakery-on-main.sites.forgenexxus.com",
+      host: "bakery-on-main.sites.forgenexxus.com",
     });
     expect((await member.as.query(api.sites.currentHtml, { siteId }))?.published).toBe(true);
 
@@ -193,7 +198,14 @@ describe("publishing", () => {
     await member.as.mutation(api.sites.unpublish, { id: siteId });
     expect((await t.fetch("/sites/bakery-on-main")).status).toBe(404);
     const [draft] = await member.as.query(api.sites.list, {});
-    expect(draft).toMatchObject({ status: "draft", slug: "bakery-on-main", publishedUrl: null });
+    // The address is kept and still shown while the site is a draft; only the
+    // live URL goes away.
+    expect(draft).toMatchObject({
+      status: "draft",
+      slug: "bakery-on-main",
+      publishedUrl: null,
+      address: "https://bakery-on-main.sites.forgenexxus.com",
+    });
     expect(await member.as.mutation(api.sites.publish, { id: siteId })).toMatchObject({ slug: "bakery-on-main" });
     delete process.env.CONVEX_SITE_URL;
   });
@@ -215,6 +227,76 @@ describe("publishing", () => {
     expect(await bob.as.query(api.sites.currentHtml, { siteId: a.siteId })).toBeNull();
     const guest = await createUser(t, { isAnonymous: true });
     expect(await guest.as.query(api.sites.currentHtml, { siteId: a.siteId })).toBeNull();
+  });
+
+  test("an address has to be usable before anyone can be sent to it", () => {
+    expect(slugProblem("bakery-on-main")).toBeNull();
+    expect(slugProblem("ab")).toContain("at least 3");
+    expect(slugProblem("x".repeat(41))).toContain("at most 40");
+    expect(slugProblem("-shop")).toContain("starting and ending");
+    expect(slugProblem("shop-")).toContain("starting and ending");
+    expect(slugProblem("www")).toBe("That address is reserved");
+    expect(siteHostFor("bakery")).toBe("bakery.sites.forgenexxus.com");
+  });
+
+  test("a member chooses the address, and it is theirs until they change it", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    const other = await createUser(t, { email: "o@example.com" });
+    const { siteId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
+    const mine = await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "The Bakery!" });
+    expect(mine).toEqual({
+      slug: "the-bakery",
+      host: "the-bakery.sites.forgenexxus.com",
+      url: "https://the-bakery.sites.forgenexxus.com",
+    });
+    // Chosen before publishing, and kept by the publish that follows.
+    await build(t, siteId);
+    expect(await member.as.mutation(api.sites.publish, { id: siteId })).toMatchObject({
+      slug: "the-bakery",
+    });
+    // Nobody else can take it, and saying it again is not a clash with itself.
+    const theirs = await other.as.mutation(api.sites.create, { name: "Other" });
+    await expect(
+      other.as.mutation(api.sites.setSlug, { id: theirs.siteId, slug: "the-bakery" }),
+    ).rejects.toThrow("taken");
+    await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "the-bakery" });
+    await expect(
+      member.as.mutation(api.sites.setSlug, { id: siteId, slug: "www" }),
+    ).rejects.toThrow("reserved");
+    await expect(
+      other.as.mutation(api.sites.setSlug, { id: siteId, slug: "stolen" }),
+    ).rejects.toThrow("Site not found");
+    expect(await t.query(api.sites.slugAvailable, { slug: "free-one" })).toBeNull();
+    expect(await member.as.query(api.sites.slugAvailable, { slug: "the-bakery", siteId })).toMatchObject({
+      available: true,
+    });
+    expect(await other.as.query(api.sites.slugAvailable, { slug: "The Bakery" })).toMatchObject({
+      slug: "the-bakery",
+      available: false,
+    });
+    // Moving the address moves the site; the old one stops answering.
+    await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "bakery-on-main" });
+    expect((await t.fetch("/", { headers: { host: "bakery-on-main.sites.forgenexxus.com" } })).status).toBe(200);
+    expect((await t.fetch("/", { headers: { host: "the-bakery.sites.forgenexxus.com" } })).status).toBe(404);
+  });
+
+  test("a site answers on its own host, and on a domain pointed at it", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
+    await build(t, siteId);
+    await member.as.mutation(api.sites.publish, { id: siteId });
+    await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });
+    const host = (hostname: string) => t.fetch("/", { headers: { host: hostname } });
+    expect(await (await host("shop.sites.forgenexxus.com")).text()).toBe(PAGE);
+    // A domain that resolves here is served while verification catches up.
+    expect(await (await host("www.shop.example")).text()).toBe(PAGE);
+    expect((await host("nobody.sites.forgenexxus.com")).status).toBe(404);
+    expect((await host("not-added.example")).status).toBe(404);
+    await member.as.mutation(api.sites.unpublish, { id: siteId });
+    expect((await host("www.shop.example")).status).toBe(404);
   });
 
   test("deleting a site removes its versions", async () => {

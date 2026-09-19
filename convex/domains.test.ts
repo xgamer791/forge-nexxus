@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
-import { normalizeHostname } from "./domains";
+import { dnsRecordFor, normalizeHostname } from "./domains";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -87,5 +87,91 @@ describe("domains", () => {
     ).rejects.toThrow("Site not found");
     await expect(bob.as.mutation(api.domains.remove, { id })).rejects.toThrow("Domain not found");
     expect(await alice.as.query(api.domains.list, {})).toHaveLength(1);
+  });
+
+  test("a domain is pointed at the site's own address with one record", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
+    await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "shop" });
+    await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });
+    await member.as.mutation(api.domains.add, { siteId, hostname: "shop.example" });
+    const [subdomain, root] = await member.as.query(api.domains.list, {});
+    expect(subdomain.record).toEqual({
+      type: "CNAME",
+      name: "www",
+      value: "shop.sites.forgenexxus.com",
+      root: false,
+    });
+    // A bare domain cannot hold a CNAME, so it asks for the root alias instead.
+    expect(root.record).toEqual({
+      type: "ALIAS",
+      name: "@",
+      value: "shop.sites.forgenexxus.com",
+      root: true,
+    });
+    expect(dnsRecordFor("deep.www.example.com", null).name).toBe("deep");
+  });
+
+  test("our own hosting domain is not somebody's custom domain", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
+    await expect(
+      member.as.mutation(api.domains.add, { siteId, hostname: "mine.sites.forgenexxus.com" }),
+    ).rejects.toThrow("already has an address");
+  });
+
+  test("a domain another account holds is refused rather than moved", async () => {
+    const t = fresh();
+    const alice = await createUser(t, { email: "a@example.com" });
+    const bob = await createUser(t, { email: "b@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "premium" });
+    const alices = await alice.as.mutation(api.sites.create, { name: "Alice's" });
+    const bobs = await bob.as.mutation(api.sites.create, { name: "Bob's" });
+    await alice.as.mutation(api.domains.add, { siteId: alices.siteId, hostname: "shop.example" });
+    await expect(
+      bob.as.mutation(api.domains.add, { siteId: bobs.siteId, hostname: "shop.example" }),
+    ).rejects.toThrow("another account");
+  });
+
+  test("verification records what DNS actually says, and only the server writes it", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
+    await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "shop" });
+    const id = await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });
+    const answers: Array<{ type: number; data: string }[]> = [
+      [],
+      [{ type: 5, data: "somewhere-else.example." }],
+      [{ type: 5, data: "shop.sites.forgenexxus.com." }],
+    ];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ Answer: answers.shift() }), {
+        headers: { "content-type": "application/dns-json" },
+      })) as typeof fetch;
+    try {
+      const missing = await member.as.action(api.domains.verify, { id });
+      expect(missing.status).toBe("pending");
+      expect(missing.note).toContain("No CNAME record yet");
+      const elsewhere = await member.as.action(api.domains.verify, { id });
+      expect(elsewhere.status).toBe("pending");
+      expect(elsewhere.note).toContain("somewhere-else.example");
+      const found = await member.as.action(api.domains.verify, { id });
+      expect(found.status).toBe("active");
+      const [domain] = await member.as.query(api.domains.list, {});
+      expect(domain).toMatchObject({ status: "active" });
+      expect(domain.verifiedAt).toBeGreaterThan(0);
+      // Someone else's domain is not theirs to check.
+      const bob = await createUser(t, { email: "b@example.com" });
+      await expect(bob.as.action(api.domains.verify, { id })).rejects.toThrow("Domain not found");
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

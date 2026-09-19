@@ -32,23 +32,64 @@ export async function renderedHtml(
 const DEFAULT_NAME = "Untitled site";
 const NAME_LIMIT = 80;
 const SLUG_LIMIT = 40;
+const SLUG_MIN = 3;
+
+// Addresses a visitor would read as ours rather than someone's site, and the
+// labels hosting needs for itself.
+const RESERVED_SLUGS = new Set([
+  "admin", "api", "app", "assets", "auth", "billing", "blog", "cdn", "dashboard",
+  "dns", "docs", "forge", "ftp", "help", "host", "mail", "nexxus", "ns", "ns1",
+  "ns2", "preview", "root", "sites", "smtp", "static", "status", "support",
+  "system", "test", "webmail", "www",
+]);
 
 export function cleanSiteName(name: string | undefined) {
   const trimmed = (name ?? "").replace(/\s+/g, " ").trim();
   return (trimmed || DEFAULT_NAME).slice(0, NAME_LIMIT);
 }
 
-// Where a published site lives: the deployment's own origin. Null when the
-// deployment has not told us its address, which only happens in tests.
+// Every site gets a name of its own under one domain: `<slug>.sites.forgenexxus.com`.
+// `SITES_DOMAIN` names it so a deployment can host somewhere else; emptying it
+// falls back to the deployment's own origin, which is all a test has.
+export function sitesDomain() {
+  const configured = process.env.SITES_DOMAIN ?? "sites.forgenexxus.com";
+  return configured.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+}
+
+// The host a site answers on, and what a custom domain is pointed at.
+export function siteHostFor(slug: string) {
+  const domain = sitesDomain();
+  return domain ? `${slug}.${domain}` : null;
+}
+
+// Where a published site lives. Null when there is neither a sites domain nor
+// a deployment origin to fall back on, which only happens in tests.
 export function publishedUrlFor(slug: string) {
+  const host = siteHostFor(slug);
+  if (host) return `https://${host}`;
   const origin = process.env.CONVEX_SITE_URL?.replace(/\/+$/, "");
   return origin ? `${origin}/sites/${slug}` : null;
+}
+
+// What a chosen address has to be before anyone can be sent to it.
+export function slugProblem(slug: string) {
+  if (slug.length < SLUG_MIN) return `An address needs at least ${SLUG_MIN} characters`;
+  if (slug.length > SLUG_LIMIT) return `An address can be at most ${SLUG_LIMIT} characters`;
+  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) {
+    return "Use letters, numbers and hyphens, starting and ending with a letter or number";
+  }
+  if (RESERVED_SLUGS.has(slug)) return "That address is reserved";
+  return null;
 }
 
 function present(site: Doc<"sites">) {
   const { userId: _owner, ...rest } = site;
   return {
     ...rest,
+    // The address the site would answer on, chosen or assigned, whether or not
+    // it is published; `publishedUrl` is only there once it is live.
+    address: site.slug ? publishedUrlFor(site.slug) : null,
+    host: site.slug ? siteHostFor(site.slug) : null,
     publishedUrl: site.status === "published" && site.slug ? publishedUrlFor(site.slug) : null,
   };
 }
@@ -65,6 +106,17 @@ export const list = query({
       .order("desc")
       .collect();
     return sites.map(present);
+  },
+});
+
+// Where this deployment puts sites, and what a custom domain is pointed at.
+// Hosting configuration rather than user data, so `docs/` carries no domain of
+// its own and a deployment can be moved by setting one variable.
+export const hosting = query({
+  args: {},
+  handler: async () => {
+    const domain = sitesDomain();
+    return { domain, minLength: SLUG_MIN, maxLength: SLUG_LIMIT };
   },
 });
 
@@ -139,6 +191,52 @@ export const remove = mutation({
   },
 });
 
+// The address is the user's to choose, not just whatever the name made. Taking
+// one holds it for this site until they change it, published or not, and a
+// published site moves to the new address as soon as it is saved.
+export const setSlug = mutation({
+  args: { id: v.id("sites"), slug: v.string() },
+  handler: async (ctx, { id, slug }) => {
+    const site = await requireOwnedSite(ctx, id);
+    await requireMemberId(ctx);
+    const wanted = slugify(slug);
+    const problem = slugProblem(wanted);
+    if (problem) throw new ConvexError(problem);
+    if (wanted !== site.slug) {
+      const taken = await ctx.db
+        .query("sites")
+        .withIndex("by_slug", (q) => q.eq("slug", wanted))
+        .first();
+      if (taken) throw new ConvexError("That address is taken. Try another one.");
+      await ctx.db.patch(id, { slug: wanted, updatedAt: Date.now() });
+    }
+    return { slug: wanted, host: siteHostFor(wanted), url: publishedUrlFor(wanted) };
+  },
+});
+
+// Whether an address can be taken, for the field to answer as it is typed.
+export const slugAvailable = query({
+  args: { slug: v.string(), siteId: v.optional(v.id("sites")) },
+  handler: async (ctx, { slug, siteId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const wanted = slugify(slug);
+    const problem = slugProblem(wanted);
+    if (problem) return { slug: wanted, available: false, problem };
+    const taken = await ctx.db
+      .query("sites")
+      .withIndex("by_slug", (q) => q.eq("slug", wanted))
+      .first();
+    const mine = taken !== null && siteId !== undefined && taken._id === siteId;
+    return {
+      slug: wanted,
+      available: taken === null || mine,
+      problem: taken === null || mine ? null : "That address is taken. Try another one.",
+      host: siteHostFor(wanted),
+    };
+  },
+});
+
 // Puts the latest build on the site's public address. The slug is chosen once,
 // from the name, and kept through unpublishing so links keep working.
 export const publish = mutation({
@@ -168,6 +266,14 @@ export const unpublish = mutation({
   },
 });
 
+// The page a published site is currently serving, or null while it is a draft
+// or its published build has gone.
+async function livePage(ctx: QueryCtx, site: Doc<"sites"> | null) {
+  if (!site || site.status !== "published" || !site.publishedVersionId) return null;
+  const version = await ctx.db.get(site.publishedVersionId);
+  return version ? await renderedHtml(ctx, site, version.html) : null;
+}
+
 // What the public route serves. Null for a draft, an unknown slug, or a site
 // whose published build has gone.
 export const publishedHtml = internalQuery({
@@ -177,9 +283,35 @@ export const publishedHtml = internalQuery({
       .query("sites")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
       .first();
-    if (!site || site.status !== "published" || !site.publishedVersionId) return null;
-    const version = await ctx.db.get(site.publishedVersionId);
-    return version ? await renderedHtml(ctx, site, version.html) : null;
+    return await livePage(ctx, site);
+  },
+});
+
+// The same page, found by the host the visitor typed: a site's own
+// `<slug>.sites.forgenexxus.com`, or a custom domain pointed at it. A domain
+// that resolves here is served whether or not verification has caught up —
+// DNS arriving is the proof — but it still has to belong to a published site.
+export const publishedHtmlForHost = internalQuery({
+  args: { host: v.string() },
+  handler: async (ctx, { host }) => {
+    const hostname = host.trim().toLowerCase().split(":")[0].replace(/\.$/, "");
+    if (!hostname) return null;
+    const domain = sitesDomain();
+    if (domain && hostname.endsWith(`.${domain}`)) {
+      const slug = hostname.slice(0, hostname.length - domain.length - 1);
+      if (!slug || slug.includes(".")) return null;
+      const site = await ctx.db
+        .query("sites")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first();
+      return await livePage(ctx, site);
+    }
+    const mapped = await ctx.db
+      .query("domains")
+      .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
+      .first();
+    if (!mapped || mapped.status === "failed") return null;
+    return await livePage(ctx, await ctx.db.get(mapped.siteId));
   },
 });
 
