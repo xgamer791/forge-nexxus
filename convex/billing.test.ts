@@ -434,3 +434,57 @@ describe("billing", () => {
     expect((await alice.as.query(api.billing.history, {})).map((entry) => entry.kind)).toEqual(["topup", "grant"]);
   });
 });
+
+describe("admins", () => {
+  // The deployment's own accounts. `ADMIN_EMAILS` is what a deployment sets;
+  // the code ships with the owner's address as the default.
+  const asAdmin = async (email: string) => {
+    process.env.ADMIN_EMAILS = email;
+    const t = fresh();
+    const user = await createUser(t, { email });
+    await t.mutation(internal.billing.ensure, { userId: user.userId });
+    return { t, user };
+  };
+
+  test("an admin account is held on the top plan, without paying for it", async () => {
+    const { t, user } = await asAdmin("boss@example.com");
+    try {
+      const summary = (await user.as.query(api.billing.summary, {}))!;
+      expect(summary.plan.key).toBe(premium.key);
+      // An upgrade carries the leftover over, as any other upgrade does.
+      expect(summary.credits).toBe((premium.monthlyCredits ?? 0) + OPENING);
+      // A downgrade — a cancelled card, a Stripe deletion — does not stick.
+      await t.mutation(internal.billing.grantPlan, { email: "boss@example.com", plan: "free" });
+      expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe("free");
+      await t.mutation(internal.billing.ensure, { userId: user.userId });
+      expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe(premium.key);
+    } finally {
+      delete process.env.ADMIN_EMAILS;
+    }
+  });
+
+  test("everyone else opens on the free plan", async () => {
+    const { t } = await asAdmin("boss@example.com");
+    try {
+      const member = await createUser(t, { email: "someone@example.com" });
+      await t.mutation(internal.billing.ensure, { userId: member.userId });
+      const summary = (await member.as.query(api.billing.summary, {}))!;
+      expect(summary.plan.key).toBe("free");
+      expect(summary.credits).toBe(OPENING);
+    } finally {
+      delete process.env.ADMIN_EMAILS;
+    }
+  });
+
+  test("an empty ADMIN_EMAILS leaves the deployment with no admins", async () => {
+    process.env.ADMIN_EMAILS = "";
+    try {
+      const t = fresh();
+      const user = await createUser(t, { email: "boss@example.com" });
+      await t.mutation(internal.billing.ensure, { userId: user.userId });
+      expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe("free");
+    } finally {
+      delete process.env.ADMIN_EMAILS;
+    }
+  });
+});

@@ -269,6 +269,21 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
    both sides rather than run into it. */
 .sheet header h2{max-width:calc(100% - 96px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* A panel that belongs to the button that opened it comes down from the top,
+   the way the globe is reached, rather than up from the thumb. It keeps every
+   sheet part — header, dismiss, copy, groups — and turns the geometry over:
+   square at the top edge, rounded below, handle at the bottom. */
+.dropdown{top:0;bottom:auto;border-radius:0 0 28px 28px;padding:max(10px,env(safe-area-inset-top)) 16px 0;max-height:calc(100% - 28px);box-shadow:0 18px 44px rgba(0,0,0,.34)}
+.dropdown .handle{margin:14px auto max(10px,var(--bottom))}
+.dropdown header{height:52px}
+@media(prefers-reduced-motion:no-preference){
+  .dropdown{animation:dropdown-in .34s cubic-bezier(.32,.72,0,1)}
+  .app.navigation-open .dropdown{animation:none}
+}
+@keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+.app.reference .dropdown{position:absolute;left:0;right:0}
+html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
+
 /* The globe: the site's address, opposite the drawer button. It appears only
    once there is a site to have an address. */
 .globe-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
@@ -283,7 +298,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .address-field input{min-width:0;width:100%;height:100%;padding:0;border:0;background:none;font-size:17px;line-height:22px;outline:none}
 .address-field input::placeholder{color:var(--subdued);opacity:1}
 .address-field:focus-within{outline:2px solid var(--focus);outline-offset:2px}
-.address-suffix{flex-shrink:0;padding:0 10px 0 2px;font-size:15px;line-height:20px;color:var(--subdued);white-space:nowrap;max-width:55%;overflow:hidden;text-overflow:ellipsis}
+.address-suffix{flex-shrink:0;padding:0 12px 0 1px;font-size:14px;line-height:19px;color:var(--subdued);white-space:nowrap}
 .address-form .chip-button,.address-domain-form .chip-button{height:44px;border-radius:22px}
 .address-note{margin:10px 10px 0;font-size:15px;line-height:20px;color:var(--subdued)}
 .address-warning span{color:var(--text)}

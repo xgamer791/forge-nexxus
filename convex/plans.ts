@@ -156,6 +156,12 @@ export function planFor(key: string): Plan {
   return PLANS.find((plan) => plan.key === key) ?? PLANS[0];
 }
 
+// The catalog runs cheapest first, so the last plan is the top tier: what an
+// admin account is held on, and what "everything included" means here.
+export function topPlan(): Plan {
+  return PLANS[PLANS.length - 1];
+}
+
 export function topUpFor(key: string): TopUp | null {
   return TOP_UPS.find((pack) => pack.key === key) ?? null;
 }

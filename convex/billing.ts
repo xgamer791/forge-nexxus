@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { requireMemberId } from "./access";
+import { isAdminEmail } from "./admins";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
@@ -14,6 +15,7 @@ import {
   planFor,
   planKey,
   requestKind,
+  topPlan,
   topUpFor,
   type PlanKey,
   type RequestKind,
@@ -128,6 +130,26 @@ async function record(
 // Brings a member's row up to date and returns it: creates a free subscription
 // for one who has none, and rolls an ended period forward.
 export async function ensureCurrent(ctx: MutationCtx, userId: Id<"users">, now = Date.now()) {
+  return await holdAdminPlan(ctx, userId, await rolledForward(ctx, userId, now), now);
+}
+
+// An admin account belongs on the top plan, and stays there: every path that
+// touches a subscription comes through here, so a period rolling over, a
+// cancelled card or a Stripe downgrade all land back on it.
+async function holdAdminPlan(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  sub: Doc<"subscriptions">,
+  now: number,
+) {
+  const user = await ctx.db.get(userId);
+  const top = topPlan();
+  if (!isAdminEmail(user?.email) || sub.planKey === top.key) return sub;
+  await setPlan(ctx, userId, sub, top.key, { now });
+  return (await ctx.db.get(sub._id))!;
+}
+
+async function rolledForward(ctx: MutationCtx, userId: Id<"users">, now: number) {
   const existing = await subscriptionFor(ctx, userId);
   if (!existing) {
     // The first plan is free, and it comes with a one-time welcome grant on
@@ -506,6 +528,25 @@ export async function applyPlan(
 ) {
   const now = options.now ?? Date.now();
   const sub = await ensureCurrent(ctx, userId, now);
+  await setPlan(ctx, userId, sub, plan, options);
+}
+
+// The plan change itself, against a subscription the caller already has.
+async function setPlan(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  sub: Doc<"subscriptions">,
+  plan: PlanKey,
+  options: {
+    now?: number;
+    periodStart?: number | null;
+    periodEnd?: number | null;
+    renewal?: boolean;
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string | null;
+  } = {},
+) {
+  const now = options.now ?? Date.now();
   const next = opening(plan, options.periodStart ?? now);
   if (options.periodEnd) next.periodEnd = options.periodEnd;
   let carried = sub.credits;
