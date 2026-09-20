@@ -42,7 +42,7 @@ const ENV = {
   STRIPE_PRICE_ULTRA_YEAR: "price_ultra_y",
   STRIPE_PRICE_PREMIUM_MONTH: "price_premium_m",
   STRIPE_PRICE_PREMIUM_YEAR: "price_premium_y",
-  STRIPE_PRICE_TOPUP_100: "price_topup_100",
+  STRIPE_PRICE_TOPUP_300: "price_topup_300",
 };
 
 beforeEach(() => Object.assign(process.env, ENV));
@@ -88,7 +88,7 @@ describe("prices and signatures", () => {
   test("price ids come from the environment, one per plan and interval and one per pack", () => {
     expect(priceEnvName({ plan: "starter", interval: "year" })).toBe("STRIPE_PRICE_STARTER_YEAR");
     expect(priceEnvName({ plan: "pro", interval: "year" })).toBe("STRIPE_PRICE_PRO_YEAR");
-    expect(priceEnvName({ pack: "topup-100" })).toBe("STRIPE_PRICE_TOPUP_100");
+    expect(priceEnvName({ pack: "topup-300" })).toBe("STRIPE_PRICE_TOPUP_300");
     expect(planForPrice("price_pro_y")).toEqual({ plan: "pro", interval: "year" });
     expect(planForPrice("price_premium_y")).toEqual({ plan: "pro", interval: "year" });
     expect(planForPrice("price_ultra_m")).toEqual({ plan: "ultra", interval: "month" });
@@ -135,7 +135,7 @@ describe("checkout", () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     const calls = stubStripe(() => json({ id: "cs_2", url: "https://checkout.stripe.com/c/cs_2" }));
-    await expect(member.as.action(api.billing.checkout, { topUp: "topup-100" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { topUp: "topup-300" })).rejects.toThrow(
       "Extra credits come with the Pro plan",
     );
     await t.mutation(internal.billing.grantPlan, {
@@ -143,11 +143,11 @@ describe("checkout", () => {
       plan: "pro",
       stripeCustomerId: "cus_42",
     });
-    await member.as.action(api.billing.checkout, { topUp: "topup-100" });
+    await member.as.action(api.billing.checkout, { topUp: "topup-300" });
     const body = calls.at(-1)!.body;
     expect(body.get("mode")).toBe("payment");
-    expect(body.get("line_items[0][price]")).toBe("price_topup_100");
-    expect(body.get("metadata[pack]")).toBe("topup-100");
+    expect(body.get("line_items[0][price]")).toBe("price_topup_300");
+    expect(body.get("metadata[pack]")).toBe("topup-300");
     expect(body.get("customer")).toBe("cus_42");
     expect(body.get("customer_email")).toBeNull();
   });
@@ -225,11 +225,11 @@ describe("webhook", () => {
     const pack = await signed(t, {
       id: "evt_pack",
       type: "checkout.session.completed",
-      data: { object: { mode: "payment", customer: "cus_9", metadata: { userId: member.userId, pack: "topup-100" } } },
+      data: { object: { mode: "payment", customer: "cus_9", metadata: { userId: member.userId, pack: "topup-300" } } },
     });
-    expect(await pack.json()).toEqual({ handled: true, action: "topup", credits: 100 });
+    expect(await pack.json()).toEqual({ handled: true, action: "topup", credits: 300 });
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
-      OPENING + pro.monthlyCredits! + 100,
+      OPENING + pro.monthlyCredits! + 300,
     );
     const bogus = await signed(t, {
       id: "evt_bogus",

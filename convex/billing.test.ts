@@ -97,14 +97,12 @@ describe("billing", () => {
     expect(ultra.key).toBe("ultra");
     expect(catalog.plans[0].signupCredits).toBe(0);
     expect(catalog.topUps.map((pack) => [pack.credits, pack.priceCents])).toEqual([
-      [100, 990],
       [300, 2490],
       [1000, 3000],
       [2000, 6000],
       [3000, 9000],
       [4000, 12000],
       [5000, 15000],
-      [10000, 20000],
     ]);
     expect(catalog.requestCosts).toEqual(REQUEST_COSTS);
   });
@@ -393,10 +391,10 @@ describe("billing", () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     await expect(
-      t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-100" }),
+      t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-300" }),
     ).rejects.toThrow("Extra credits come with the Pro plan");
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
-    await t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-100" });
+    await t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-300" });
     await t.mutation(internal.billing.grantTopUp, {
       email: "M@example.com",
       credits: 7,
@@ -404,14 +402,14 @@ describe("billing", () => {
     });
     const opening = OPENING + pro.monthlyCredits!;
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: opening + 107,
-      granted: opening + 107,
+      credits: opening + 307,
+      granted: opening + 307,
     });
     const history = await member.as.query(api.billing.history, {});
     // Two grants: the welcome credits, then the plan's own allowance.
     expect(history.map((entry) => entry.kind).sort()).toEqual(["grant", "grant", "topup", "topup"]);
     expect(history.find((entry) => entry.amount === 7)?.note).toBe("Sorry about the outage");
-    expect(history.find((entry) => entry.amount === 100)?.note).toBe("100 credit top-up");
+    expect(history.find((entry) => entry.amount === 300)?.note).toBe("300 credit top-up");
     await expect(
       t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-nope" }),
     ).rejects.toThrow("does not exist");
@@ -433,11 +431,11 @@ describe("billing", () => {
       "Payments aren't open yet",
     );
     // Packs are refused on plans without them before payments are even considered.
-    await expect(member.as.action(api.billing.checkout, { topUp: "topup-100" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { topUp: "topup-300" })).rejects.toThrow(
       "Extra credits come with the Pro plan",
     );
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
-    await expect(member.as.action(api.billing.checkout, { topUp: "topup-100" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { topUp: "topup-300" })).rejects.toThrow(
       "Payments aren't open yet",
     );
     await expect(member.as.action(api.billing.checkout, {})).rejects.toThrow("Choose a plan");
