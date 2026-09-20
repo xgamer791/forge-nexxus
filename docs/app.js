@@ -405,6 +405,10 @@ function showDim(duration = DRAWER_MS) {
   backdrop.style.opacity = String(from);
   return fadeLayer(backdrop, from, 1, duration);
 }
+function dimmerInUse() {
+  if (app.classList.contains('navigation-open')) return true;
+  return panels.some(panel => !panel.hidden && !panel.classList.contains('is-closing'));
+}
 function finishHide(element) {
   const pending = pendingPanelHides.get(element);
   if (pending) {
@@ -428,38 +432,38 @@ function finishHide(element) {
   element.classList.remove('is-open', 'is-closing');
   element.scrollTop = 0;
 }
-function hideOverlay(element) {
+function hideOverlay(element, {keepDim = false} = {}) {
   if (!element) return;
   if (element.classList.contains('navigation')) return;
   if (pendingPanelHides.has(element)) return;
   const reduceMotion = prefersReducedMotion();
-  const animatedDropdown = element.matches?.('.dropdown.is-open')
-    && !reduceMotion;
-  const animatedDimSheet = element.matches?.('.preview-unbuilt.is-open')
-    && !reduceMotion;
-  if (!animatedDropdown && !animatedDimSheet) {
+  const animatedDropdown = element.matches?.('.dropdown.is-open') && !reduceMotion;
+  if (!animatedDropdown) {
     finishHide(element);
     return;
   }
-  const duration = animatedDropdown ? DROPDOWN_MS : DRAWER_MS;
   element.classList.remove('is-open');
   element.classList.add('is-closing');
-  fadeLayer(backdrop, currentOpacity(backdrop, 1), 0, duration);
+  if (!keepDim) fadeLayer(backdrop, currentOpacity(backdrop, 1), 0, DROPDOWN_MS);
   const finish = event => {
     if (event?.target && event.target !== element) return;
     finishHide(element);
+    if (keepDim || dimmerInUse()) return;
     finishHide(backdrop);
     app.classList.remove('sheet-open');
   };
-  const timer = setTimeout(() => finish(), duration + 80);
+  const timer = setTimeout(() => finish(), DROPDOWN_MS + 80);
   pendingPanelHides.set(element, {finish, timer});
-  if (animatedDropdown || animatedDimSheet) element.addEventListener('animationend', finish);
+  element.addEventListener('animationend', finish);
 }
-function closeDrawer() {
+function closeDrawer({keepDim = false} = {}) {
   const drawer = document.querySelector('.navigation');
   if (!drawer || drawer.hidden && !drawer.classList.contains('is-open')) {
-    finishHide(backdrop);
-    app.classList.remove('navigation-open', 'sheet-open');
+    if (!keepDim && !dimmerInUse()) {
+      finishHide(backdrop);
+      app.classList.remove('sheet-open');
+    }
+    app.classList.remove('navigation-open');
     parkStage();
     return;
   }
@@ -467,8 +471,11 @@ function closeDrawer() {
   const done = () => {
     if (!pendingPanelHides.has(drawer)) return;
     finishHide(drawer);
-    finishHide(backdrop);
-    app.classList.remove('navigation-open', 'sheet-open');
+    app.classList.remove('navigation-open');
+    if (!keepDim && !dimmerInUse()) {
+      finishHide(backdrop);
+      app.classList.remove('sheet-open');
+    }
     requestAnimationFrame(() => {
       resetViewport();
       refreshStatusBarTint();
@@ -481,11 +488,12 @@ function closeDrawer() {
   void drawer.offsetWidth;
   pendingPanelHides.set(drawer, {timer: setTimeout(done, DRAWER_MS + 80)});
   app.classList.remove('navigation-open');
-  Promise.all([
+  const jobs = [
     slideLayer(drawer, currentTransform(drawer, DRAWER_ON), DRAWER_OFF),
     slideLayer(stage, currentTransform(stage, stageOn()), STAGE_OFF),
-    fadeLayer(backdrop, currentOpacity(backdrop, 1), 0),
-  ]).then(done);
+  ];
+  if (!keepDim) jobs.push(fadeLayer(backdrop, currentOpacity(backdrop, 1), 0));
+  Promise.all(jobs).then(done);
 }
 function closeMenu() {
   closePopovers();
@@ -495,15 +503,14 @@ function closeMenu() {
   const drawer = document.querySelector('.navigation');
   const drawerClosing = Boolean(drawer?.classList.contains('is-closing'));
   const drawerOpen = Boolean(drawer?.classList.contains('is-open') && !drawerClosing);
-  panels.forEach(hideOverlay);
+  panels.forEach(panel => hideOverlay(panel));
   const dropdownClosing = panels.some(panel => panel.classList.contains('dropdown') && panel.classList.contains('is-closing'));
-  const dimSheetClosing = panels.some(panel => panel.classList.contains('preview-unbuilt') && panel.classList.contains('is-closing'));
   if (drawerOpen) closeDrawer();
-  else if (!drawerClosing && !dropdownClosing && !dimSheetClosing) {
+  else if (!drawerClosing && !dropdownClosing) {
     finishHide(backdrop);
     app.classList.remove('navigation-open', 'sheet-open');
     parkStage();
-  } else if (dropdownClosing || dimSheetClosing) {
+  } else if (dropdownClosing) {
     app.classList.remove('navigation-open');
   }
   document.querySelectorAll('[data-open],.website-preview-button').forEach(button => button.setAttribute('aria-expanded', 'false'));
@@ -517,7 +524,7 @@ function openMenu(name, trigger) {
   if (name === 'navigation') {
     closePopovers();
     closeOverlays();
-    panels.forEach(item => { if (item !== panel) hideOverlay(item); });
+    panels.forEach(item => { if (item !== panel) hideOverlay(item, {keepDim: true}); });
     showSettings(false);
     const from = panel.classList.contains('is-closing')
       ? currentTransform(panel, DRAWER_OFF)
@@ -544,7 +551,15 @@ function openMenu(name, trigger) {
     resetViewport();
     return;
   }
-  closeMenu();
+  closePopovers();
+  closeOverlays();
+  const drawer = document.querySelector('.navigation');
+  const drawerOpen = Boolean(drawer?.classList.contains('is-open') && !drawer.classList.contains('is-closing'));
+  panels.forEach(item => { if (item !== panel && !item.hidden) hideOverlay(item, {keepDim: true}); });
+  if (drawerOpen) closeDrawer({keepDim: true});
+  document.querySelectorAll('[data-open],.website-preview-button').forEach(button => {
+    if (button !== trigger) button.setAttribute('aria-expanded', 'false');
+  });
   if (pendingPanelHides.has(panel)) finishHide(panel);
   if (panel.classList.contains('address')) showAddressTab('address');
   panel.hidden = false;
@@ -554,7 +569,6 @@ function openMenu(name, trigger) {
   backdrop.classList.add('is-open');
   app.classList.add('sheet-open');
   if (panel.classList.contains('dropdown')) showDim(DROPDOWN_MS);
-  else if (panel.classList.contains('preview-unbuilt')) showDim(DRAWER_MS);
   trigger?.setAttribute('aria-expanded', 'true');
   // Focus the dialog itself, not its close button. iOS draws a native ring
   // around a programmatically focused button even when the app removes its

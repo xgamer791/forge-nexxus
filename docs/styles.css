@@ -325,6 +325,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 }
 @keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 @keyframes dropdown-out{from{transform:translateY(0)}to{transform:translateY(-100%)}}
+.dropdown.is-open{z-index:4}
+.dropdown.is-closing{z-index:3}
 .app.reference .dropdown{position:absolute;left:0;right:0}
 /* The globe: the site's address, opposite the drawer button. It appears only
    once there is a site to have an address. */
@@ -339,16 +341,11 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 
 /* Preview empty state: the same sheet, type scale and primary action used by
    account flows. It appears only when the top preview control has no build. */
-.preview-unbuilt{padding-bottom:max(24px,var(--bottom))}
+.preview-unbuilt{padding-bottom:max(16px,var(--bottom))}
 .preview-unbuilt-content{padding:2px 8px 4px;text-align:center}
 .preview-unbuilt-icon{display:block;width:38px;height:38px;margin:2px auto 14px;color:var(--text);stroke-width:1.7}
 .preview-unbuilt-content h3{margin:0;font-size:19px;line-height:24px;font-weight:600}
 .preview-unbuilt-content p{max-width:360px;margin:7px auto 20px;color:var(--muted);font-size:17px;line-height:22px}
-@media(prefers-reduced-motion:no-preference){
-  .sheet:not(.dropdown).preview-unbuilt.is-open{animation:sheet-up .1s cubic-bezier(.22,1,.36,1) both}
-  .preview-unbuilt.is-closing{animation:preview-sheet-out .1s cubic-bezier(.45,0,.55,1) both;pointer-events:none}
-}
-@keyframes preview-sheet-out{from{transform:translateY(0)}to{transform:translateY(100%)}}
 
 /* Address sheet: the same card and pill language as plans and the site bar,
    with one section showing at a time so the globe menu stays short. */
@@ -493,8 +490,6 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
   .dropdown{top:var(--header);left:auto;right:max(16px,calc((100vw - var(--shell))/2));width:min(480px,calc(100vw - 48px));border-radius:24px;padding:4px 18px 0;min-height:0;max-height:calc(100% - var(--header) - 32px)}
   .dropdown .handle{display:none}
   .dropdown header{height:56px}
-  .sheet:not(.dropdown).preview-unbuilt.is-open{animation:dialog-in .1s cubic-bezier(.22,1,.36,1) both}
-  .preview-unbuilt.is-closing{animation:preview-dialog-out .1s cubic-bezier(.45,0,.55,1) both}
   /* The drawer has room to breathe, and the settings screens read as panels
      rather than as a phone screen stretched. */
   /* The drawer stays on the shell's left edge so a push keeps it flush
@@ -505,7 +500,6 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
   .overlay.preview{width:min(1180px,calc(100vw - 64px));max-width:none;left:50%;margin-left:calc(min(1180px,100vw - 64px)/-2)}
 }
 @keyframes dialog-in{from{opacity:0;transform:translateY(calc(-50% + 12px))}to{opacity:1;transform:translateY(-50%)}}
-@keyframes preview-dialog-out{from{opacity:1;transform:translateY(-50%)}to{opacity:0;transform:translateY(calc(-50% + 12px))}}
 @media(prefers-reduced-motion:reduce){
   .sheet:not(.dropdown).is-open,.dropdown.is-open,.dropdown.is-closing,.appearance.is-open,.overlay.is-open,.theme-menu:not([hidden]),.font-menu:not([hidden]){animation:none}
 }
