@@ -312,6 +312,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .website-preview-button svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2}
 .app.reference .globe-button,.app.reference .website-preview-button{top:61px}
 .dismiss{background:none;border-radius:0}
+.dismiss:focus-visible{outline:none}
 
 /* Preview empty state: the same sheet, type scale and primary action used by
    account flows. It appears only when the top preview control has no build. */
