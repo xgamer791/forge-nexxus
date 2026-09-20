@@ -18,6 +18,8 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 
 /* Navigation drawer, measured from the supplied mobile reference. */
 .navigation{position:fixed;z-index:4;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(320px,calc(100vw - 48px));background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.navigation.is-open{animation:navigation-in .7s cubic-bezier(.22,1,.36,1) both}
+@keyframes navigation-in{from{transform:translateX(-100%)}to{transform:translateX(0)}}
 .navigation-open .backdrop{background:var(--nav-backdrop)}
 /* iOS tints the standalone status bar from whatever paints beneath it. Keep the
    dimmer out of that strip so the tint never caches the darkened page color. */
@@ -77,13 +79,13 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .add-list button{height:56px;display:flex;align-items:center;gap:14px;padding:0 16px;font-size:17px;line-height:22px;width:100%}
 .add-list button>svg:first-child{width:21px;height:21px;stroke-width:1.8;color:var(--muted)}
 .add-list .chevron{margin-left:auto}
-.sheet.attachments{animation:sheet-up .26s cubic-bezier(.32,.72,0,1)}
-.app.navigation-open .sheet.attachments{animation:none}
+.sheet:not(.dropdown).is-open{animation:sheet-up .7s cubic-bezier(.22,1,.36,1) both}
 @keyframes sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
-@media(prefers-reduced-motion:reduce){.sheet.attachments{animation:none}}
 
 /* Appearance and the other full-screen settings screens share one shell. */
 .appearance,.overlay{position:fixed;z-index:5;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(var(--shell),100vw);max-width:var(--shell);background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+.appearance.is-open,.overlay.is-open{animation:overlay-in .7s cubic-bezier(.22,1,.36,1) both}
+@keyframes overlay-in{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
 .appearance-header{flex-shrink:0;height:52px;margin-top:max(0px,env(safe-area-inset-top));display:flex;align-items:center;justify-content:center;position:relative}
 .appearance-header h2{margin:0;font-size:17px;line-height:22px;font-weight:600}
 .appearance-header h2:focus{outline:none}
@@ -108,6 +110,8 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .theme-select svg,.font-select svg{width:12px;height:12px;stroke-width:2.2;color:var(--muted)}
 .theme-select span,.font-select span{max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .theme-menu,.font-menu{position:absolute;right:16px;z-index:6;width:168px;padding:6px 0;background:var(--menu);border:1px solid var(--border);border-radius:14px;box-shadow:var(--menu-shadow)}
+.theme-menu:not([hidden]),.font-menu:not([hidden]){animation:popover-in .7s cubic-bezier(.22,1,.36,1) both;transform-origin:top right}
+@keyframes popover-in{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 .theme-menu{top:58px}
 .font-menu{top:calc(100% - 4px)}
 .theme-menu button,.font-menu button{width:100%;height:40px;padding:0 14px;display:flex;align-items:center;font-size:17px;line-height:22px}
@@ -374,7 +378,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
      rounded all round, no drag handle to offer. */
   .sheet:not(.dropdown){top:50%;bottom:auto;left:50%;right:auto;width:min(520px,calc(100vw - 64px));transform:translateY(-50%);border-radius:28px;padding:0 20px 24px;max-height:calc(100% - 96px);margin-left:calc(min(520px,100vw - 64px)/-2);box-shadow:0 24px 60px rgba(0,0,0,.34)}
   .sheet:not(.dropdown) .handle{display:none}
-  .sheet.attachments{animation:dialog-in .24s cubic-bezier(.32,.72,0,1)}
+  .sheet:not(.dropdown).is-open{animation:dialog-in .7s cubic-bezier(.22,1,.36,1) both}
   html[data-theme=light] .sheet:not(.dropdown){box-shadow:0 24px 60px rgba(0,0,0,.18)}
   /* The domain panel keeps coming down, but from the globe rather than from
      the top edge of the window: a menu belonging to the button that opened it. */
@@ -392,7 +396,9 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
   .overlay.preview{width:min(1180px,calc(100vw - 64px));max-width:none;left:50%;margin-left:calc(min(1180px,100vw - 64px)/-2)}
 }
 @keyframes dialog-in{from{opacity:0;transform:translateY(calc(-50% + 12px))}to{opacity:1;transform:translateY(-50%)}}
-@media(min-width:900px) and (prefers-reduced-motion:reduce){.sheet.attachments{animation:none}}
+@media(prefers-reduced-motion:reduce){
+  .sheet:not(.dropdown).is-open,.dropdown.is-open,.dropdown.is-closing,.navigation.is-open,.appearance.is-open,.overlay.is-open,.theme-menu:not([hidden]),.font-menu:not([hidden]){animation:none}
+}
 
 /* A pointer can hover, so the things that respond to a tap say so first. */
 @media(hover:hover) and (pointer:fine){
