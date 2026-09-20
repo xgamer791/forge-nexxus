@@ -326,6 +326,9 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .dropdown header{height:52px}
 .dropdown header h2{max-width:none}
 .dropdown.is-dragging,.sheet.is-dragging,.navigation.is-dragging{animation:none!important;transition:none}
+@media(max-width:899.98px){
+  .sheet.is-settled,.dropdown.is-settled,.sheet.is-dismissing,.dropdown.is-dismissing,.sheet.is-closing,.dropdown.is-closing{animation:none!important}
+}
 .nav-edge{position:absolute;top:0;right:0;width:28px;bottom:0;z-index:2;touch-action:none}
 @media(prefers-reduced-motion:no-preference){
   .dropdown.is-open{animation:dropdown-in .2s cubic-bezier(.22,1,.36,1) both}
