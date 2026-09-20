@@ -68,7 +68,7 @@ defined( 'ABSPATH' ) || exit;
 <div class="address-upsell" hidden>
 <svg class="address-hero" aria-hidden="true"><use href="#globe"/></svg>
 <h3>Put your site on the web</h3>
-<p class="sheet-copy">Free builds and plans your site. Giving it an address of its own, and pointing a domain you already own at it, come with a plan.</p>
+<p class="sheet-copy">A plan puts your site on an address of its own, and lets you point a domain you already own at it.</p>
 <p class="address-preview"><svg aria-hidden="true"><use href="#globe"/></svg><span data-address-upsell-example></span></p>
 <ul class="plan-features address-upsell-features">
 <li><svg aria-hidden="true"><use href="#check"/></svg><span>An address of your own</span></li>
@@ -132,7 +132,7 @@ defined( 'ABSPATH' ) || exit;
 </div>
 <div class="credits-card" hidden>
 <button class="credits-summary" type="button" aria-label="Plan and credits">
-<span class="credits-head"><span data-credits-plan>Free plan</span><span class="credits-count"><strong data-credits-available>0</strong><span data-credits-granted> of 0</span></span></span>
+<span class="credits-head"><span data-credits-plan>Your plan</span><span class="credits-count"><strong data-credits-available>0</strong><span data-credits-granted> of 0</span></span></span>
 <span class="credits-bar" aria-hidden="true"><span class="credits-fill" data-credits-fill></span></span>
 <span class="credits-resets" data-credits-resets></span>
 </button>
@@ -196,9 +196,9 @@ defined( 'ABSPATH' ) || exit;
 <header class="appearance-header"><button class="appearance-back plan-back" type="button" aria-label="Back to Settings"><svg><use href="#chevron-left"/></svg></button><h2 id="plan-title">Plan &amp; credits</h2></header>
 <div class="appearance-scroll">
 <div class="appearance-card plan-current">
-<div class="appearance-row"><div class="appearance-copy"><strong data-plan-name>Free plan</strong><p data-plan-renews></p></div><span class="plan-price-tag" data-plan-price></span></div>
+<div class="appearance-row"><div class="appearance-copy"><strong data-plan-name>Your plan</strong><p data-plan-renews></p></div><span class="plan-price-tag" data-plan-price></span></div>
 <div class="credits-meter"><div class="credits-head"><span data-plan-meter-label>Credits remaining</span><strong data-plan-meter>0 of 0</strong></div><div class="credits-bar" aria-hidden="true"><span class="credits-fill" data-plan-fill></span></div><p class="credits-resets" data-plan-resets></p></div>
-<div class="plan-actions"><button class="row-button plan-billing" type="button" hidden>Manage billing</button><button class="row-button plan-cancel" type="button" hidden>Move to Free when this period ends</button><button class="row-button plan-resume" type="button" hidden>Keep my plan</button><p class="overlay-note plan-scheduled" hidden>Moving to Free on <span data-plan-end></span>. Your credits stay until then.</p></div>
+<div class="plan-actions"><button class="row-button plan-billing" type="button" hidden>Manage billing</button><button class="row-button plan-cancel" type="button" hidden>Cancel when this period ends</button><button class="row-button plan-resume" type="button" hidden>Keep my plan</button><p class="overlay-note plan-scheduled" hidden>Ending on <span data-plan-end></span>. Your credits stay until then.</p></div>
 </div>
 <h3>Plans</h3>
 <div class="plan-cards" data-plan-cards></div>

@@ -726,8 +726,9 @@ function showNote(element, text, bad = true) {
 }
 const shortDate = ms => new Date(ms).toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
 const money = cents => cents === 0
-  ? 'Free'
+  ? '—'
   : `$${(cents / 100).toLocaleString('en-US', {minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2})}`;
+const listedPlans = () => (catalog?.plans ?? []).filter(plan => plan.key !== 'free' && plan.monthlyPriceCents > 0);
 
 // Sites: what the drawer lists, and what the composer builds into. A site's
 // conversation is its build thread, so selecting a site opens that thread.
@@ -1106,20 +1107,21 @@ function renderCredits() {
     const available = unlimited ? null : summary.available;
     const used = unlimited ? null : Math.max(0, granted - available);
     const when = shortDate(periodEnd);
-    const top = catalog?.plans[catalog.plans.length - 1]?.key ?? null;
+    const listed = listedPlans();
+    const top = listed[listed.length - 1]?.key ?? null;
     setText('[data-credits-plan]', `${plan.name} plan`);
     setText('[data-credits-available]', unlimited ? 'Unlimited' : String(available));
     setText('[data-credits-granted]', unlimited ? ' credits' : ` of ${granted}`);
     setFill('[data-credits-fill]', unlimited ? 1 : available, unlimited ? 1 : granted);
     setText('[data-credits-resets]', cancelAtPeriodEnd
-      ? `Moving to Free ${when}`
-      : plan.monthlyPriceCents ? `Renews ${when}` : granted > 0 ? `Expires ${when}` : 'Upgrade to start building');
+      ? `Ending ${when}`
+      : plan.monthlyPriceCents ? `Renews ${when}` : granted > 0 ? `Expires ${when}` : 'Choose a plan to start building');
     setText('[data-credits-cta]', plan.key === top ? (plan.topUps && !unlimited ? 'Top up' : 'Manage') : 'Upgrade');
     setText('[data-plan-name]', `${plan.name} plan`);
     setText('[data-plan-renews]', cancelAtPeriodEnd
       ? `Ends ${when}`
       : plan.monthlyPriceCents ? `Renews ${when}` : granted > 0 ? `Credits expire ${when}` : 'No monthly credits');
-    setText('[data-plan-price]', plan.monthlyPriceCents ? `${money(plan.monthlyPriceCents)}/mo` : 'Free');
+    setText('[data-plan-price]', plan.monthlyPriceCents ? `${money(plan.monthlyPriceCents)}/mo` : '—');
     setText('[data-plan-meter-label]', unlimited ? 'Credits' : 'Credits remaining');
     setText('[data-plan-meter]', unlimited ? 'Unlimited' : `${available} of ${granted}`);
     setFill('[data-plan-fill]', unlimited ? 1 : available, unlimited ? 1 : granted);
@@ -1164,9 +1166,10 @@ function renderPlanCards() {
   const cards = planScreen?.querySelector('[data-plan-cards]');
   const topUps = planScreen?.querySelector('[data-topup-list]');
   if (!cards || !topUps || !catalog) return;
-  const order = catalog.plans.map(plan => plan.key);
+  const plans = listedPlans();
+  const order = plans.map(plan => plan.key);
   const current = summary?.plan.key ?? null;
-  cards.replaceChildren(...catalog.plans.map(plan => {
+  cards.replaceChildren(...plans.map(plan => {
     const card = document.createElement('article');
     card.className = 'plan-card';
     card.classList.toggle('is-current', plan.key === current);
@@ -1221,16 +1224,6 @@ function renderPlanCards() {
       cta.textContent = 'Current plan';
       cta.disabled = true;
       cta.classList.add('is-secondary');
-    } else if (plan.key === 'free') {
-      const scheduled = Boolean(summary?.cancelAtPeriodEnd);
-      cta.textContent = scheduled ? 'Scheduled' : 'Downgrade';
-      cta.disabled = scheduled || !summary;
-      cta.classList.add('is-secondary');
-      cta.addEventListener('click', () => {
-        const error = planScreen.querySelector('.overlay-error');
-        showNote(error, '');
-        forge.billing.cancel().catch(caught => showNote(error, messageOf(caught)));
-      });
     } else {
       const upgrade = current === null || order.indexOf(plan.key) > order.indexOf(current);
       cta.textContent = upgrade ? 'Upgrade' : 'Switch';

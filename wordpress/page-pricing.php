@@ -107,7 +107,7 @@ get_header();
 
 <section class="section cta-band on-plate">
 	<div class="wrap cta-inner">
-		<h2>Start free. Upgrade when the first build lands.</h2>
+		<h2>Pick a plan and describe the site you want.</h2>
 		<div class="button-row">
 			<a class="button button-large" href="<?php echo esc_url( home_url( '/app/' ) ); ?>" data-member-text="Open Forge">Start building</a>
 		</div>

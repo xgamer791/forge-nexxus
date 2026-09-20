@@ -64,14 +64,19 @@ p{margin:0}
 .nav-open .nav-toggle span:last-child{transform:translateY(-4px) rotate(-45deg)}
 html.is-member [data-member-hide]{display:none}
 
-/* Hero: the composer is the product, so it is the only thing in the first
-   viewport. Docked 25px from the section floor. A modest radius on this box
-   only — buttons stay square. */
+/* Hero: the composer is the product — the same pill as the mobile app,
+   docked 25px from the section floor. */
 .hero-stage{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:25px}
-.hero-composer{width:100%;max-width:900px;margin:0 auto;display:flex;align-items:stretch;background:var(--canvas);border:1px solid var(--ink);border-radius:18px;padding:8px 8px 8px 24px;text-align:left}
-.hero-composer textarea{flex:1;min-width:0;resize:none;border:0;background:none;color:var(--ink);font:inherit;font-size:18px;line-height:1.45;padding:13px 0;min-height:54px;max-height:220px;outline:none}
-.hero-composer textarea::placeholder{color:var(--ink-3);opacity:1}
-.hero-composer .button{align-self:flex-end;min-height:54px}
+.hero-composer{width:100%;max-width:640px;margin:0 auto;height:97px;display:block;background:#fff;border:1px solid #d1d1d6;border-radius:27px;padding:14px 16px 12px;text-align:left;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:17px;color:#1c1c1e}
+.hero-composer textarea{display:block;width:100%;height:26px;border:0;background:none;resize:none;padding:0;line-height:23px;font:inherit;color:inherit;letter-spacing:0;outline:none}
+.hero-composer textarea::placeholder{color:#3a3a3c;opacity:1}
+.hero-composer .toolbar{display:flex;align-items:center;height:24px;margin-top:16px;gap:15px}
+.hero-composer .toolbar button{display:flex;align-items:center;justify-content:center;width:auto;min-height:0;padding:0;border:0;border-radius:0;background:none;color:#1c1c1e}
+.hero-composer .add{width:23px;height:24px}
+.hero-composer .add svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hero-composer .microphone{margin-left:auto;width:21px;height:24px}
+.hero-composer .microphone svg{width:18px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hero-composer .microphone[aria-pressed=true]{color:#1c1c1e}
 .hero-visual{margin:0;background:var(--plate)}
 .hero-visual img{width:100%}
 
@@ -249,9 +254,6 @@ html.is-member [data-member-hide]{display:none}
 @media (max-width:719.98px){
   .showcase-grid,.footer-grid{grid-template-columns:1fr}
   .showcase-grid{gap:32px}
-  .hero-composer{flex-direction:column;padding:14px}
-  .hero-composer textarea{min-height:88px;padding:6px 0 10px;font-size:17px}
-  .hero-composer .button{align-self:stretch}
   .plan-price strong{font-size:var(--t5)}
   .faq-list details p{padding-right:0}
   .cost-table thead{display:none}
@@ -259,6 +261,9 @@ html.is-member [data-member-hide]{display:none}
   .cost-table th,.cost-table td{border:0;padding:2px 0}
   .cost-table td:not(.cost-num){grid-column:1/-1}
   .cost-num{grid-column:2;grid-row:1}
+}
+@media (min-width:900px){
+  .hero-composer{max-width:860px;height:104px;padding:16px 20px 12px}
 }
 @media (prefers-reduced-motion:reduce){
   .button,.site-header,.nav-toggle span{transition:none}

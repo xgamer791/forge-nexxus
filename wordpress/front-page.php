@@ -31,8 +31,15 @@ get_header();
 		<h1 class="visually-hidden">Forge Nexxus</h1>
 		<form class="hero-composer" action="<?php echo esc_url( home_url( '/app/' ) ); ?>" method="get" data-hero-composer>
 			<label class="visually-hidden" for="hero-prompt">Describe the site you want</label>
-			<textarea id="hero-prompt" name="prompt" rows="1" placeholder="A website for my bakery, with the menu and opening hours…" autocomplete="off" spellcheck="true" maxlength="600"></textarea>
-			<button class="button" type="submit">Build it</button>
+			<textarea id="hero-prompt" name="prompt" rows="1" placeholder="Describe the site you want…" aria-label="Describe your site" autocapitalize="sentences" autocomplete="off" spellcheck="true" maxlength="600"></textarea>
+			<div class="toolbar">
+				<button class="add" type="button" aria-label="Add images or files" data-hero-add>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M4 12h16"/></svg>
+				</button>
+				<button class="microphone" type="button" aria-label="Start voice input" aria-pressed="false">
+					<svg viewBox="0 0 24 28" aria-hidden="true"><rect x="8" y="2" width="8" height="16" rx="4"/><path d="M4 12v3a8 8 0 0 0 16 0v-3M12 23v3"/></svg>
+				</button>
+			</div>
 		</form>
 	</div>
 	<figure class="hero-visual">
@@ -191,7 +198,7 @@ get_header();
 			</details>
 			<details>
 				<summary>Can I cancel?</summary>
-				<p>Any time, from Plan and credits. You move to Free when the period ends and keep your credits until then. Your sites stay.</p>
+				<p>Any time, from Plan and credits. Your plan ends when the period does and you keep your credits until then. Your sites stay.</p>
 			</details>
 		</div>
 	</div>
@@ -200,7 +207,7 @@ get_header();
 <section class="section cta-band on-plate">
 	<div class="wrap cta-inner">
 		<h2>Build your first site tonight.</h2>
-		<p>Free to start. Describe it in a sentence and Forge does the rest.</p>
+		<p>Describe it in a sentence and Forge does the rest.</p>
 		<div class="button-row">
 			<a class="button button-large" href="<?php echo esc_url( home_url( '/app/' ) ); ?>" data-member-text="Open Forge">Start building</a>
 			<a class="button button-ghost button-large" href="<?php echo esc_url( home_url( '/pricing/' ) ); ?>">See pricing</a>

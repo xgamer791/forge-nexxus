@@ -49,16 +49,36 @@ function forge_convex_query( string $path, array $args = [] ) {
 function forge_catalog(): ?array {
 	$cached = get_transient( 'forge_catalog' );
 	if ( is_array( $cached ) ) {
-		return $cached;
+		return forge_without_free_plan( $cached );
 	}
 	$fresh = forge_convex_query( 'billing:catalog' );
 	if ( is_array( $fresh ) && ! empty( $fresh['plans'] ) ) {
+		$fresh = forge_without_free_plan( $fresh );
 		set_transient( 'forge_catalog', $fresh, FORGE_CATALOG_TTL );
 		update_option( 'forge_catalog_last', $fresh, false );
 		return $fresh;
 	}
 	$last = get_option( 'forge_catalog_last' );
-	return is_array( $last ) ? $last : null;
+	return is_array( $last ) ? forge_without_free_plan( $last ) : null;
+}
+
+/** Free is not a product. Drop it even if an older catalog still lists it. */
+function forge_without_free_plan( array $catalog ): array {
+	$plans = $catalog['plans'] ?? [];
+	$catalog['plans'] = array_values(
+		array_filter(
+			is_array( $plans ) ? $plans : [],
+			static function ( $plan ) {
+				if ( ! is_array( $plan ) ) {
+					return false;
+				}
+				$key     = (string) ( $plan['key'] ?? '' );
+				$monthly = (int) round( (float) ( $plan['monthlyPriceCents'] ?? 0 ) );
+				return 'free' !== $key && $monthly > 0;
+			}
+		)
+	);
+	return $catalog;
 }
 
 /** Same rule as the app: whole dollars when even, two decimals otherwise. */

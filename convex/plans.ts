@@ -39,9 +39,8 @@ export type Plan = {
   signupCredits: number;
   // How many sites the plan holds at once; null is unlimited.
   maxSites: number | null;
-  // Whether the plan gets a public address at all. Free is for planning and
-  // building a site; putting one on an address of its own, and pointing a
-  // domain at that, start with the first paid plan.
+  // Whether the plan gets a public address at all. Unpaid accounts cannot
+  // publish; putting a site on an address of its own starts with Starter.
   publicAddress: boolean;
   // Shown on the plan card; nothing enforces it yet.
   visitorsPerMonth: number | null;
@@ -54,27 +53,28 @@ export type Plan = {
   features: string[];
 };
 
+// Unpaid is not a product. Existing rows, a cancelled card, and a member who
+// has not checked out yet still store `free` so the schema stays valid. The
+// catalog never lists it.
+export const UNPAID: Plan = {
+  key: "free",
+  name: "Unpaid",
+  tagline: "Choose a plan to build.",
+  monthlyPriceCents: 0,
+  yearlyPriceCents: 0,
+  monthlyCredits: 10,
+  signupCredits: 20,
+  maxSites: 1,
+  visitorsPerMonth: null,
+  publicAddress: false,
+  customDomains: false,
+  removeBadge: false,
+  codeDownload: false,
+  topUps: false,
+  features: [],
+};
+
 export const PLANS: readonly Plan[] = [
-  {
-    key: "free",
-    name: "Free",
-    tagline: "Explore Forge and plan your site.",
-    monthlyPriceCents: 0,
-    yearlyPriceCents: 0,
-    // A small monthly allowance so planning a site out loud keeps working past
-    // the first period, and a welcome grant that together with it opens at less
-    // than a build costs. Free buys conversation, never a build.
-    monthlyCredits: 10,
-    signupCredits: 20,
-    maxSites: 1,
-    visitorsPerMonth: null,
-    publicAddress: false,
-    customDomains: false,
-    removeBadge: false,
-    codeDownload: false,
-    topUps: false,
-    features: ["Mobile-optimized", "Forge badge on your site"],
-  },
   {
     key: "starter",
     name: "Starter",
@@ -207,7 +207,9 @@ export function paidPlanKey(key: string): PaidPlanKey | null {
 }
 
 export function planFor(key: string): Plan {
-  return PLANS.find((plan) => plan.key === normalizePlanKey(key)) ?? PLANS[0];
+  const normalized = normalizePlanKey(key);
+  if (normalized === "free") return UNPAID;
+  return PLANS.find((plan) => plan.key === normalized) ?? UNPAID;
 }
 
 // The catalog runs cheapest first, so the last plan is the top tier: what an

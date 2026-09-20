@@ -26,13 +26,15 @@
     document.querySelectorAll('[data-member-text]').forEach(el => { el.textContent = el.dataset.memberText; });
   }
 
-  // The hero composer hands the prompt to the builder; sign-in happens there
-  // and the prompt is waiting in the composer afterwards.
+  // The hero composer is the mobile app's pill. Enter and a typed prompt go
+  // to the builder; plus opens the builder (attachments live there); the mic
+  // is the same voice input as the app.
   const composer = document.querySelector('[data-hero-composer]');
   const field = composer?.querySelector('textarea');
+  const add = composer?.querySelector('[data-hero-add]');
+  const microphone = composer?.querySelector('.microphone');
+  const restingPlaceholder = 'Describe the site you want…';
   if (composer && field) {
-    const grow = () => { field.style.height = 'auto'; field.style.height = `${Math.min(field.scrollHeight, 200)}px`; };
-    field.addEventListener('input', grow);
     field.addEventListener('keydown', event => {
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); composer.requestSubmit(); }
     });
@@ -41,6 +43,63 @@
       if (!prompt) { event.preventDefault(); field.focus(); return; }
       field.value = prompt;
     });
+    add?.addEventListener('click', () => {
+      const prompt = field.value.trim();
+      if (prompt) composer.requestSubmit();
+      else location.assign(composer.getAttribute('action') || '/app/');
+    });
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition;
+    let voicePrefix = '';
+    let voiceTranscript = '';
+    const setVoiceInputActive = active => {
+      microphone?.setAttribute('aria-pressed', String(active));
+      microphone?.setAttribute('aria-label', active ? 'Stop voice input' : 'Start voice input');
+      field.placeholder = active ? 'Listening…' : restingPlaceholder;
+    };
+    microphone?.addEventListener('click', () => {
+      if (!SpeechRecognition) {
+        field.placeholder = 'Voice input is not supported in this browser';
+        field.focus();
+        return;
+      }
+      if (microphone.getAttribute('aria-pressed') === 'true') {
+        recognition?.stop();
+        return;
+      }
+      recognition ??= new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = navigator.language || 'en-US';
+      voicePrefix = field.value.trim();
+      if (voicePrefix) voicePrefix += ' ';
+      voiceTranscript = '';
+      recognition.onstart = () => setVoiceInputActive(true);
+      recognition.onresult = event => {
+        let interimTranscript = '';
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const transcript = event.results[index][0].transcript.trim();
+          if (event.results[index].isFinal) voiceTranscript += `${transcript} `;
+          else interimTranscript += transcript;
+        }
+        field.value = `${voicePrefix}${voiceTranscript}${interimTranscript}`.trimEnd();
+      };
+      recognition.onerror = event => {
+        setVoiceInputActive(false);
+        if (!field.value) {
+          field.placeholder = event.error === 'not-allowed'
+            ? 'Enable microphone access to use voice input'
+            : 'Voice input unavailable';
+        }
+      };
+      recognition.onend = () => {
+        setVoiceInputActive(false);
+        field.value = field.value.trimEnd();
+        field.focus();
+      };
+      try { recognition.start(); } catch { setVoiceInputActive(false); }
+    });
+    window.addEventListener('pagehide', () => recognition?.abort());
   }
 
   // Monthly / yearly: both prices come with the card from the catalog.

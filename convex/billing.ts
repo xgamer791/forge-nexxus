@@ -147,8 +147,8 @@ async function record(
   await ctx.db.insert("creditLedger", { userId, kind, amount, balanceAfter, note, createdAt });
 }
 
-// Brings a member's row up to date and returns it: creates a free subscription
-// for one who has none, and rolls an ended period forward.
+// Brings a member's row up to date and returns it: creates an unpaid
+// subscription for one who has none, and rolls an ended period forward.
 export async function ensureCurrent(ctx: MutationCtx, userId: Id<"users">, now = Date.now()) {
   return await holdAdminPlan(ctx, userId, await rolledForward(ctx, userId, now), now);
 }
@@ -172,8 +172,8 @@ async function holdAdminPlan(
 async function rolledForward(ctx: MutationCtx, userId: Id<"users">, now: number) {
   const existing = await subscriptionFor(ctx, userId);
   if (!existing) {
-    // The first plan is free, and it comes with a one-time welcome grant on
-    // top of whatever the period allows.
+    // A member who has not checked out yet is unpaid. A one-time welcome
+    // grant sits on top of whatever that period allows.
     const plan = planFor("free");
     const fresh = opening("free", now);
     const credits = fresh.credits + plan.signupCredits;
@@ -298,19 +298,19 @@ export const setCancel = internalMutation({
   args: { userId: v.id("users"), cancel: v.boolean() },
   handler: async (ctx, { userId, cancel: cancelAtPeriodEnd }) => {
     const sub = await ensureCurrent(ctx, userId);
-    if (cancelAtPeriodEnd && sub.planKey === "free") throw new ConvexError("You're already on the free plan");
+    if (cancelAtPeriodEnd && sub.planKey === "free") throw new ConvexError("You're already off a paid plan");
     await ctx.db.patch(sub._id, { cancelAtPeriodEnd, updatedAt: Date.now() });
   },
 });
 
-// Moves to the free plan when the paid period ends; nothing is lost before
-// then. A plan Stripe is billing is told the same thing, so the two agree.
+// Leaves the paid plan when the period ends; nothing is lost before then.
+// A plan Stripe is billing is told the same thing, so the two agree.
 export const cancel = action({
   args: {},
   handler: async (ctx) => {
     const me = await ctx.runQuery(internal.billing.checkoutContext, {});
     if (!me) throw new ConvexError("Sign in to change your plan");
-    if (me.planKey === "free") throw new ConvexError("You're already on the free plan");
+    if (me.planKey === "free") throw new ConvexError("You're already off a paid plan");
     if (me.stripeSubscriptionId && process.env.STRIPE_SECRET_KEY) {
       await stripeRequest(`/subscriptions/${me.stripeSubscriptionId}`, { cancel_at_period_end: "true" });
     }
@@ -356,7 +356,7 @@ export const checkout = action({
     const me = await ctx.runQuery(internal.billing.checkoutContext, {});
     if (!me) throw new ConvexError("Sign in to change your plan");
     const chosen = plan ? normalizePlanKey(plan) : undefined;
-    if (plan === "free") throw new ConvexError("Downgrading happens from Plan & credits");
+    if (plan === "free") throw new ConvexError("Cancelling happens from Plan & credits");
     if (!chosen && !topUpFor(topUp ?? "")) throw new ConvexError("Choose a plan or a credit pack");
     if (!chosen && topUp && !me.plan.topUps) {
       throw new ConvexError(`Extra credits come with the ${cheapestWith("topUps")} plan`);
