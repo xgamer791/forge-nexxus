@@ -8,8 +8,9 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
+<meta name="app-version" content="41d40dfa1ddb41b458d5341bbee6a0ec18595449">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#121315">
+<meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">
 <meta name="forge-redirect" content="<?php echo esc_attr( home_url( '/app/' ) ); ?>">
 <meta name="apple-mobile-web-app-capable" content="yes">
