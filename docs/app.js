@@ -14,6 +14,13 @@ const RETRY_AFTER_MS = 300000;
 const openedAt = Date.now();
 let retriedUpdate = false;
 let checkingRelease = false;
+function interactionInProgress() {
+  const surface = document.querySelector(
+    '.sheet.is-open,.navigation.is-open,.appearance.is-open,.overlay.is-open,.theme-menu:not([hidden]),.font-menu:not([hidden])',
+  );
+  const active = document.activeElement;
+  return Boolean(surface || active?.matches('input,textarea,select,[contenteditable="true"]'));
+}
 async function checkRelease() {
   if (!loadedVersion || loadedVersion === 'development' || checkingRelease || document.hidden) return;
   checkingRelease = true;
@@ -24,6 +31,7 @@ async function checkRelease() {
     if (!response.ok) return;
     const {version} = await response.json();
     if (!/^[a-f0-9]{40}$/.test(version) || version === loadedVersion) return;
+    if (interactionInProgress()) return;
     if (version === attemptedVersion) {
       if (retriedUpdate || Date.now() - openedAt < RETRY_AFTER_MS) return;
       retriedUpdate = true;
