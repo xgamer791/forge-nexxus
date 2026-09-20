@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
 <body <?php body_class(); ?>>
 <?php wp_body_open(); ?>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg"><defs>
-<symbol id="menu" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/></symbol><symbol id="gear" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm109.94-52.79a8,8,0,0,0-3.89-5.4l-29.83-17-.12-33.62a8,8,0,0,0-2.83-6.08,111.91,111.91,0,0,0-36.72-20.67,8,8,0,0,0-6.46.59L128,41.85,97.88,25a8,8,0,0,0-6.47-.6A112.1,112.1,0,0,0,54.73,45.15a8,8,0,0,0-2.83,6.07l-.15,33.65-29.83,17a8,8,0,0,0-3.89,5.4,106.47,106.47,0,0,0,0,41.56,8,8,0,0,0,3.89,5.4l29.83,17,.12,33.62a8,8,0,0,0,2.83,6.08,111.91,111.91,0,0,0,36.72,20.67,8,8,0,0,0,6.46-.59L128,214.15,158.12,231a7.91,7.91,0,0,0,3.9,1,8.09,8.09,0,0,0,2.57-.42,112.1,112.1,0,0,0,36.68-20.73,8,8,0,0,0,2.83-6.07l.15-33.65,29.83-17a8,8,0,0,0,3.89-5.4A106.47,106.47,0,0,0,237.94,107.21Zm-15,34.91-28.57,16.25a8,8,0,0,0-3,3c-.58,1-1.19,2.06-1.81,3.06a7.94,7.94,0,0,0-1.22,4.21l-.15,32.25a95.89,95.89,0,0,1-25.37,14.3L134,199.13a8,8,0,0,0-3.91-1h-.19c-1.21,0-2.43,0-3.64,0a8.08,8.08,0,0,0-4.1,1l-28.84,16.1A96,96,0,0,1,67.88,201l-.11-32.2a8,8,0,0,0-1.22-4.22c-.62-1-1.23-2-1.8-3.06a8.09,8.09,0,0,0-3-3.06l-28.6-16.29a90.49,90.49,0,0,1,0-28.26L61.67,97.63a8,8,0,0,0,3-3c.58-1,1.19-2.06,1.81-3.06a7.94,7.94,0,0,0,1.22-4.21l.15-32.25a95.89,95.89,0,0,1,25.37-14.3L122,56.87a8,8,0,0,0,4.1,1c1.21,0,2.43,0,3.64,0a8.08,8.08,0,0,0,4.1-1l28.84-16.1A96,96,0,0,1,188.12,55l.11,32.2a8,8,0,0,0,1.22,4.22c.62,1,1.23,2,1.8,3.06a8.09,8.09,0,0,0,3,3.06l28.6,16.29A90.49,90.49,0,0,1,222.9,142.12Z"/></symbol><symbol id="plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol><symbol id="close" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></symbol><symbol id="mic" viewBox="0 0 24 28"><rect x="8" y="2" width="8" height="16" rx="4"/><path d="M4 12v3a8 8 0 0 0 16 0v-3M12 23v3"/></symbol><symbol id="chevron" viewBox="0 0 24 24"><path d="m9 5 6 7-6 7"/></symbol><symbol id="check" viewBox="0 0 24 24"><path d="m3 12 6 6L22 5"/></symbol><symbol id="camera" viewBox="0 0 24 24"><path d="M3 6h4l2-3h6l2 3h4a1 1 0 0 1 1 1v13H2V7a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="4"/></symbol><symbol id="photo" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m7 21 10-10 4 4"/></symbol><symbol id="clip" viewBox="0 0 24 24"><path d="m20 11-9 10a6 6 0 0 1-8-8L13 3a4 4 0 0 1 6 6L9 19a2 2 0 0 1-3-3L16 6"/></symbol><symbol id="globe" viewBox="0 0 256 256" stroke-width="16"><circle cx="128" cy="128" r="96"/><path d="M37.5 96h181M37.5 160h181"/><ellipse cx="128" cy="128" rx="40" ry="93.4"/></symbol><symbol id="chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol><symbol id="chevron-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol><symbol id="mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol><symbol id="google" viewBox="0 0 24 24"><path d="M21 12.5h-8.5"/><path d="M20.5 12.5A8.5 8.5 0 1 1 18 6"/></symbol><symbol id="apple" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M16.37 12.7c0-2.5 2.05-3.7 2.14-3.76-1.17-1.7-2.98-1.94-3.62-1.97-1.54-.16-3.01.9-3.79.9-.78 0-1.99-.88-3.27-.86-1.68.03-3.23.98-4.1 2.48-1.75 3.03-.45 7.52 1.26 9.98.83 1.2 1.82 2.55 3.12 2.5 1.25-.05 1.72-.81 3.23-.81s1.94.81 3.26.78c1.35-.02 2.2-1.22 3.02-2.43.95-1.39 1.34-2.74 1.36-2.81-.03-.01-2.61-1-2.61-3.97zM13.9 5.4c.69-.84 1.16-2 1.03-3.16-1 .04-2.2.66-2.92 1.5-.64.74-1.2 1.93-1.05 3.07 1.11.09 2.25-.57 2.94-1.41z"/></symbol>
+<symbol id="menu" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/></symbol><symbol id="gear" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm109.94-52.79a8,8,0,0,0-3.89-5.4l-29.83-17-.12-33.62a8,8,0,0,0-2.83-6.08,111.91,111.91,0,0,0-36.72-20.67,8,8,0,0,0-6.46.59L128,41.85,97.88,25a8,8,0,0,0-6.47-.6A112.1,112.1,0,0,0,54.73,45.15a8,8,0,0,0-2.83,6.07l-.15,33.65-29.83,17a8,8,0,0,0-3.89,5.4,106.47,106.47,0,0,0,0,41.56,8,8,0,0,0,3.89,5.4l29.83,17,.12,33.62a8,8,0,0,0,2.83,6.08,111.91,111.91,0,0,0,36.72,20.67,8,8,0,0,0,6.46-.59L128,214.15,158.12,231a7.91,7.91,0,0,0,3.9,1,8.09,8.09,0,0,0,2.57-.42,112.1,112.1,0,0,0,36.68-20.73,8,8,0,0,0,2.83-6.07l.15-33.65,29.83-17a8,8,0,0,0,3.89-5.4A106.47,106.47,0,0,0,237.94,107.21Zm-15,34.91-28.57,16.25a8,8,0,0,0-3,3c-.58,1-1.19,2.06-1.81,3.06a7.94,7.94,0,0,0-1.22,4.21l-.15,32.25a95.89,95.89,0,0,1-25.37,14.3L134,199.13a8,8,0,0,0-3.91-1h-.19c-1.21,0-2.43,0-3.64,0a8.08,8.08,0,0,0-4.1,1l-28.84,16.1A96,96,0,0,1,67.88,201l-.11-32.2a8,8,0,0,0-1.22-4.22c-.62-1-1.23-2-1.8-3.06a8.09,8.09,0,0,0-3-3.06l-28.6-16.29a90.49,90.49,0,0,1,0-28.26L61.67,97.63a8,8,0,0,0,3-3c.58-1,1.19-2.06,1.81-3.06a7.94,7.94,0,0,0,1.22-4.21l.15-32.25a95.89,95.89,0,0,1,25.37-14.3L122,56.87a8,8,0,0,0,4.1,1c1.21,0,2.43,0,3.64,0a8.08,8.08,0,0,0,4.1-1l28.84-16.1A96,96,0,0,1,188.12,55l.11,32.2a8,8,0,0,0,1.22,4.22c.62,1,1.23,2,1.8,3.06a8.09,8.09,0,0,0,3,3.06l28.6,16.29A90.49,90.49,0,0,1,222.9,142.12Z"/></symbol><symbol id="plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol><symbol id="close" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></symbol><symbol id="mic" viewBox="0 0 24 28"><rect x="8" y="2" width="8" height="16" rx="4"/><path d="M4 12v3a8 8 0 0 0 16 0v-3M12 23v3"/></symbol><symbol id="chevron" viewBox="0 0 24 24"><path d="m9 5 6 7-6 7"/></symbol><symbol id="check" viewBox="0 0 24 24"><path d="m3 12 6 6L22 5"/></symbol><symbol id="camera" viewBox="0 0 24 24"><path d="M3 6h4l2-3h6l2 3h4a1 1 0 0 1 1 1v13H2V7a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="4"/></symbol><symbol id="photo" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m7 21 10-10 4 4"/></symbol><symbol id="clip" viewBox="0 0 24 24"><path d="m20 11-9 10a6 6 0 0 1-8-8L13 3a4 4 0 0 1 6 6L9 19a2 2 0 0 1-3-3L16 6"/></symbol><symbol id="globe" viewBox="0 0 256 256" stroke-width="16"><circle cx="128" cy="128" r="96"/><path d="M37.5 96h181M37.5 160h181"/><ellipse cx="128" cy="128" rx="40" ry="93.4"/></symbol><symbol id="chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol><symbol id="chevron-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol><symbol id="arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol><symbol id="mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol><symbol id="google" viewBox="0 0 24 24"><path d="M21 12.5h-8.5"/><path d="M20.5 12.5A8.5 8.5 0 1 1 18 6"/></symbol><symbol id="apple" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M16.37 12.7c0-2.5 2.05-3.7 2.14-3.76-1.17-1.7-2.98-1.94-3.62-1.97-1.54-.16-3.01.9-3.79.9-.78 0-1.99-.88-3.27-.86-1.68.03-3.23.98-4.1 2.48-1.75 3.03-.45 7.52 1.26 9.98.83 1.2 1.82 2.55 3.12 2.5 1.25-.05 1.72-.81 3.23-.81s1.94.81 3.26.78c1.35-.02 2.2-1.22 3.02-2.43.95-1.39 1.34-2.74 1.36-2.81-.03-.01-2.61-1-2.61-3.97zM13.9 5.4c.69-.84 1.16-2 1.03-3.16-1 .04-2.2.66-2.92 1.5-.64.74-1.2 1.93-1.05 3.07 1.11.09 2.25-.57 2.94-1.41z"/></symbol>
 <symbol id="preview-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
 </defs></svg>
 <section id="auth-gate" class="auth-gate" aria-label="Sign in"></section>
@@ -118,7 +118,7 @@ defined( 'ABSPATH' ) || exit;
 <p class="sites-error" role="alert" hidden></p>
 </div>
 <div class="settings-content" id="settings-content" hidden>
-<button class="settings-back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12H4m7-7-7 7 7 7"/></svg><span>Back</span></button>
+<button class="settings-back" type="button"><svg aria-hidden="true"><use href="#arrow-left"/></svg><span>Back</span></button>
 <div class="settings-list">
 <h3 class="settings-group">Account</h3>
 <button class="open-profile" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="4"/><path d="M5 22v-3a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v3"/></svg><span>Profile</span></button>
@@ -141,7 +141,7 @@ defined( 'ABSPATH' ) || exit;
 <footer class="nav-footer"><button class="profile" data-open="account" aria-haspopup="dialog"><span class="avatar" data-account-avatar>G</span><span data-account-label>Guest</span></button><button class="settings" aria-label="Settings" aria-expanded="false" aria-controls="settings-content"><svg aria-hidden="true"><use href="#gear"/></svg></button></footer>
 </section>
 <section class="appearance" role="dialog" aria-modal="true" aria-labelledby="appearance-title" hidden>
-<header class="appearance-header"><button class="appearance-back" type="button" aria-label="Back to Settings"><svg><use href="#chevron-left"/></svg></button><h2 id="appearance-title">Appearance</h2></header>
+<header class="appearance-header"><button class="appearance-back" type="button" aria-label="Back to Settings"><svg><use href="#arrow-left"/></svg></button><h2 id="appearance-title">Appearance</h2></header>
 <div class="appearance-scroll">
 <div class="appearance-card theme-card">
 <div class="appearance-row"><div class="appearance-copy"><strong>Theme</strong><p>Choose between light and dark.</p></div>
@@ -178,7 +178,7 @@ defined( 'ABSPATH' ) || exit;
 </div>
 </section>
 <section class="overlay profile-screen" data-back=".profile-back" role="dialog" aria-modal="true" aria-labelledby="profile-title" hidden>
-<header class="appearance-header"><button class="appearance-back profile-back" type="button" aria-label="Back to Settings"><svg><use href="#chevron-left"/></svg></button><h2 id="profile-title">Profile</h2></header>
+<header class="appearance-header"><button class="appearance-back profile-back" type="button" aria-label="Back to Settings"><svg><use href="#arrow-left"/></svg></button><h2 id="profile-title">Profile</h2></header>
 <div class="appearance-scroll">
 <div class="profile-identity"><span class="avatar avatar-large" data-account-avatar>?</span><strong data-account-name></strong><small data-account-email></small></div>
 <h3>Name</h3>
@@ -193,7 +193,7 @@ defined( 'ABSPATH' ) || exit;
 </div>
 </section>
 <section class="overlay plan" data-back=".plan-back" role="dialog" aria-modal="true" aria-labelledby="plan-title" hidden>
-<header class="appearance-header"><button class="appearance-back plan-back" type="button" aria-label="Back to Settings"><svg><use href="#chevron-left"/></svg></button><h2 id="plan-title">Plan &amp; credits</h2></header>
+<header class="appearance-header"><button class="appearance-back plan-back" type="button" aria-label="Back to Settings"><svg><use href="#arrow-left"/></svg></button><h2 id="plan-title">Plan &amp; credits</h2></header>
 <div class="appearance-scroll">
 <div class="appearance-card plan-current">
 <div class="appearance-row"><div class="appearance-copy"><strong data-plan-name>Your plan</strong><p data-plan-renews></p></div><span class="plan-price-tag" data-plan-price></span></div>
@@ -209,7 +209,7 @@ defined( 'ABSPATH' ) || exit;
 </div>
 </section>
 <section class="overlay usage" data-back=".usage-back" role="dialog" aria-modal="true" aria-labelledby="usage-title" hidden>
-<header class="appearance-header"><button class="appearance-back usage-back" type="button" aria-label="Back to Settings"><svg><use href="#chevron-left"/></svg></button><h2 id="usage-title">Usage</h2></header>
+<header class="appearance-header"><button class="appearance-back usage-back" type="button" aria-label="Back to Settings"><svg><use href="#arrow-left"/></svg></button><h2 id="usage-title">Usage</h2></header>
 <div class="appearance-scroll">
 <div class="appearance-card"><div class="appearance-row"><div class="appearance-copy"><strong data-usage-headline>This period</strong><p data-usage-sub></p></div></div></div>
 <h3>Activity</h3>
@@ -218,7 +218,7 @@ defined( 'ABSPATH' ) || exit;
 </div>
 </section>
 <section class="overlay domains" data-back=".domains-back" role="dialog" aria-modal="true" aria-labelledby="domains-title" hidden>
-<header class="appearance-header"><button class="appearance-back domains-back" type="button" aria-label="Back to Settings"><svg><use href="#chevron-left"/></svg></button><h2 id="domains-title">Domains</h2></header>
+<header class="appearance-header"><button class="appearance-back domains-back" type="button" aria-label="Back to Settings"><svg><use href="#arrow-left"/></svg></button><h2 id="domains-title">Domains</h2></header>
 <div class="appearance-scroll">
 <form class="appearance-stack domain-form" hidden>
 <div class="appearance-row"><select class="text-field" name="siteId" aria-label="Site" required></select></div>
@@ -234,7 +234,7 @@ defined( 'ABSPATH' ) || exit;
 </div>
 </section>
 <section class="overlay preview" data-back=".preview-back" role="dialog" aria-modal="true" aria-labelledby="preview-title" hidden>
-<header class="appearance-header"><button class="appearance-back preview-back" type="button" aria-label="Back to the thread"><svg><use href="#chevron-left"/></svg></button><h2 id="preview-title" data-site-name>Preview</h2></header>
+<header class="appearance-header"><button class="appearance-back preview-back" type="button" aria-label="Back to the thread"><svg><use href="#arrow-left"/></svg></button><h2 id="preview-title" data-site-name>Preview</h2></header>
 <div class="preview-frame"><iframe class="preview-iframe" title="Site preview" sandbox="" referrerpolicy="no-referrer"></iframe><p class="preview-empty" hidden>Nothing built yet. Describe your site and Forge will make a first version.</p></div>
 <footer class="preview-footer">
 <p class="preview-status" data-preview-status></p>
