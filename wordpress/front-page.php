@@ -22,19 +22,42 @@ $showcase = [
 	[ 'show-nonprofit', 'An ocean conservation nonprofit with a donate button', 'Nonprofit' ],
 	[ 'show-agency', 'A loud, colourful site for my design agency with case studies', 'Design agency' ],
 ];
+$hero_messages = [
+	'World class website designs in minutes',
+	'Not just a beautiful design, we aim to scale your business',
+	'Fully customized tools with your needs in mind',
+	'Legendary customer support that exceeds expectations',
+	'Don’t fall behind ai, let it work for you with Forge Nexxus',
+];
 
 get_header();
+$spread_ver = (string) max(
+	(int) @filemtime( get_theme_file_path( 'assets/img/hero-spread.jpg' ) ),
+	(int) @filemtime( get_theme_file_path( 'assets/img/hero-spread-1200.jpg' ) )
+);
+$spread     = add_query_arg( 'ver', $spread_ver, forge_img( 'hero-spread.jpg' ) );
+$spread_sm  = add_query_arg( 'ver', $spread_ver, forge_img( 'hero-spread-1200.jpg' ) );
 ?>
 
 <section class="hero">
-	<video class="hero-background-video is-active" autoplay muted loop playsinline preload="auto" poster="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-poster.jpg' ) ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
+	<video class="hero-background-video is-active" autoplay muted playsinline preload="auto" poster="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-poster.jpg' ) ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
 		<source src="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) ); ?>" type="video/mp4">
 	</video>
-	<video class="hero-background-video" muted loop playsinline preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
+	<video class="hero-background-video" muted playsinline preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
 		<source src="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) ); ?>" type="video/mp4">
 	</video>
 	<div class="wrap hero-stage">
 		<h1 class="visually-hidden">Forge Nexxus</h1>
+		<div class="hero-message-rotator" data-hero-messages aria-hidden="true">
+			<?php foreach ( $hero_messages as $index => $message ) : ?>
+				<p class="hero-message<?php echo 0 === $index ? ' is-active' : ''; ?>"><?php echo esc_html( $message ); ?></p>
+			<?php endforeach; ?>
+		</div>
+		<ul class="visually-hidden">
+			<?php foreach ( $hero_messages as $message ) : ?>
+				<li><?php echo esc_html( $message ); ?></li>
+			<?php endforeach; ?>
+		</ul>
 		<form class="hero-composer" action="<?php echo esc_url( home_url( '/app/' ) ); ?>" method="get" data-hero-composer>
 			<label class="visually-hidden" for="hero-prompt">Describe the site you want</label>
 			<textarea id="hero-prompt" name="prompt" rows="1" placeholder="Describe the site you want…" aria-label="Describe your site" autocapitalize="sentences" autocomplete="off" spellcheck="true" maxlength="600"></textarea>
@@ -49,7 +72,7 @@ get_header();
 		</form>
 	</div>
 	<figure class="hero-visual">
-		<img src="<?php echo esc_url( forge_img( 'hero-spread.jpg' ) ); ?>" srcset="<?php echo esc_url( forge_img( 'hero-spread-1200.jpg' ) ); ?> 1200w, <?php echo esc_url( forge_img( 'hero-spread.jpg' ) ); ?> 2400w" sizes="100vw" width="2400" height="1018" alt="Five websites built with Forge Nexxus in browser windows: a coffee roaster, an architecture studio, a software dashboard, a fashion boutique and a travel journal." fetchpriority="high">
+		<img src="<?php echo esc_url( $spread ); ?>" srcset="<?php echo esc_url( $spread_sm ); ?> 1200w, <?php echo esc_url( $spread ); ?> 2400w" sizes="100vw" width="2400" height="1800" alt="Five websites built with Forge Nexxus in browser windows: a coffee roaster, an architecture studio, a software dashboard, a fashion boutique and a travel journal." fetchpriority="high">
 	</figure>
 </section>
 
