@@ -194,11 +194,12 @@ export const remove = mutation({
   },
 });
 
-// The address is the user's to choose, not just whatever the name made. Taking
-// one holds it for this site until they change it, published or not, and a
-// published site moves to the new address as soon as it is saved.
+// A site's first address is Forge's to give: it is assigned when a build
+// finishes, and nobody is asked to pick one to get online. What is the
+// member's is the one change afterwards -- and a published site moves to the
+// new address as soon as it is saved.
 // An address is a plan entitlement. Free is for planning and building a site;
-// choosing an address and publishing one both go through here, so a free
+// changing an address and publishing one both go through here, so a free
 // account cannot reach an address by a route the client happens not to offer.
 async function requireAddressPlan(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
   const plan = await currentPlan(ctx, userId);
@@ -215,11 +216,21 @@ export const setSlug = mutation({
     const site = await requireOwnedSite(ctx, id);
     await requireMemberId(ctx);
     await requireAddressPlan(ctx, site.userId);
+    // There is no first pick. Until a build has been given its address there
+    // is nothing to change, and saying so beats holding a name for a site
+    // that may never exist.
+    if (!site.slug) {
+      throw new ConvexError(
+        site.currentVersionId
+          ? "Publish this site and Forge gives it an address. You can change it after that."
+          : "Forge gives this site its address when the build finishes. You can change it after that.",
+      );
+    }
     const wanted = slugify(slug);
     const problem = slugProblem(wanted);
     if (problem) throw new ConvexError(problem);
     if (wanted !== site.slug) {
-      if (site.slug && site.slugChangedAt !== undefined) {
+      if (site.slugChangedAt !== undefined) {
         throw new ConvexError("This site's address has already been changed");
       }
       const taken = await ctx.db
@@ -228,11 +239,8 @@ export const setSlug = mutation({
         .first();
       if (taken) throw new ConvexError("That address is taken. Try another one.");
       const now = Date.now();
-      await ctx.db.patch(id, {
-        slug: wanted,
-        updatedAt: now,
-        slugChangedAt: site.slug ? now : undefined,
-      });
+      // The address Forge assigned was the first; this is the one change.
+      await ctx.db.patch(id, { slug: wanted, updatedAt: now, slugChangedAt: now });
     }
     return { slug: wanted, host: siteHostFor(wanted), url: publishedUrlFor(wanted) };
   },
@@ -249,6 +257,15 @@ export const slugAvailable = query({
     if (problem) return { slug: wanted, available: false, problem };
     const site = siteId === undefined ? null : await ctx.db.get(siteId);
     const ownedSite = site?.userId === userId ? site : null;
+    // The same answer `setSlug` would give: there is no first pick to check.
+    if (ownedSite && !ownedSite.slug) {
+      return {
+        slug: wanted,
+        available: false,
+        problem: "Forge gives this site its address when the build finishes.",
+        host: siteHostFor(wanted),
+      };
+    }
     if (
       ownedSite?.slug &&
       ownedSite.slug !== wanted &&
@@ -275,8 +292,10 @@ export const slugAvailable = query({
   },
 });
 
-// Puts the latest build on the site's public address. The slug is chosen once,
-// from the name, and kept through unpublishing so links keep working.
+// Puts the latest build on the site's public address by hand: what brings a
+// site back after it was taken offline. A site that has no address yet is
+// assigned one here exactly as a finished build would be, and it is kept
+// through unpublishing so links keep working.
 export const publish = mutation({
   args: { id: v.id("sites") },
   handler: async (ctx, { id }) => {
@@ -284,7 +303,7 @@ export const publish = mutation({
     await requireMemberId(ctx);
     await requireAddressPlan(ctx, site.userId);
     if (!site.currentVersionId) throw new ConvexError("Build the site before publishing it");
-    const slug = site.slug ?? (await uniqueSlug(ctx, site.name));
+    const slug = site.slug ?? (await assignSlug(ctx, site));
     const now = Date.now();
     await ctx.db.patch(id, {
       status: "published",
@@ -307,11 +326,12 @@ export const unpublish = mutation({
 
 // A finished build goes straight onto the site's Forge address, so the member
 // leaves every build with a link that serves it: `<slug>.sites.forgenexxus.com`
-// and nowhere else. The address they chose is kept; one that was never chosen
-// is claimed from the site's name. Two things stay as they were. A plan without
-// an address gets none -- the globe is still where joining one is offered. And
-// a site its owner took offline stays offline until they publish it again:
-// `publishedAt` on a draft is what an unpublish leaves behind.
+// and nowhere else. Nobody is asked for that address and nothing waits on one:
+// a site that has none is assigned one here, and one it already has -- assigned
+// earlier, or changed since -- is kept. Two things stay as they were. A plan
+// without an address gets none -- the globe is still where joining one is
+// offered. And a site its owner took offline stays offline until they publish
+// it again: `publishedAt` on a draft is what an unpublish leaves behind.
 export async function publishBuild(
   ctx: MutationCtx,
   site: Doc<"sites">,
@@ -321,7 +341,7 @@ export async function publishBuild(
   const plan = await currentPlan(ctx, site.userId);
   if (!plan.publicAddress) return null;
   if (site.status === "draft" && site.publishedAt !== undefined) return null;
-  const slug = site.slug ?? (await uniqueSlug(ctx, site.name));
+  const slug = site.slug ?? (await assignSlug(ctx, site));
   await ctx.db.patch(site._id, {
     status: "published",
     slug,
@@ -392,20 +412,50 @@ export function slugify(name: string) {
     .replace(/-+$/, "");
 }
 
-// An address claimed from a name holds to the same rules as one that was
-// typed: a name too short to be an address, or one that spells a reserved
-// label, is lengthened rather than handed out, and a suffix never pushes an
-// address past the length every other path enforces.
-async function uniqueSlug(ctx: QueryCtx | MutationCtx, name: string) {
-  let base = slugify(name) || "site";
-  if (slugProblem(base)) base = slugify(`${base}-site`);
-  if (slugProblem(base)) base = "site";
+// What an assigned address is made of when there is no business name to make
+// it from: two plain words from a forge's own world and a short tail, as in
+// `amber-anvil-k3x9`. Easy to say, never a label hosting needs for itself, and
+// no pairing reads badly.
+const SLUG_FIRST = [
+  "amber", "bold", "bright", "brisk", "calm", "clear", "cobalt", "copper", "coral", "crisp", "deep",
+  "early", "fair", "fine", "gold", "grand", "keen", "kind", "lucid", "merry", "noble", "prime",
+  "quiet", "rapid", "silver", "solid", "steady", "sunny", "swift", "true", "vivid", "warm",
+] as const;
+const SLUG_SECOND = [
+  "alloy", "anvil", "arch", "beacon", "bellows", "brass", "bronze", "cinder", "compass", "crucible",
+  "ember", "flame", "flint", "foundry", "hammer", "harbor", "hearth", "ingot", "iron", "kiln",
+  "lantern", "ledger", "mill", "orchard", "quarry", "rivet", "spark", "steel", "summit", "tongs",
+  "vale", "works",
+] as const;
+// Names that say nothing about whose site it is. One of these is not worth
+// being an address, so it is passed over for the words above.
+const GENERIC_SLUGS = new Set([
+  "site", "my-site", "mysite", "website", "my-website", "new-site", "untitled", "untitled-site",
+  "home", "homepage", "page", "landing-page", "business", "my-business", "company", "my-company",
+  "store", "my-store", "shop", "my-shop", "portfolio", "my-portfolio", "project", "my-project",
+  "demo", "example", "sample", "testing", "name", "none", "tbd",
+]);
+
+// A site's first address, assigned rather than asked for. The business name
+// from the website questions is a soft seed: when it makes a real address it
+// is used, and when it is missing, too short, reserved or generic the address
+// is made of words instead. Either way it holds to the rules a typed address
+// does, a tail settles any collision, and nothing here can pass the length
+// every other path enforces.
+async function assignSlug(ctx: QueryCtx | MutationCtx, site: Doc<"sites">) {
   const taken = async (slug: string) =>
     (await ctx.db.query("sites").withIndex("by_slug", (q) => q.eq("slug", slug)).first()) !== null;
-  if (!(await taken(base))) return base;
-  const stem = base.slice(0, SLUG_LIMIT - 5).replace(/-+$/, "");
+  const tail = () => Math.random().toString(36).slice(2, 6).padEnd(4, "0");
+  const pick = (words: readonly string[]) => words[Math.floor(Math.random() * words.length)];
+  const setup = await ctx.db
+    .query("siteOnboarding")
+    .withIndex("by_site", (q) => q.eq("siteId", site._id))
+    .first();
+  const seed = slugify(setup?.answers[0] ?? "").slice(0, SLUG_LIMIT - 5).replace(/-+$/, "");
+  const named = seed && !slugProblem(seed) && !GENERIC_SLUGS.has(seed) ? seed : null;
+  if (named && !(await taken(named))) return named;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = `${stem}-${Math.random().toString(36).slice(2, 6).padEnd(4, "0")}`;
+    const candidate = named ? `${named}-${tail()}` : `${pick(SLUG_FIRST)}-${pick(SLUG_SECOND)}-${tail()}`;
     if (!slugProblem(candidate) && !(await taken(candidate))) return candidate;
   }
   throw new ConvexError("Could not find a free address for this site");

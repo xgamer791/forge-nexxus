@@ -473,16 +473,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .onboarding-live{display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;line-height:22px;color:var(--muted);margin:24px 0}
 .onboarding-spinner{display:inline-block;width:16px;height:16px;border:1.5px solid var(--border);border-top-color:var(--text);border-radius:50%;animation:onboarding-spin 1s linear infinite}
 .onboarding-connection{color:var(--danger);font-size:14px;line-height:22px}
-/* The hand-off: the finished site's address is the one loud thing on the
-   screen. It wears the question field's shape, with the hosting domain set
-   quietly after what the member types. */
-.onboarding-address{width:100%;max-width:440px;margin:0 auto}
-.onboarding-address .onboarding-field{display:flex;align-items:center;text-align:left}
-.onboarding-address .onboarding-field input{flex:1;min-width:4ch;min-height:60px;max-height:none;padding:0 2px 0 20px;border-radius:0;font-size:19px;line-height:26px;font-weight:700;letter-spacing:-.2px}
-.onboarding-address .onboarding-field:has(input:disabled){background:var(--chip);color:var(--muted)}
-.onboarding-address .address-suffix{padding-right:20px}
-.onboarding-address .address-note{min-height:19px;margin-top:12px;text-align:center}
-.onboarding-address .onboarding-primary{width:100%;margin-top:20px}
+/* The hand-off: the address Forge gave the finished site is the one loud thing
+   on the screen. It is shown, never asked for. */
 .onboarding-live-link{display:block;width:fit-content;max-width:100%;margin:0 auto 28px;font-size:19px;line-height:26px;font-weight:700;letter-spacing:-.2px;color:var(--text);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:5px;overflow-wrap:anywhere}
 .onboarding-live-link:focus-visible{outline:2px solid var(--focus);outline-offset:4px;border-radius:4px}
 /* The way on from a published site is a real link wearing the primary pill. */
@@ -490,12 +482,6 @@ a.onboarding-primary{text-decoration:none}
 a.onboarding-primary:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
 .onboarding-after{display:flex;flex-wrap:wrap;justify-content:center;gap:0 24px;margin-top:12px}
 .onboarding-after .onboarding-exit{margin:0}
-/* On a narrow phone the domain drops under the name rather than squeezing it. */
-@media(max-width:420px){
-  .onboarding-address .onboarding-field{flex-wrap:wrap}
-  .onboarding-address .onboarding-field input{flex-basis:100%;min-height:52px;padding-right:20px}
-  .onboarding-address .address-suffix{padding:0 20px 14px}
-}
 .globe-button:disabled,.website-preview-button:disabled,.site-bar-preview:disabled,.open-domains:disabled,.message-view:disabled{opacity:.3;cursor:not-allowed}
 @keyframes onboarding-reveal{from{opacity:0}to{opacity:1}}
 @keyframes onboarding-spin{to{transform:rotate(360deg)}}
@@ -511,9 +497,6 @@ a.onboarding-primary:focus-visible{outline:2px solid var(--focus);outline-offset
   .onboarding-body{padding-top:32px;padding-bottom:64px}
   .onboarding-content h1{font-size:42px;letter-spacing:-1.3px}
   .onboarding-hint{font-size:17px}
-  .onboarding-address{max-width:520px}
-  .onboarding-address .onboarding-field input{min-height:68px;padding-left:24px;font-size:22px;line-height:30px}
-  .onboarding-address .address-suffix{padding-right:24px;font-size:15px;line-height:20px}
   .onboarding-live-link{font-size:22px;line-height:30px}
   .onboarding-actions{margin-top:32px}
   .onboarding-field input,.onboarding-field textarea{padding:24px}

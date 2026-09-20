@@ -2168,7 +2168,11 @@ if (forge?.sites && addressSheet) {
     }
     slugField.disabled = addressLocked;
     slugForm.classList.toggle('is-locked', addressLocked);
-    saveButton.textContent = activeSite.slug ? 'Change address' : 'Save address';
+    // A site's first address is Forge's to give, when its build finishes. So
+    // there is no field until there is an address: this form is only ever the
+    // one change a member gets afterwards.
+    slugForm.hidden = !activeSite.slug;
+    saveButton.textContent = 'Change address';
     // A site gets one move. Explain the consequence before it is spent, then
     // make the saved address visibly read-only once the server records it.
     if (warning) {
@@ -2200,7 +2204,9 @@ if (forge?.sites && addressSheet) {
   }
   function restingNote(text = null, kind = null) {
     note.textContent = text ?? (!activeSite?.slug
-      ? 'Pick an address. It is saved now and used the moment you publish.'
+      ? activeSite?.currentVersionId
+        ? 'Publish this site from Preview and Forge gives it an address. You can change it here once.'
+        : 'Forge gives this site its address when the build finishes. You can change it here once.'
       : activeSite.status === 'published'
         ? 'Live at this address.'
         : 'Reserved for this site. Publish to put the latest build on it.');

@@ -17,19 +17,23 @@ Free members keep dashboard access; only the preview waits for a plan. The
 globe stays open to them because it is where joining a plan is offered, and
 the preview HTML query enforces the entitlement on the server.
 
-A finished build publishes itself: the server claims
-`<slug>.sites.forgenexxus.com` from the business name (or keeps the address the
-member already chose) and puts the build on it in the same transaction that
-saves it. So the hand-off screen opens on a site that is already live. It shows
+A finished build publishes itself, and its first address is Forge's to give:
+the server assigns `<slug>.sites.forgenexxus.com` — from the business name when
+that makes a real address, from two plain words and a short tail when it does
+not — and puts the build on it in the same transaction that saves it. Nothing
+in this flow asks for an address, and nothing waits on one; the first question
+asks what the business is called because the site needs a name on it, not
+because a URL does. So the hand-off screen opens on a site that is already live. It shows
 the address, View my website — a real link that opens the site in a new tab
 while the same press lands the member in their dashboard — Go to my dashboard,
 and Change the address or connect a domain, which opens the globe. The address
 can be changed once from there, and a custom domain is one tab along (the form
 on plans with custom domains, the plan offer on those without).
 
-The address field and Publish my website remain as the fallback for a finished
-site that is not live — a claim that failed, or a site taken offline — with
-Open it as a draft beside it, so publishing is never the only way on.
+Publish my website remains as the fallback for a finished site that is not
+live — a claim that failed, or a site taken offline. It is one button with no
+field: the server assigns the address as the site goes live. Open it as a draft
+sits beside it, so publishing is never the only way on.
 
 Every new website uses the same ten questions in `convex/onboardingQuestions.ts`.
 Answers, current step, uploads and the build state belong to the signed-in user

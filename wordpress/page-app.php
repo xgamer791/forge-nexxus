@@ -80,7 +80,7 @@ defined( 'ABSPATH' ) || exit;
 <button type="button" class="account-button open-plan-from-address">See plans<span class="address-cta-price" data-address-upsell-price></span></button>
 </div>
 <div class="address-body">
-<p class="sheet-copy address-no-site" hidden>No site yet. Describe the site you want in the composer — once Forge has built it, its address is picked here.</p>
+<p class="sheet-copy address-no-site" hidden>No site yet. Describe the site you want in the composer — once Forge has built it, its address shows up here.</p>
 <div class="address-site">
 <div class="address-tabs" role="tablist" aria-label="Domain options">
 <button type="button" class="address-tab" role="tab" id="address-tab-forge" aria-controls="address-panel-forge" aria-selected="true" data-tab="address">Address</button>
@@ -91,7 +91,7 @@ defined( 'ABSPATH' ) || exit;
 <a class="address-live" data-address-live href="#" target="_blank" rel="noopener" hidden></a>
 <form class="address-form">
 <div class="address-field"><input class="address-slug" name="slug" placeholder="your-site" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="40" aria-label="Site address" required><span class="address-suffix" data-address-domain></span></div>
-<button class="chip-button address-save" type="submit">Save address</button>
+<button class="chip-button address-save" type="submit">Change address</button>
 </form>
 <p class="address-note" data-address-note></p>
 <p class="address-note address-warning" hidden>You can change this address once. The old address will stop working.</p>
@@ -103,7 +103,7 @@ defined( 'ABSPATH' ) || exit;
 <button class="chip-button address-add" type="submit">Add</button>
 </form>
 <p class="sheet-copy address-gate" hidden>Pointing a domain you already own at this site comes with <span data-address-plan></span><span data-address-current-plan></span>. <button class="link-button open-plan-from-address" type="button">See plans</button></p>
-<p class="sheet-copy address-needs-slug" hidden>Save a Forge address first — a domain of your own is pointed at it.</p>
+<p class="sheet-copy address-needs-slug" hidden>Forge gives this site its address when the build finishes. A domain of your own is pointed at it after that.</p>
 <div class="group address-domains" data-address-domains></div>
 </div>
 </div>

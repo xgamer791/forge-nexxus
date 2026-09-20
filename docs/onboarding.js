@@ -21,12 +21,9 @@ const ENABLED = true;
   let saveTimer;
   let saveQueue = Promise.resolve();
   let offline = !navigator.onLine;
-  // What the hand-off needs to put a finished site on the web: the member's
-  // sites and where this deployment hosts them. Both come from Convex.
+  // What the hand-off shows about the finished site: whether it is live, and
+  // the address Forge gave it. It comes from Convex, like everything else.
   let sitesList = [];
-  let hosting = null;
-  let slugTimer;
-  let slugTicket = 0;
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const mark = '<svg class="onboarding-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" stroke="none" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg>';
   const shell = content => `<header class="onboarding-header"><span class="onboarding-brand">${mark}Forge Nexxus</span><button type="button" class="onboarding-quiet" data-onboarding-action="signout">Sign out</button></header><div class="onboarding-body">${content}</div>`;
@@ -36,7 +33,7 @@ const ENABLED = true;
   }
   function setBusy(value) {
     busy = value;
-    screen.querySelectorAll('button:not([data-onboarding-action="signout"]),input,textarea').forEach(e => { e.disabled = value || e.hasAttribute('data-locked'); });
+    screen.querySelectorAll('button:not([data-onboarding-action="signout"]),input,textarea').forEach(e => { e.disabled = value; });
   }
   function revealDashboard(show) {
     const changed = dashboard.hidden === show;
@@ -130,20 +127,12 @@ const ENABLED = true;
     </form>`);
     renderAssets();
   }
-  // What the server would make of a name, so the field can suggest an address
-  // before one is taken. The server decides what is actually saved.
-  function suggestSlug(name) {
-    return (name ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      .slice(0, hosting?.maxLength ?? 40).replace(/-+$/, '');
-  }
   function builtSite() {
     const id = state?.draft?.siteId;
     return id ? sitesList.find(site => site._id === id) ?? null : null;
   }
-  // The finished site is handed over with its address: the member names it,
-  // publishes it, and leaves with a link. Publishing is never the only way on —
-  // the site is already saved, so opening it as a draft is always there too.
+  // The finished site is handed over with the address Forge gave it. Nobody is
+  // asked to pick one: there is no field here, and nothing waits on a name.
   function handoff(site) {
     // A finished build publishes itself, so this is the state a member arrives
     // in. The way on is a real link: it opens the site at its own address in a
@@ -154,12 +143,10 @@ const ENABLED = true;
         <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="finish">Go to my dashboard</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="domain">Change the address or connect a domain</button></div>`;
     }
     if (!site || state.isFree) return '<button type="button" class="onboarding-primary" data-onboarding-action="finish">Open my website</button>';
-    const locked = Boolean(site.slug) && site.addressChangeAvailable === false;
-    return `<form class="onboarding-address" data-address-form>
-        <div class="onboarding-field"><input data-address-input name="slug" value="${escape(site.slug ?? suggestSlug(site.name))}" placeholder="${escape(suggestSlug(site.name) || 'your-site')}" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="${hosting?.maxLength ?? 40}" aria-label="Site address" aria-describedby="onboarding-address-note" ${locked ? 'disabled data-locked' : ''}><span class="address-suffix">${hosting?.domain ? `.${escape(hosting.domain)}` : ''}</span></div>
-        <p class="address-note" id="onboarding-address-note" data-address-note role="status">This is where people will find your website.</p>
-        <button type="submit" class="onboarding-primary" data-address-publish>Publish my website</button>
-      </form>
+    // A finished site that is not live -- a claim that failed, or one taken
+    // offline. One press publishes it, and the server gives it its address.
+    // Publishing is never the only way on: the site is already saved.
+    return `<button type="button" class="onboarding-primary" data-onboarding-action="publish" data-publish>Publish my website</button>
       <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="finish">Open it as a draft</button></div>`;
   }
   function renderBuild() {
@@ -168,13 +155,13 @@ const ENABLED = true;
     const failed = draft.status === 'failed';
     const site = done ? builtSite() : null;
     const live = site?.status === 'published' && Boolean(site.publishedUrl);
-    const key = `${draft.id}:${draft.status}:${draft.events.length}:${site?._id ?? ''}:${site?.slug ?? ''}:${site?.status ?? ''}:${hosting?.domain ?? ''}:${state.isFree}`;
+    const key = `${draft.id}:${draft.status}:${draft.events.length}:${site?._id ?? ''}:${site?.publishedUrl ?? ''}:${site?.status ?? ''}:${state.isFree}`;
     if (rendered === key) return;
     rendered = key;
     const has = label => draft.events.some(event => event.label === label);
     const title = live ? 'Your website is published.' : done ? 'Your website is ready.' : failed ? 'Let’s try that again.' : 'Your idea is taking shape.';
     const detail = live ? 'It is on the web at this address, and every change you make lands there.'
-      : done ? (site && !state.isFree ? 'Pick its address and put it on the web.' : 'Your first version is saved. Make it yours from your dashboard.')
+      : done ? (site && !state.isFree ? 'Publish it and Forge gives it an address of its own.' : 'Your first version is saved. Make it yours from your dashboard.')
       : failed ? draft.error : 'Forge is creating your website from your answers. You can return to this screen at any time.';
     const progress = draft.status === 'queued' ? 'Waiting for the build to start…'
       : draft.status === 'saving' ? 'Saving your website…'
@@ -193,30 +180,6 @@ const ENABLED = true;
         <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="${aboutBilling ? 'billing' : 'edit'}">${aboutBilling ? 'Manage billing' : 'Edit my answers'}</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="exit">Back to dashboard</button></div>` : ''}
       <p class="onboarding-error" role="alert" hidden></p></div>`);
   }
-  // The address answers as it is typed, from the same rules that decide the
-  // save. Only the server ever grants one; this is the field saying what it
-  // already knows, so a name is not lost to a round trip to find out.
-  function checkSlug() {
-    const ticket = ++slugTicket;
-    const site = builtSite();
-    const input = screen.querySelector('[data-address-input]');
-    const note = screen.querySelector('[data-address-note]');
-    const publish = screen.querySelector('[data-address-publish]');
-    if (!site || !input || !note || !publish || input.disabled) return;
-    const wanted = input.value.trim();
-    const settle = (text, kind, blocked) => {
-      note.textContent = text;
-      note.classList.toggle('is-free', kind === 'free');
-      note.classList.toggle('is-taken', kind === 'taken');
-      publish.disabled = blocked;
-    };
-    if (!wanted || wanted === (site.slug ?? '')) return settle('This is where people will find your website.', null, false);
-    data.sites.slugAvailable(wanted, site._id).then(answer => {
-      if (ticket !== slugTicket || !answer || !input.isConnected) return;
-      if (answer.available) settle(`${answer.host ?? answer.slug} is free.`, 'free', false);
-      else settle(answer.problem ?? 'That address is taken. Try another one.', 'taken', true);
-    }).catch(() => { /* Publishing still asks the server properly. */ });
-  }
   // The globe owns the address and any domain pointed at it. Open it the way a
   // tap would, once the dashboard is back and the finished site is selected;
   // it opens on the address, with a domain of their own one tab along.
@@ -224,19 +187,15 @@ const ENABLED = true;
     if (dashboard.hidden && tries < 40) { setTimeout(() => openDomains(tries + 1), 75); return; }
     document.querySelector('.globe-button')?.click();
   }
+  // Publishing asks for nothing. A site with no address yet is given one by
+  // the server as it goes live, the same way a finished build is.
   async function publishSite() {
     const site = builtSite();
-    const input = screen.querySelector('[data-address-input]');
     if (busy || !site) return;
-    const wanted = (input?.value.trim() || input?.placeholder || '').trim();
-    // Read before the screen goes busy, which disables every field on it.
-    const editable = Boolean(input) && !input.disabled;
-    clearTimeout(slugTimer);
     error(''); setBusy(true);
-    const publish = screen.querySelector('[data-address-publish]');
+    const publish = screen.querySelector('[data-publish]');
     if (publish) publish.textContent = 'Publishing…';
     try {
-      if (editable && wanted && wanted !== site.slug) await data.sites.setSlug(site._id, wanted);
       await data.sites.publish(site._id);
     } catch (caught) {
       error(caught?.data || 'Your website couldn’t be published. Check your connection and try again.');
@@ -314,13 +273,8 @@ const ENABLED = true;
   }
   screen.addEventListener('input', event => {
     if (event.target.matches('[data-answer]')) scheduleSave();
-    if (event.target.matches('[data-address-input]')) { clearTimeout(slugTimer); slugTimer = setTimeout(checkSlug, 250); }
   });
-  screen.addEventListener('submit', event => {
-    event.preventDefault();
-    if (event.target.matches('[data-address-form]')) void publishSite();
-    else void next();
-  });
+  screen.addEventListener('submit', event => { event.preventDefault(); void next(); });
   screen.addEventListener('click', async event => {
     // A link that carries an action keeps its own job too: the browser opens
     // it in its tab while the action runs here, so nothing is prevented.
@@ -337,6 +291,7 @@ const ENABLED = true;
     // before the form ever heard the press.
     if (!action && !button.dataset.removeAsset) return;
     if (action === 'skip') return void next(true);
+    if (action === 'publish') return void publishSite();
     if (action === 'reload') return location.reload();
     if (busy && action !== 'signout') return;
     setBusy(true); error('');
@@ -426,14 +381,9 @@ const ENABLED = true;
     if (nextState) { state = nextState; subscriptionError = false; }
     render();
   }, () => { subscriptionError = true; render(); });
-  // The hand-off redraws only when the site's address or status changes, so
-  // an update arriving mid-word never takes the field out from under a typist.
+  // The hand-off redraws when the finished site's address or status changes.
   data?.sites?.subscribe?.(list => {
     sitesList = Array.isArray(list) ? list : [];
-    if (state?.draft?.status === 'complete') render();
-  });
-  data?.sites?.hosting?.(next => {
-    hosting = next ?? null;
     if (state?.draft?.status === 'complete') render();
   });
 })();
