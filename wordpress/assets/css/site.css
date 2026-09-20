@@ -71,7 +71,7 @@ html.is-member [data-member-hide]{display:none}
 /* Hero: the composer is the product — the same pill as the mobile app,
    docked 25px from the section floor. It lives in the hero and scrolls away
    with the page; it is not sticky. */
-.hero{position:relative;min-height:100vh;min-height:100svh;overflow:hidden;isolation:isolate;background:#0b0c10}
+.hero{position:relative;height:100vh;height:100svh;min-height:100svh;max-height:100svh;overflow:hidden;isolation:isolate;background:#0b0c10}
 .hero-background-video{position:absolute;z-index:0;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center;transform:translateZ(0)}
 .hero::after{content:"";position:absolute;z-index:1;inset:0;background:rgba(0,0,0,.4);pointer-events:none}
 .hero-stage{--hero-composer-height:97px;--hero-floor:25px;position:relative;z-index:2;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:var(--hero-floor)}
@@ -99,8 +99,8 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
 .hero-composer .microphone{margin-left:auto;width:21px;height:24px}
 .hero-composer .microphone svg{width:18px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .hero-composer .microphone[aria-pressed=true]{color:#1c1c1e}
-.hero-visual{margin:0;background:var(--plate)}
-.hero-visual img{width:100%}
+.hero-visual{display:block;margin:0;background:var(--plate)}
+.hero-visual img{width:100%;height:auto}
 @media(prefers-reduced-motion:reduce){
   .hero{background:#0b0c10 url("../video/forge-hero-poster.jpg") center/cover no-repeat}
   .hero-background-video{display:none}

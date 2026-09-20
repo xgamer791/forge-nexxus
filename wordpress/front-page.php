@@ -33,6 +33,12 @@ $hero_video  = add_query_arg( 'ver', FORGE_THEME_VERSION, get_theme_file_uri( 'a
 $hero_poster = add_query_arg( 'ver', FORGE_THEME_VERSION, get_theme_file_uri( 'assets/video/forge-hero-poster.jpg' ) );
 
 get_header();
+$spread_ver = (string) max(
+	(int) @filemtime( get_theme_file_path( 'assets/img/hero-spread.jpg' ) ),
+	(int) @filemtime( get_theme_file_path( 'assets/img/hero-spread-1200.jpg' ) )
+);
+$spread     = add_query_arg( 'ver', $spread_ver, forge_img( 'hero-spread.jpg' ) );
+$spread_sm  = add_query_arg( 'ver', $spread_ver, forge_img( 'hero-spread-1200.jpg' ) );
 ?>
 
 <section class="hero">
@@ -64,10 +70,10 @@ get_header();
 			</div>
 		</form>
 	</div>
-	<figure class="hero-visual">
-		<img src="<?php echo esc_url( forge_img( 'hero-spread.jpg' ) ); ?>" srcset="<?php echo esc_url( forge_img( 'hero-spread-1200.jpg' ) ); ?> 1200w, <?php echo esc_url( forge_img( 'hero-spread.jpg' ) ); ?> 2400w" sizes="100vw" width="2400" height="1018" alt="Five websites built with Forge Nexxus in browser windows: a coffee roaster, an architecture studio, a software dashboard, a fashion boutique and a travel journal." fetchpriority="high">
-	</figure>
 </section>
+<figure class="hero-visual">
+	<img src="<?php echo esc_url( $spread ); ?>" srcset="<?php echo esc_url( $spread_sm ); ?> 1200w, <?php echo esc_url( $spread ); ?> 2400w" sizes="100vw" width="2400" height="1800" alt="Five websites built with Forge Nexxus in browser windows: a coffee roaster, an architecture studio, a software dashboard, a fashion boutique and a travel journal.">
+</figure>
 
 <section class="section showcase" id="showcase">
 	<div class="wrap section-head">
