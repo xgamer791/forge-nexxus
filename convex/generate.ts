@@ -6,10 +6,11 @@ import { action, internalMutation, internalQuery } from "./_generated/server";
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute } from "./images";
 import { briefFile } from "./onboardingQuestions";
+import { FORGE_MD } from "./forgeMd";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 
 // How much of the thread the model sees, and how long a page it may write.
-const HISTORY_LIMIT = 12;
+const HISTORY_LIMIT = 32;
 const DEFAULT_MAX_TOKENS = 16000;
 const REASON_LIMIT = 300;
 // A conversational reply is the message itself, so it gets far more room than
@@ -322,7 +323,11 @@ function buildMessages(
   talkOnly: { needed: number; available: number } | null,
   imageLimit: number,
 ): ChatMessage[] {
-  const messages: ChatMessage[] = [{ role: "system", content: systemPrompt(imageLimit) }];
+  const messages: ChatMessage[] = [
+    // forge.md — standing agent rules, every turn.
+    { role: "system", content: FORGE_MD },
+    { role: "system", content: systemPrompt(imageLimit) },
+  ];
   if (currentHtml) {
     messages.push({
       role: "system",
