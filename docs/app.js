@@ -329,6 +329,7 @@ window.ForgeData?.settings?.subscribe(stored => {
 });
 let opener;
 const pendingPanelHides = new WeakMap();
+const DRAWER_MS = 350;
 function resetViewport() {
   window.scrollTo(0, 0);
   document.documentElement.scrollTop = 0;
@@ -351,23 +352,25 @@ function finishHide(element) {
 }
 function hideOverlay(element) {
   if (!element) return;
+  if (pendingPanelHides.has(element)) return;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const animatedNavigation = element.matches?.('.navigation.is-open') && !reduceMotion;
   if (animatedNavigation) {
-    element.classList.remove('is-open');
+    element.getAnimations().forEach(animation => animation.cancel());
+    element.classList.add('is-closing');
     const animation = element.animate(
       [
         {transform: 'translate3d(0,0,0)'},
         {transform: 'translate3d(-100%,0,0)'},
       ],
       {
-        duration: 450,
+        duration: DRAWER_MS,
         easing: 'cubic-bezier(.45,0,.55,1)',
-        fill: 'both',
+        fill: 'forwards',
       },
     );
     animation.onfinish = () => finishHide(element);
-    const timer = setTimeout(() => finishHide(element), 590);
+    const timer = setTimeout(() => finishHide(element), DRAWER_MS);
     pendingPanelHides.set(element, {animation, timer});
     return;
   }
@@ -391,19 +394,43 @@ function closeMenu() {
   const active = document.activeElement;
   if (active && app.contains(active) && active !== document.body) active.blur();
   closeOverlays();
+  const drawer = document.querySelector('.navigation.is-open');
   panels.forEach(hideOverlay);
-  hideOverlay(backdrop);
-  app.classList.remove('navigation-open', 'sheet-open');
+  if (drawer && pendingPanelHides.has(drawer)) {
+    if (backdrop && !backdrop.hidden) {
+      backdrop.getAnimations().forEach(animation => animation.cancel());
+      const fade = backdrop.animate(
+        [{opacity: 1}, {opacity: 0}],
+        {duration: DRAWER_MS, easing: 'linear', fill: 'forwards'},
+      );
+      fade.onfinish = () => finishHide(backdrop);
+      pendingPanelHides.set(backdrop, {
+        animation: fade,
+        timer: setTimeout(() => finishHide(backdrop), DRAWER_MS),
+      });
+    }
+  } else {
+    hideOverlay(backdrop);
+    app.classList.remove('navigation-open', 'sheet-open');
+  }
   document.querySelectorAll('[data-open]').forEach(button => button.setAttribute('aria-expanded', 'false'));
   resetViewport();
-  requestAnimationFrame(() => {
-    resetViewport();
-    app.style.transform = 'translateZ(0)';
-    void app.offsetHeight;
-    app.style.transform = '';
-    refreshStatusBarTint();
-    opener?.focus({preventScroll:true});
-  });
+  const settle = () => {
+    if (drawer && pendingPanelHides.has(drawer)) {
+      setTimeout(settle, DRAWER_MS);
+      return;
+    }
+    app.classList.remove('navigation-open', 'sheet-open');
+    requestAnimationFrame(() => {
+      resetViewport();
+      app.style.transform = 'translateZ(0)';
+      void app.offsetHeight;
+      app.style.transform = '';
+      refreshStatusBarTint();
+      opener?.focus({preventScroll:true});
+    });
+  };
+  settle();
 }
 function openMenu(name, trigger) {
   closeMenu();
@@ -430,7 +457,7 @@ function openMenu(name, trigger) {
         {transform: 'translate3d(0,0,0)'},
       ],
       {
-        duration: 450,
+        duration: DRAWER_MS,
         easing: 'cubic-bezier(.45,0,.55,1)',
         fill: 'both',
       },
