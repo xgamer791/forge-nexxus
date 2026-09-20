@@ -28,8 +28,6 @@ define(
 				'assets/js/forge-auth.js',
 				'assets/js/forge-data.js',
 				'assets/js/onboarding.js',
-				'assets/video/forge-hero-loop.mp4',
-				'assets/video/forge-hero-poster.jpg',
 			]
 		)
 	)

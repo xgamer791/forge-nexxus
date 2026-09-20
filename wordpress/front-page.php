@@ -29,16 +29,10 @@ $hero_messages = [
 	'Legendary customer support that exceeds expectations',
 	'Don’t fall behind ai, let it work for you with Forge Nexxus',
 ];
-$hero_video  = add_query_arg( 'ver', FORGE_THEME_VERSION, get_theme_file_uri( 'assets/video/forge-hero-loop.mp4' ) );
-$hero_poster = add_query_arg( 'ver', FORGE_THEME_VERSION, get_theme_file_uri( 'assets/video/forge-hero-poster.jpg' ) );
-
 get_header();
 ?>
 
 <section class="hero">
-	<video class="hero-background-video" autoplay muted loop playsinline preload="auto" poster="<?php echo esc_url( $hero_poster ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
-		<source src="<?php echo esc_url( $hero_video ); ?>" type="video/mp4">
-	</video>
 	<div class="wrap hero-stage">
 		<h1 class="visually-hidden">Forge Nexxus</h1>
 		<div class="hero-message-rotator" data-hero-messages aria-hidden="true">

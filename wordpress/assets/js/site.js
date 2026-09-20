@@ -26,27 +26,6 @@
     document.querySelectorAll('[data-member-text]').forEach(el => { el.textContent = el.dataset.memberText; });
   }
 
-  // One stitched loop of five Grok shots. Native loop plus a restart if
-  // the element ever sits on the last frame.
-  const heroLoop = document.querySelector('[data-hero-loop]');
-  if (heroLoop && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    heroLoop.muted = true;
-    heroLoop.defaultMuted = true;
-    heroLoop.playsInline = true;
-    heroLoop.loop = true;
-    const keepPlaying = () => {
-      if (heroLoop.paused) void heroLoop.play();
-    };
-    heroLoop.addEventListener('ended', () => {
-      heroLoop.currentTime = 0;
-      keepPlaying();
-    });
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) keepPlaying();
-    });
-    keepPlaying();
-  }
-
   // Cycle the five homepage promises through one word-cascade stage. The
   // first message gets a longer hold after a complete pass so the loop has a
   // clear resting point instead of feeling continuously busy.
