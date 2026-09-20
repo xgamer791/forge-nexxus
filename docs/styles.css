@@ -17,13 +17,14 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
    black-translucent shrinks the web layer by the status-bar height and paints the gap above it.
    Only status-bar-style=default (read when the icon is added) removes it; no CSS can reach it. */
 .stage{position:absolute;inset:0;z-index:1}
-.chrome{position:absolute;top:0;left:0;right:0;height:var(--header);z-index:6;background:var(--bg);pointer-events:none}
+.chrome{position:absolute;top:0;left:0;right:0;height:var(--header);z-index:6;background:#fff;color:#1c1c1e;pointer-events:none}
+.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{color:#1c1c1e}
 .chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:env(safe-area-inset-top,0px);pointer-events:auto;z-index:0}
 .app.navigation-open .chrome,.app.sheet-open .chrome,.app:has(.overlay.preview:not([hidden])) .chrome{box-shadow:0 1px 0 var(--border)}
 .composer-area{position:absolute;bottom:20px;left:16px;right:16px}
 .app.reference .composer-area{left:16px;right:16px;bottom:var(--composer-bottom)}
 
-.sheet{position:fixed;left:max(0px,calc((100vw - var(--shell))/2));right:max(0px,calc((100vw - var(--shell))/2));bottom:0;overscroll-behavior:none}
+.sheet{position:fixed;left:max(0px,calc((100vw - var(--shell))/2));right:max(0px,calc((100vw - var(--shell))/2));bottom:0;overscroll-behavior:none;background:#fff;color:#1c1c1e}
 .sheet[hidden],.appearance[hidden]{display:block!important;position:fixed!important;top:auto!important;left:-100vw!important;right:auto!important;bottom:auto!important;width:0!important;height:0!important;max-height:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;transform:translate3d(0,100vh,0)!important}
 /* The dimmer stays in place. Transform parking made it slide up from the bottom. */
 .backdrop[hidden]{display:block!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;transform:none!important}
@@ -32,8 +33,16 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .backdrop{position:fixed}
 .app.reference .sheet,.app.reference .backdrop{position:absolute;left:0;right:0}
 
-/* Navigation drawer, measured from the supplied mobile reference. */
-.navigation{position:fixed;z-index:4;top:var(--header);bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:var(--drawer);background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;transform:translate3d(-100%,0,0)}
+/* Header, drawer, address, preview, settings and every other pull-out stay
+   white in both themes. Children inherit light-theme ink so copy stays readable. */
+.chrome,.navigation,.sheet,.dropdown,.appearance,.overlay,.theme-menu,.font-menu,.site-menu{
+  --bg:#fff;--text:#1c1c1e;--muted:#3a3a3c;--subdued:#6e6e73;--border:#d1d1d6;--surface:#fff;--panel:#fff;--sheet:#fff;--elevated:#fff;--divider:#e5e5ea;--handle:#c7c7cc;--disc:#e5e5ea;--icon:#6e6e73;--chip:#f2f2f7;--card:#f2f2f7;--menu:#fff;--menu-shadow:0 8px 28px rgba(0,0,0,.16)
+}
+.chrome,.navigation,.sheet,.dropdown,.appearance,.overlay,.theme-menu,.font-menu{
+  background:#fff;
+  color:#1c1c1e;
+}
+.navigation{position:fixed;z-index:4;top:var(--header);bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:var(--drawer);background:#fff;color:#1c1c1e;border-right:1px solid var(--border);display:flex;flex-direction:column;transform:translate3d(-100%,0,0)}
 .app.navigation-open .navigation:not(.is-closing){transform:translate3d(0,0,0)}
 .navigation.is-closing{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:none}
 html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)}
@@ -41,7 +50,7 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 /* iOS tints the standalone status bar from whatever paints beneath it. Keep the
    dimmer out of that strip so the tint never caches the darkened page color. */
 .backdrop{top:var(--header)}
-.status-shield{display:none;position:fixed;top:0;left:0;right:0;height:var(--status-strip,env(safe-area-inset-top,0px));background:var(--bg);z-index:3;pointer-events:none}
+.status-shield{display:none;position:fixed;top:0;left:0;right:0;height:var(--status-strip,env(safe-area-inset-top,0px));background:#fff;z-index:3;pointer-events:none}
 .app.sheet-open .status-shield,.app.navigation-open .status-shield{display:block}
 .app.reference .status-shield{display:none}
 .nav-content{padding:16px;overflow:auto;flex:1;min-height:0}
@@ -100,9 +109,9 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 @keyframes sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
 
 /* Appearance and the other full-screen settings screens share one shell. */
-.appearance,.overlay{position:fixed;z-index:5;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(var(--shell),100vw);max-width:var(--shell);background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+.appearance,.overlay{position:fixed;z-index:5;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(var(--shell),100vw);max-width:var(--shell);background:#fff;color:#1c1c1e;display:flex;flex-direction:column}
 .appearance,.overlay:not(.preview){z-index:7}
-.overlay.preview{top:var(--header);z-index:5}
+.overlay.preview{top:var(--header);z-index:5;background:#fff;color:#1c1c1e}
 .overlay.preview .appearance-header{margin-top:0}
 .appearance.is-open,.overlay.is-open{animation:overlay-in .7s cubic-bezier(.22,1,.36,1) both}
 @keyframes overlay-in{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
@@ -129,7 +138,7 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .theme-select,.font-select{flex-shrink:0;height:32px;max-width:168px;margin-top:2px;padding:0 12px 0 14px;border-radius:16px;background:var(--chip);border:1px solid var(--border);display:flex;align-items:center;gap:6px;font-size:17px;line-height:20px;color:var(--text)}
 .theme-select svg,.font-select svg{width:12px;height:12px;stroke-width:2.2;color:var(--muted)}
 .theme-select span,.font-select span{max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.theme-menu,.font-menu{position:absolute;right:16px;z-index:6;width:168px;padding:6px 0;background:var(--menu);border:1px solid var(--border);border-radius:14px;box-shadow:var(--menu-shadow)}
+.theme-menu,.font-menu{position:absolute;right:16px;z-index:6;width:168px;padding:6px 0;background:#fff;color:#1c1c1e;border:1px solid var(--border);border-radius:14px;box-shadow:var(--menu-shadow)}
 .theme-menu:not([hidden]),.font-menu:not([hidden]){animation:popover-in .7s cubic-bezier(.22,1,.36,1) both;transform-origin:top right}
 @keyframes popover-in{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 .theme-menu{top:58px}
@@ -153,7 +162,7 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .toggle[aria-pressed=true]{background:var(--toggle-on)}
 .toggle[aria-pressed=true]::after{transform:translateX(20px)}
 .type-size{flex-shrink:0;font-size:17px;line-height:22px;color:var(--muted);margin-top:2px}
-html[data-theme=light] .appearance-card,html[data-theme=light] .appearance-stack,html[data-theme=light] .theme-menu,html[data-theme=light] .font-menu{border:1px solid var(--border)}
+.appearance-card,.appearance-stack,.theme-menu,.font-menu{border:1px solid var(--border)}
 .app.reference .appearance,.app.reference .overlay{position:absolute;left:0;width:430px}
 .appearance.opaque-surfaces ~ .backdrop{background:var(--bg);opacity:.82}
 .app.opaque-surfaces .backdrop.is-dim{background:var(--nav-backdrop)}
@@ -264,8 +273,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .site-bar-preview[disabled]{opacity:.5;cursor:default}
 .preview-frame{flex:1;min-height:0;position:relative;background:#fff}
 .preview-iframe{display:block;width:100%;height:100%;border:0;background:#fff}
-.preview-empty{position:absolute;inset:0;margin:0;display:grid;place-items:center;padding:32px;text-align:center;color:var(--subdued);background:var(--bg);font-size:17px;line-height:23px}
-.preview-footer{flex-shrink:0;border-top:1px solid var(--border);padding:12px 16px max(12px,env(safe-area-inset-bottom));display:grid;gap:8px;background:var(--bg)}
+.preview-empty{position:absolute;inset:0;margin:0;display:grid;place-items:center;padding:32px;text-align:center;color:var(--subdued);background:#fff;font-size:17px;line-height:23px}
+.preview-footer{flex-shrink:0;border-top:1px solid var(--border);padding:12px 16px max(12px,env(safe-area-inset-bottom));display:grid;gap:8px;background:#fff}
 .preview-status{margin:0;font-size:14px;line-height:18px;color:var(--subdued)}
 .preview-link{font-size:15px;line-height:20px;color:var(--text);text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .preview-actions{display:flex;align-items:center;gap:12px}
@@ -306,7 +315,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
    the way the globe is reached, rather than up from the thumb. It keeps every
    sheet part — header, dismiss, copy, groups — and turns the geometry over:
    square at the top edge, rounded below, handle at the bottom. */
-.dropdown{top:var(--header);bottom:auto;border-radius:0 0 28px 28px;padding:4px 16px 0;min-height:0;max-height:calc(100% - var(--header) - 28px);display:flex;flex-direction:column;box-shadow:0 18px 44px rgba(0,0,0,.34)}
+.dropdown{top:var(--header);bottom:auto;border-radius:0 0 28px 28px;padding:4px 16px 0;min-height:0;max-height:calc(100% - var(--header) - 28px);display:flex;flex-direction:column;background:#fff;color:#1c1c1e;box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .dropdown .handle{margin:auto auto max(10px,var(--bottom));flex:none}
 .dropdown header{height:52px}
 @media(prefers-reduced-motion:no-preference){
@@ -317,8 +326,6 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 @keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 @keyframes dropdown-out{from{transform:translateY(0)}to{transform:translateY(-100%)}}
 .app.reference .dropdown{position:absolute;left:0;right:0}
-html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
-
 /* The globe: the site's address, opposite the drawer button. It appears only
    once there is a site to have an address. */
 .globe-button{position:absolute;right:58px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
@@ -477,10 +484,9 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
   .site-bar{margin:0 10px 10px}
   /* Sheets are a thumb's gesture. With a pointer they are dialogs: centred,
      rounded all round, no drag handle to offer. */
-  .sheet:not(.dropdown){top:50%;bottom:auto;left:50%;right:auto;width:min(520px,calc(100vw - 64px));transform:translateY(-50%);border-radius:28px;padding:0 20px 24px;max-height:calc(100% - 96px);margin-left:calc(min(520px,100vw - 64px)/-2);box-shadow:0 24px 60px rgba(0,0,0,.34)}
+  .sheet:not(.dropdown){top:50%;bottom:auto;left:50%;right:auto;width:min(520px,calc(100vw - 64px));transform:translateY(-50%);border-radius:28px;padding:0 20px 24px;max-height:calc(100% - 96px);margin-left:calc(min(520px,100vw - 64px)/-2);box-shadow:0 24px 60px rgba(0,0,0,.18)}
   .sheet:not(.dropdown) .handle{display:none}
   .sheet:not(.dropdown).is-open{animation:dialog-in .7s cubic-bezier(.22,1,.36,1) both}
-  html[data-theme=light] .sheet:not(.dropdown){box-shadow:0 24px 60px rgba(0,0,0,.18)}
   /* The domain panel keeps coming down, but from the globe rather than from
      the top edge of the window: a menu belonging to the button that opened it. */
   .dropdown{top:var(--header);left:auto;right:max(16px,calc((100vw - var(--shell))/2));width:min(480px,calc(100vw - 48px));border-radius:24px;padding:4px 18px 0;min-height:0;max-height:calc(100% - var(--header) - 32px)}
@@ -492,8 +498,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
      rather than as a phone screen stretched. */
   /* The drawer stays on the shell's left edge so a push keeps it flush
      with the dashboard instead of leaving a gap to the window. */
-  .navigation{width:var(--drawer);box-shadow:0 0 40px rgba(0,0,0,.28)}
-  html[data-theme=light] .navigation{box-shadow:0 0 40px rgba(0,0,0,.12)}
+  .navigation{width:var(--drawer);box-shadow:0 0 40px rgba(0,0,0,.12)}
   .preview-actions .chip-button{flex:0 0 auto;min-width:180px}
   /* A built site is a website: preview it at a website's width. */
   .overlay.preview{width:min(1180px,calc(100vw - 64px));max-width:none;left:50%;margin-left:calc(min(1180px,100vw - 64px)/-2)}

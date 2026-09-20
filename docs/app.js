@@ -67,7 +67,7 @@ let themeColor = document.querySelector('meta[name="theme-color"]');
 // iOS caches the standalone status-bar tint and ignores in-place edits to the
 // existing tag, so replace the element to make it re-read the app background.
 function refreshStatusBarTint() {
-  const tint = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  const tint = '#ffffff';
   if (!tint) return;
   const replacement = document.createElement('meta');
   replacement.name = 'theme-color';
