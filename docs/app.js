@@ -322,7 +322,6 @@ window.ForgeData?.settings?.subscribe(stored => {
 });
 let opener;
 let menuLockUntil = 0;
-let menuLockTimer;
 const pendingPanelHides = new WeakMap();
 const DRAWER_MS = 100;
 const DROPDOWN_MS = 200;
@@ -440,9 +439,6 @@ function dimmerInUse() {
 }
 function lockMenu(ms = MENU_LOCK_MS) {
   menuLockUntil = performance.now() + ms;
-  backdrop.classList.add('is-locked');
-  clearTimeout(menuLockTimer);
-  menuLockTimer = setTimeout(() => backdrop.classList.remove('is-locked'), ms);
 }
 function menuLocked() {
   return performance.now() < menuLockUntil;
@@ -588,8 +584,6 @@ function closeDrawer({keepDim = false} = {}) {
 }
 function closeMenu() {
   menuLockUntil = 0;
-  backdrop.classList.remove('is-locked');
-  clearTimeout(menuLockTimer);
   closePopovers();
   const active = document.activeElement;
   if (active && app.contains(active) && active !== document.body) active.blur();
@@ -680,7 +674,6 @@ document.querySelectorAll('[data-open]').forEach(button => {
   button.addEventListener('click', () => {
     const panel = document.querySelector(`.${button.dataset.open}`);
     if (!panel.hidden && !panel.classList.contains('is-closing')) {
-      if (menuLocked()) return;
       closeMenu();
     }
     else openMenu(button.dataset.open, button);
@@ -690,10 +683,7 @@ document.querySelectorAll('.dismiss').forEach(button => button.addEventListener(
 document.querySelectorAll('[data-sheet-back]').forEach(button => {
   button.addEventListener('click', () => openMenu(button.dataset.sheetBack));
 });
-backdrop.addEventListener('click', () => {
-  if (menuLocked()) return;
-  closeMenu();
-});
+backdrop.addEventListener('click', closeMenu);
 const DISMISS_PX = 72;
 const DISMISS_FLICK_PX = 36;
 const DISMISS_VEL = 0.7;
@@ -1808,7 +1798,6 @@ if (forge?.sites && previewScreen) {
   openPreview = () => {
     if (!window.ForgeOnboarding?.canPreview()) return;
     if (!previewScreen.hidden) {
-      if (menuLocked()) return;
       closeMenu();
       return;
     }
@@ -1886,7 +1875,6 @@ websitePreviewButton?.addEventListener('click', () => {
   }
   const unbuilt = document.querySelector('.preview-unbuilt');
   if (unbuilt && !unbuilt.hidden && !unbuilt.classList.contains('is-closing')) {
-    if (menuLocked()) return;
     closeMenu();
     return;
   }
