@@ -96,7 +96,16 @@ describe("billing", () => {
     expect(planFor("premium")).toEqual(pro);
     expect(ultra.key).toBe("ultra");
     expect(catalog.plans[0].signupCredits).toBe(0);
-    expect(catalog.topUps.length).toBeGreaterThan(0);
+    expect(catalog.topUps.map((pack) => [pack.credits, pack.priceCents])).toEqual([
+      [100, 990],
+      [300, 2490],
+      [1000, 3000],
+      [2000, 6000],
+      [3000, 9000],
+      [4000, 12000],
+      [5000, 15000],
+      [10000, 20000],
+    ]);
     expect(catalog.requestCosts).toEqual(REQUEST_COSTS);
   });
 
