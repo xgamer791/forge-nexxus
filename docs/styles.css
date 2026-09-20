@@ -25,7 +25,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .navigation{position:fixed;z-index:4;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:var(--drawer);background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;transform:translate3d(-100%,0,0)}
 .app.navigation-open .navigation:not(.is-closing){transform:translate3d(0,0,0)}
 .navigation.is-closing{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:none}
-html[data-theme=light]{--backdrop:rgba(0,0,0,.4);--nav-backdrop:rgba(0,0,0,.4)}
+html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)}
 .backdrop.is-dim{background:var(--nav-backdrop)}
 /* iOS tints the standalone status bar from whatever paints beneath it. Keep the
    dimmer out of that strip so the tint never caches the darkened page color. */
