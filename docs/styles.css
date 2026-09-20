@@ -53,7 +53,7 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .status-shield{display:none;position:fixed;top:0;left:0;right:0;height:var(--status-strip,env(safe-area-inset-top,0px));background:#fff;z-index:3;pointer-events:none}
 .app.sheet-open .status-shield,.app.navigation-open .status-shield{display:none}
 .app.reference .status-shield{display:none}
-.nav-content{padding:16px;overflow:auto;flex:1;min-height:0}
+.nav-content{padding:32px 16px 16px;overflow:auto;flex:1;min-height:0}
 .new-site{height:44px;width:100%;border:1px solid var(--border);border-radius:24px;background:var(--surface);display:flex;align-items:center;padding:0 17px;gap:13px;font-size:17px;font-weight:500;line-height:20px}
 .new-site svg{width:17px;height:17px;stroke-width:2.2}
 .site-list{margin-top:19px}
@@ -74,7 +74,7 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .settings{margin-left:auto;width:34px;height:34px;display:grid;place-items:center;color:var(--focus)}
 .settings svg{width:26px;height:26px;fill:currentColor;stroke:none}
 .app.reference .navigation{position:absolute;left:0;width:320px}
-.app.reference .nav-content{padding-top:16px}
+.app.reference .nav-content{padding-top:32px}
 
 /* Credits card: the plan and what is left of this period, above the footer. */
 .credits-card{flex-shrink:0;margin:0 12px 12px;padding:12px 14px;border:1px solid var(--border);border-radius:16px;background:var(--surface);display:grid;gap:10px}
