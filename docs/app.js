@@ -328,16 +328,39 @@ window.ForgeData?.settings?.subscribe(stored => {
   applySettings(settings);
 });
 let opener;
+const pendingPanelHides = new WeakMap();
 function resetViewport() {
   window.scrollTo(0, 0);
   document.documentElement.scrollTop = 0;
   document.body.scrollTop = 0;
 }
+function finishHide(element) {
+  const pending = pendingPanelHides.get(element);
+  if (pending) {
+    clearTimeout(pending.timer);
+    element.removeEventListener('animationend', pending.finish);
+    pendingPanelHides.delete(element);
+  }
+  element.hidden = true;
+  element.classList.remove('is-open', 'is-closing');
+  element.scrollTop = 0;
+}
 function hideOverlay(element) {
   if (!element) return;
-  element.hidden = true;
+  const animatedDropdown = element.matches?.('.dropdown.is-open')
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!animatedDropdown) {
+    finishHide(element);
+    return;
+  }
   element.classList.remove('is-open');
-  element.scrollTop = 0;
+  element.classList.add('is-closing');
+  const finish = event => {
+    if (event.target === element) finishHide(element);
+  };
+  const timer = setTimeout(() => finishHide(element), 560);
+  pendingPanelHides.set(element, {finish, timer});
+  element.addEventListener('animationend', finish);
 }
 function closeMenu() {
   closePopovers();
@@ -364,7 +387,9 @@ function openMenu(name, trigger) {
   if (!panels.includes(panel)) return;
   opener = trigger;
   if (name === 'navigation') showSettings(false);
+  if (pendingPanelHides.has(panel)) finishHide(panel);
   panel.hidden = false;
+  panel.classList.remove('is-closing');
   panel.classList.add('is-open');
   backdrop.hidden = false;
   backdrop.classList.add('is-open');

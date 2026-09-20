@@ -285,10 +285,12 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .dropdown .handle{margin:auto auto max(10px,var(--bottom));flex:none}
 .dropdown header{height:52px}
 @media(prefers-reduced-motion:no-preference){
-  .dropdown{animation:dropdown-in .34s cubic-bezier(.32,.72,0,1)}
+  .dropdown.is-open{animation:dropdown-in .48s cubic-bezier(.22,1,.36,1) both}
+  .dropdown.is-closing{animation:dropdown-out .48s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
   .app.navigation-open .dropdown{animation:none}
 }
 @keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+@keyframes dropdown-out{from{transform:translateY(0)}to{transform:translateY(-100%)}}
 .app.reference .dropdown{position:absolute;left:0;right:0}
 html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 
