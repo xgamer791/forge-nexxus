@@ -6,9 +6,10 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .greeting h1{transform:scaleX(.965)}
 
 /* The icon row is a fixed instrument panel. Menus hang from its bottom edge
-   instead of covering it, and the stage can slide without taking the icons. */
+   instead of covering it, and the stage can slide without taking the icons.
+   Height is the 40px controls plus the iOS status strip — no extra padding. */
 :root{
-  --chrome:64px;
+  --chrome:40px;
   --header:calc(var(--status-strip,env(safe-area-inset-top,0px)) + var(--chrome));
 }
 
@@ -17,7 +18,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
    Only status-bar-style=default (read when the icon is added) removes it; no CSS can reach it. */
 .stage{position:absolute;inset:0;z-index:1}
 .chrome{position:absolute;top:0;left:0;right:0;height:var(--header);z-index:6;background:var(--bg);pointer-events:none}
-.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:calc(var(--status-strip,env(safe-area-inset-top,0px)) + 12px);pointer-events:auto;z-index:0}
+.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:var(--status-strip,env(safe-area-inset-top,0px));pointer-events:auto;z-index:0}
 .app.navigation-open .chrome,.app.sheet-open .chrome,.app:has(.overlay.preview:not([hidden])) .chrome{box-shadow:0 1px 0 var(--border)}
 .composer-area{position:absolute;bottom:20px;left:16px;right:16px}
 .app.reference .composer-area{left:16px;right:16px;bottom:var(--composer-bottom)}
@@ -324,7 +325,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .globe-button svg{width:28px;height:28px;fill:none;stroke:currentColor}
 .website-preview-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
 .website-preview-button svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2}
-.app.reference .chrome .hamburger,.app.reference .chrome .globe-button,.app.reference .chrome .website-preview-button{top:calc(var(--status-strip,0px) + 12px)}
+.app.reference .chrome .hamburger,.app.reference .chrome .globe-button,.app.reference .chrome .website-preview-button{top:var(--status-strip,0px)}
 .sheet:focus{outline:none}
 .dismiss,.dismiss:focus,.dismiss:focus-visible,.dismiss:active{-webkit-appearance:none;appearance:none;background:transparent!important;border:0!important;border-radius:0!important;outline:none!important;box-shadow:none!important}
 
