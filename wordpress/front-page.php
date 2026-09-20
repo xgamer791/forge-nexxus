@@ -27,19 +27,13 @@ get_header();
 ?>
 
 <section class="hero">
-	<div class="wrap hero-copy">
-		<h1>Describe the website you want.<br>Forge builds it.</h1>
-		<p class="lede">Say what your site is for. Forge designs it, builds it as one fast page and publishes it to a real address. Every follow-up message is an edit. It is the same account as the mobile app, so you can start there and keep going here.</p>
+	<div class="wrap hero-stage">
+		<h1 class="visually-hidden">Forge Nexxus</h1>
 		<form class="hero-composer" action="<?php echo esc_url( home_url( '/app/' ) ); ?>" method="get" data-hero-composer>
 			<label class="visually-hidden" for="hero-prompt">Describe the site you want</label>
 			<textarea id="hero-prompt" name="prompt" rows="1" placeholder="A website for my bakery, with the menu and opening hours…" autocomplete="off" spellcheck="true" maxlength="600"></textarea>
 			<button class="button" type="submit">Build it</button>
 		</form>
-		<ul class="hero-proof">
-			<li>Free to start</li>
-			<li>Monthly credits on every plan</li>
-			<li>One account across the app and the web</li>
-		</ul>
 	</div>
 	<figure class="hero-visual">
 		<img src="<?php echo esc_url( forge_img( 'hero-spread.jpg' ) ); ?>" srcset="<?php echo esc_url( forge_img( 'hero-spread-1200.jpg' ) ); ?> 1200w, <?php echo esc_url( forge_img( 'hero-spread.jpg' ) ); ?> 2400w" sizes="100vw" width="2400" height="1018" alt="Five websites built with Forge Nexxus in browser windows: a coffee roaster, an architecture studio, a software dashboard, a fashion boutique and a travel journal." fetchpriority="high">

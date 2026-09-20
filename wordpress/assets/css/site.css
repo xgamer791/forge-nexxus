@@ -64,17 +64,15 @@ p{margin:0}
 .nav-open .nav-toggle span:last-child{transform:translateY(-4px) rotate(-45deg)}
 html.is-member [data-member-hide]{display:none}
 
-/* Hero: the composer is the product, so it is the hero. */
-.hero{padding-top:calc(var(--header) + clamp(64px,10vw,150px))}
-.hero-copy{text-align:center;display:flex;flex-direction:column;align-items:center}
-.hero h1{max-width:1400px}
-.hero .lede{margin:30px auto 0;text-align:center;max-width:56ch}
-.hero-composer{width:100%;max-width:900px;margin:44px auto 0;display:flex;align-items:stretch;background:var(--canvas);border:1px solid var(--ink);padding:8px 8px 8px 24px;text-align:left}
+/* Hero: the composer is the product, so it is the only thing in the first
+   viewport. Docked 10px from the section floor. A modest radius on this box
+   only — buttons stay square. */
+.hero-stage{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:10px}
+.hero-composer{width:100%;max-width:900px;margin:0 auto;display:flex;align-items:stretch;background:var(--canvas);border:1px solid var(--ink);border-radius:18px;padding:8px 8px 8px 24px;text-align:left}
 .hero-composer textarea{flex:1;min-width:0;resize:none;border:0;background:none;color:var(--ink);font:inherit;font-size:18px;line-height:1.45;padding:13px 0;min-height:54px;max-height:220px;outline:none}
 .hero-composer textarea::placeholder{color:var(--ink-3);opacity:1}
 .hero-composer .button{align-self:flex-end;min-height:54px}
-.hero-proof{list-style:none;margin:20px 0 0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:6px 36px;font-size:15px;color:var(--ink-2)}
-.hero-visual{margin:clamp(56px,7vw,104px) 0 0;background:var(--plate)}
+.hero-visual{margin:0;background:var(--plate)}
 .hero-visual img{width:100%}
 
 /* Sections: rhythm from spacing and rules, not boxes. */
@@ -254,7 +252,6 @@ html.is-member [data-member-hide]{display:none}
   .hero-composer{flex-direction:column;padding:14px}
   .hero-composer textarea{min-height:88px;padding:6px 0 10px;font-size:17px}
   .hero-composer .button{align-self:stretch}
-  .hero-proof{flex-direction:column;align-items:center;gap:8px}
   .plan-price strong{font-size:var(--t5)}
   .faq-list details p{padding-right:0}
   .cost-table thead{display:none}
