@@ -1,0 +1,5 @@
+Carbon copy of GitHub docs/ app from forge-nexxus main.
+Synced: 2026-09-20
+App commit: dc0f63e Park the onboarding route so the dashboard is reachable
+Builder page: /app/
+Marketing pages remain the previous WordPress theme templates.

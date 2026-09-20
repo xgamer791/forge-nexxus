@@ -1,0 +1,22 @@
+Forge Nexxus WordPress backup
+Taken: 2026-09-20T07:15:45Z
+Reason: Snapshot the live Cloudways WordPress theme before copying the GitHub app onto it.
+
+Server: 1595519.cloudwaysapps.com (138.197.83.241)
+Cloudways app id: ghxskkxdmf
+Cloudways hostname: wordpress-1595519-6681209.cloudwaysapps.com
+Public site: https://forgenexxus.com
+Theme path: /home/master/applications/ghxskkxdmf/public_html/wp-content/themes/forge-nexxus
+Active theme: forge-nexxus 1.0.0
+Site title: Forge Nexxus
+
+Published pages at backup time:
+5,Forge Nexxus,home,publish
+6,Pricing,pricing,publish
+7,Forge,app,publish
+8,Privacy,privacy,publish
+9,Terms,terms,publish
+10,Support,support,publish
+
+This backup contains the theme and legal-page HTML only.
+wp-config.php, database dumps, and server credentials are not included.

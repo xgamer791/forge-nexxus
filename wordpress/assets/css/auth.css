@@ -1,0 +1,41 @@
+/* Reference screens use a 430pt iPhone canvas. Native status bars remain native. */
+.auth-gate{--auth-bg:#121315;position:fixed;inset:0;z-index:10;overflow-y:auto;overscroll-behavior:contain;background:var(--auth-bg);color:#e9ebee;color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:16px;scrollbar-width:none;-webkit-text-size-adjust:100%}
+.auth-gate button,.auth-gate input{font:inherit}
+.auth-gate button:focus-visible,.auth-gate input:focus-visible{outline:2px solid #b6b8ba;outline-offset:3px}
+.auth-button{width:100%;height:52px;border:1px solid #434548;border-radius:14px;display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;font-size:16px!important;font-weight:600!important;line-height:20px;padding:0 12px}
+.auth-button svg{width:20px;height:20px}
+.auth-primary{background:#e2e4e7;color:#121315;border-color:#e2e4e7}
+.auth-button:disabled{opacity:.5;cursor:default}
+.auth-welcome{background:#000;display:flex;flex-direction:column;justify-content:flex-end}
+.auth-hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:max(60px,env(safe-area-inset-top)) 28px 28px;text-align:center}
+.auth-mark{width:44px;height:55px;color:#e9ebee}
+.auth-hero h1{margin:0;font-size:30px;line-height:36px;letter-spacing:-1px;font-weight:700}
+.auth-hero p{margin:0;max-width:320px;color:#9fa1a4;font-size:17px;line-height:23px}
+.auth-welcome-sheet{width:100%;max-width:640px;margin:0 auto;padding:16px 20px max(34px,env(safe-area-inset-bottom));border-radius:28px 28px 0 0;background:#1e1e1e;display:grid;gap:10px}
+.auth-welcome .auth-button{height:50px;border-radius:12px;border:0;background:#3a3a3c;color:#fff}
+.auth-welcome .apple{background:#fff;color:#000}
+.auth-fineprint{margin:4px 0 0;text-align:center;color:#8a8c8f;font-size:13px;line-height:18px}
+/* The return leg of a provider sign-in, on the welcome sheet it started from. */
+.auth-signing{display:flex;align-items:center;justify-content:center;gap:10px;min-height:50px;margin:0;color:#e9ebee;font-size:16px;font-weight:600;line-height:20px}
+.auth-spinner{width:18px;height:18px;flex:none;border-radius:50%;border:2px solid #4a4c4f;border-top-color:#e9ebee;animation:auth-spin .7s linear infinite}
+@keyframes auth-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.auth-spinner{animation-duration:2.4s}}
+.auth-login-content{max-width:430px;margin:auto;padding:clamp(70px,19.4dvh,181px) 20px 65px}
+.auth-back{position:relative;width:40px;height:28px;display:grid;place-items:center;color:#989a9c;touch-action:manipulation}
+.auth-back:before{content:"";position:absolute;inset:-8px -2px}
+.auth-back svg{width:22px;height:22px;stroke-width:2.6;pointer-events:none}
+.auth-back svg *{pointer-events:none}
+.auth-login-content h1{font-size:27px;line-height:33px;letter-spacing:-1px;text-align:center;margin:23px -2px 10px;font-weight:700}
+.auth-intro{max-width:340px;margin:0 auto 34px;text-align:center;color:#9fa1a4;font-size:16px;line-height:20px}
+.auth-field{display:block;font-size:14px;font-weight:600;line-height:20px}
+.auth-field>input{display:block;width:100%;height:48px;border:1px solid #434548;border-radius:10px;background:transparent;margin-top:10px}
+.auth-field input{min-width:0;padding:0 16px;color:#e9ebee;font-size:16px;font-weight:400;outline:none}
+.auth-field input::placeholder{color:#5e6063;opacity:1}
+.auth-email-form>.auth-button{margin-top:12px}
+.auth-or{text-align:center;color:#606264;font-size:12px;font-weight:600;letter-spacing:1.4px;line-height:16px;margin:22px 0}
+.auth-social{display:grid;gap:12px}
+.auth-switch{text-align:center;color:#9fa1a4;font-size:14px;line-height:20px;margin:28px 0 0}
+.auth-message{font-size:14px;line-height:20px;color:#bfc2c5;text-align:center;margin:16px 0 0}
+.auth-message.error{color:#ffb4a8}
+@media(min-width:700px){.auth-login-content{padding-top:100px}.auth-welcome-sheet{max-width:430px}}
+@media(max-width:374px){.auth-login-content h1{font-size:23px}.auth-hero h1{font-size:26px}}
