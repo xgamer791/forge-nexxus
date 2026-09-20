@@ -69,6 +69,8 @@ html.is-member [data-member-hide]{display:none}
    docked 25px from the section floor. It lives in the hero and scrolls away
    with the page; it is not sticky. */
 .hero-stage{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:25px}
+html.hero-is-typing{overflow:hidden;overscroll-behavior:none}
+html.hero-is-typing body{position:fixed;top:var(--locked-scroll-top,0px);left:0;right:0;width:100%;overflow:hidden;overscroll-behavior:none}
 html.hero-is-typing .hero-composer{transform:translateY(calc(-1 * var(--keyboard,0px)))}
 .hero-composer{width:100%;max-width:640px;margin:0 auto;height:97px;display:block;background:#fff;border:1px solid #d1d1d6;border-radius:27px;padding:14px 16px 12px;text-align:left;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:17px;color:#1c1c1e}
 .hero-composer textarea{display:block;width:100%;height:26px;border:0;background:none;resize:none;padding:0;line-height:23px;font:inherit;color:inherit;letter-spacing:0;outline:none;scroll-margin:0}

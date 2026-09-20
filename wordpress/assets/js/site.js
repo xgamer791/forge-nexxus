@@ -43,19 +43,32 @@
       if (!viewport) return 0;
       return Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop));
     };
+    let lockedScrollY = 0;
     const holdHero = () => {
       root.style.setProperty('--keyboard', `${keyboardInset()}px`);
     };
-    const startTyping = () => {
+    const prepareTyping = () => {
       if (!window.matchMedia('(max-width:899.98px)').matches) return;
+      if (root.classList.contains('hero-is-typing')) return;
+      lockedScrollY = window.scrollY;
+      root.style.setProperty('--locked-scroll-top', `${-lockedScrollY}px`);
       root.classList.add('hero-is-typing');
       try { if (navigator.virtualKeyboard) navigator.virtualKeyboard.overlaysContent = true; } catch { /* older Chrome */ }
+    };
+    const startTyping = () => {
+      prepareTyping();
       holdHero();
     };
     const stopTyping = () => {
       root.classList.remove('hero-is-typing');
       root.style.setProperty('--keyboard', '0px');
+      root.style.removeProperty('--locked-scroll-top');
+      window.scrollTo(0, lockedScrollY);
     };
+    // iOS decides how far to scroll an input before `focus` fires. Lock the
+    // document on the pointer event so that automatic scroll never starts.
+    field.addEventListener('pointerdown', prepareTyping);
+    field.addEventListener('touchstart', prepareTyping, { passive: true });
     field.addEventListener('focus', startTyping);
     field.addEventListener('blur', stopTyping);
     window.visualViewport?.addEventListener('resize', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
