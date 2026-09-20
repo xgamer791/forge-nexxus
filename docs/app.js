@@ -522,7 +522,8 @@ function hideOverlay(element, {keepDim = false} = {}) {
     return;
   }
   const reduceMotion = prefersReducedMotion();
-  if (isPhoneMenu() && element.classList.contains('sheet') && !reduceMotion) {
+  const pulled = element.classList.contains('is-dragging') || element.classList.contains('is-dismissing');
+  if (isPhoneMenu() && element.classList.contains('sheet') && !reduceMotion && pulled) {
     dismissSheet(element, {keepDim});
     return;
   }
@@ -689,19 +690,23 @@ document.querySelectorAll('.dismiss').forEach(button => button.addEventListener(
 document.querySelectorAll('[data-sheet-back]').forEach(button => {
   button.addEventListener('click', () => openMenu(button.dataset.sheetBack));
 });
-backdrop.addEventListener('click', closeMenu);
-const DISMISS_PX = 48;
-const DISMISS_VEL = 0.3;
+backdrop.addEventListener('click', () => {
+  if (menuLocked()) return;
+  closeMenu();
+});
+const DISMISS_PX = 72;
+const DISMISS_FLICK_PX = 36;
+const DISMISS_VEL = 0.7;
 function bindSlideDismiss(element, {axis, sign, both = false, companions = []} = {}) {
   if (!element) return;
   let start = null;
   let dragging = false;
   const settleEase = 'cubic-bezier(.22,1,.36,1)';
+  const sheetLike = element.classList.contains('sheet') || element.classList.contains('dropdown');
   function client(event) {
-    const touch = event.touches?.[0] ?? event.changedTouches?.[0];
     return {
-      x: touch?.clientX ?? event.clientX,
-      y: touch?.clientY ?? event.clientY,
+      x: event.clientX,
+      y: event.clientY,
       t: event.timeStamp,
     };
   }
@@ -716,15 +721,12 @@ function bindSlideDismiss(element, {axis, sign, both = false, companions = []} =
     dragging = false;
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
-    window.removeEventListener('pointercancel', onUp);
-    window.removeEventListener('touchmove', onMove);
-    window.removeEventListener('touchend', onUp);
-    window.removeEventListener('touchcancel', onUp);
+    window.removeEventListener('pointercancel', onCancel);
   }
   function apply(delta) {
     const clamped = both ? delta : (sign < 0 ? Math.min(0, delta) : Math.max(0, delta));
     element.getAnimations().forEach(animation => animation.cancel());
-    element.classList.add('is-dragging', 'is-settled');
+    element.classList.add('is-dragging');
     element.style.transform = axis === 'x'
       ? `translate3d(${clamped}px,0,0)`
       : `translate3d(0,${clamped}px,0)`;
@@ -735,30 +737,58 @@ function bindSlideDismiss(element, {axis, sign, both = false, companions = []} =
       item.node.style.transform = `translate3d(${base + clamped}px,0,0)`;
     });
   }
+  function settle() {
+    const from = currentTransform(element, restTransform());
+    const companionState = companions.map(item => ({
+      node: item?.node,
+      from: item?.node ? currentTransform(item.node, `translate3d(${typeof item.base === 'function' ? item.base() : 0}px,0,0)`) : '',
+      to: item?.node ? `translate3d(${typeof item.base === 'function' ? item.base() : 0}px,0,0)` : '',
+    }));
+    detach();
+    element.classList.add('is-settled');
+    element.classList.remove('is-dragging');
+    slideLayer(element, from, restTransform(), 280, settleEase).then(() => {
+      if (!live()) return;
+      element.classList.remove('is-settled');
+      element.style.transform = element.classList.contains('navigation') ? DRAWER_ON : '';
+    });
+    companionState.forEach(item => {
+      if (!item.node) return;
+      slideLayer(item.node, item.from, item.to, 280, settleEase);
+    });
+  }
+  function pulledAway(delta, velocity) {
+    const distance = both ? Math.abs(delta) : (sign < 0 ? -delta : delta);
+    const speed = both ? Math.abs(velocity) : (sign < 0 ? -velocity : velocity);
+    return distance >= DISMISS_PX || (distance >= DISMISS_FLICK_PX && speed >= DISMISS_VEL);
+  }
   function onDown(event) {
     if (start) return;
     if (event.pointerType === 'mouse' && event.button) return;
-    if (element.classList.contains('sheet') && !element.classList.contains('dropdown') && !isPhoneMenu()) return;
+    if (menuLocked()) return;
+    if (sheetLike && !element.classList.contains('dropdown') && !isPhoneMenu()) return;
     if (!live()) return;
+    if (element.getAnimations().some(animation => animation.playState === 'running')) return;
     const onGrip = Boolean(event.target.closest('.handle,header,.nav-edge'));
+    if (sheetLike && !onGrip) return;
     if (!onGrip && event.target.closest('button,a,input,textarea,select,label,[role=tab]')) return;
-    start = {...client(event), id: event.pointerId ?? 'touch', grip: onGrip};
+    start = {...client(event), id: event.pointerId, grip: onGrip};
     dragging = false;
+    if (event.target.setPointerCapture && event.pointerId != null) {
+      try { event.target.setPointerCapture(event.pointerId); } catch { /* Capture is optional. */ }
+    }
     window.addEventListener('pointermove', onMove, {passive: false});
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    window.addEventListener('touchmove', onMove, {passive: false});
-    window.addEventListener('touchend', onUp);
-    window.addEventListener('touchcancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
   }
   function onMove(event) {
     if (!start) return;
-    if (event.pointerId != null && start.id !== 'touch' && event.pointerId !== start.id) return;
+    if (event.pointerId != null && start.id != null && event.pointerId !== start.id) return;
     const now = client(event);
     const delta = axis === 'x' ? now.x - start.x : now.y - start.y;
     const cross = axis === 'x' ? now.y - start.y : now.x - start.x;
     if (!dragging) {
-      if (Math.abs(delta) < 6 && Math.abs(cross) < 6) return;
+      if (Math.abs(delta) < 10 && Math.abs(cross) < 10) return;
       if (!start.grip && Math.abs(cross) > Math.abs(delta) + 4) {
         detach();
         return;
@@ -770,17 +800,12 @@ function bindSlideDismiss(element, {axis, sign, both = false, companions = []} =
   }
   function onUp(event) {
     if (!start) return;
-    if (event.pointerId != null && start.id !== 'touch' && event.pointerId !== start.id) return;
+    if (event.pointerId != null && start.id != null && event.pointerId !== start.id) return;
     const now = client(event);
     const delta = axis === 'x' ? now.x - start.x : now.y - start.y;
-    const velocity = delta / Math.max(1, now.t - start.t);
+    const velocity = delta / Math.max(16, now.t - start.t);
     const wasDragging = dragging;
-    const away = both
-      ? Math.abs(delta) > DISMISS_PX || Math.abs(velocity) > DISMISS_VEL
-      : sign < 0
-        ? delta < -DISMISS_PX || velocity < -DISMISS_VEL
-        : delta > DISMISS_PX || velocity > DISMISS_VEL;
-    if (wasDragging && away) {
+    if (wasDragging && pulledAway(delta, velocity)) {
       detach();
       element.classList.add('is-dismissing', 'is-settled');
       if (element.classList.contains('navigation')) closeDrawer();
@@ -789,28 +814,18 @@ function bindSlideDismiss(element, {axis, sign, both = false, companions = []} =
       return;
     }
     if (wasDragging) {
-      const from = currentTransform(element, restTransform());
-      const companionState = companions.map(item => ({
-        node: item?.node,
-        from: item?.node ? currentTransform(item.node, `translate3d(${typeof item.base === 'function' ? item.base() : 0}px,0,0)`) : '',
-        to: item?.node ? `translate3d(${typeof item.base === 'function' ? item.base() : 0}px,0,0)` : '',
-      }));
-      detach();
-      element.classList.add('is-settled');
-      element.classList.remove('is-dragging');
-      slideLayer(element, from, restTransform(), 280, settleEase).then(() => {
-        if (live()) element.style.transform = element.classList.contains('navigation') ? DRAWER_ON : '';
-      });
-      companionState.forEach(item => {
-        if (!item.node) return;
-        slideLayer(item.node, item.from, item.to, 280, settleEase);
-      });
+      settle();
       return;
     }
     detach();
   }
+  function onCancel(event) {
+    if (!start) return;
+    if (event.pointerId != null && start.id != null && event.pointerId !== start.id) return;
+    if (dragging) settle();
+    else detach();
+  }
   element.addEventListener('pointerdown', onDown);
-  element.addEventListener('touchstart', onDown, {passive: true});
 }
 document.querySelectorAll('.dropdown').forEach(panel => bindSlideDismiss(panel, {axis: 'y', both: true}));
 document.querySelectorAll('.sheet:not(.dropdown)').forEach(panel => bindSlideDismiss(panel, {axis: 'y', sign: 1}));
