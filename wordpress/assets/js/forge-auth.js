@@ -7,7 +7,7 @@
   const icon = name => `<svg aria-hidden="true"><use href="#${name}"/></svg>`;
   const google = `<svg viewBox="0 0 24 24" aria-hidden="true" style="stroke:none"><path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.51h3.24c1.9-1.75 2.98-4.33 2.98-7.36Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.24-2.51c-.9.6-2.04.96-3.38.96-2.6 0-4.81-1.76-5.6-4.12H3.06v2.59A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.4 13.92a6 6 0 0 1 0-3.84V7.49H3.06a10 10 0 0 0 0 9.02Z"/><path fill="#EA4335" d="M12 5.96c1.47 0 2.79.51 3.82 1.5l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.49l3.34 2.59A5.99 5.99 0 0 1 12 5.96Z"/></svg>`;
   const provider = name => `<button class="auth-button auth-provider ${name}" type="button" data-auth-provider="${name}">${name === 'google' ? google : icon('apple')}<span>Continue with ${name === 'google' ? 'Google' : 'Apple'}</span></button>`;
-  const back = target => `<button class="auth-back" type="button" data-auth-screen="${target}" aria-label="Back">${icon('chevron-left')}</button>`;
+  const back = target => `<button class="auth-back" type="button" data-auth-screen="${target}" aria-label="Back">${icon('arrow-left')}</button>`;
   const mark = `<svg class="auth-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg>`;
   const field = (name, label, placeholder, type = 'text', autocomplete = name) => `<label class="auth-field">${label}<input name="${name}" type="${type}" placeholder="${placeholder}" autocomplete="${autocomplete}" required ${type === 'email' ? 'inputmode="email" autocapitalize="none"' : ''}></label>`;
   function status(message, error = false) {
