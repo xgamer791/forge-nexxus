@@ -42,21 +42,28 @@
   function startHeroFilm() {
     const heroLoops = [...gate.querySelectorAll('[data-hero-loop]')];
     if (!heroLoops.length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    heroLoops.forEach(video => {
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+    });
     if (heroLoops.length === 2) {
-      // The file is a ping-pong whose last frame matches the first. Two
-      // layers cut on that match so the decoder never seeks on the visible
-      // picture — no fade, no endpoint hold.
-      const lead = 1 / 24;
+      // The file is one forward stroke plus the same frames reversed. Two
+      // layers cut on the matching end frames so iOS never seeks on screen.
+      const lead = 2 / 24;
       let active = heroLoops[0];
       let standby = heroLoops[1];
       let switching = false;
       const rewind = video => {
         try { video.currentTime = 0; } catch { /* seek before metadata */ }
       };
+      const nativeLoop = video => {
+        video.loop = true;
+        void video.play().catch(() => {});
+      };
       heroLoops.forEach(video => {
         video.loop = false;
-        video.muted = true;
-        video.playsInline = true;
         if (video.readyState >= 1) rewind(video);
         else video.addEventListener('loadedmetadata', () => rewind(video), { once: true });
       });
@@ -76,6 +83,7 @@
           switching = false;
         } catch {
           switching = false;
+          nativeLoop(active);
         }
       };
       let following = true;
@@ -91,7 +99,7 @@
       };
       requestAnimationFrame(follow);
       active.addEventListener('ended', () => { if (!switching) swap(); });
-      void active.play().catch(() => {});
+      void active.play().catch(() => nativeLoop(active));
       const previousStop = stopHero;
       stopHero = () => { following = false; previousStop(); };
       return;
