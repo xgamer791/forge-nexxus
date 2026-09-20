@@ -12,6 +12,8 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
   --chrome:55px;
   --status-strip:0px;
   --header:var(--chrome);
+  /* Preview's empty-state stack: header, icon, title, two-line copy, action, handle. */
+  --chrome-dropdown:304px;
 }
 
 /* Everything docks to the layout viewport. The iOS 26 Home Screen strip is WebKit 301994:
@@ -342,7 +344,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 
 /* Preview empty state: the same sheet, type scale and primary action used by
    account flows. It appears only when the top preview control has no build. */
-.preview-unbuilt{padding-bottom:max(16px,var(--bottom))}
+.preview-unbuilt,.address{height:var(--chrome-dropdown);min-height:var(--chrome-dropdown);overflow:hidden;padding-bottom:max(16px,var(--bottom))}
+.preview-unbuilt-content,.address-body,.address-upsell{flex:1;min-height:0;overflow:auto}
 .preview-unbuilt-content{padding:2px 8px 4px;text-align:center}
 .preview-unbuilt-icon{display:block;width:38px;height:38px;margin:2px auto 14px;color:var(--text);stroke-width:1.7}
 .preview-unbuilt-content h3{margin:0;font-size:19px;line-height:24px;font-weight:600}
@@ -350,7 +353,6 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 
 /* Address sheet: the same card and pill language as plans and the site bar,
    with one section showing at a time so the globe menu stays short. */
-.address{padding-bottom:max(16px,var(--bottom))}
 .address-site{display:grid;gap:12px;padding:2px 0 10px}
 .address-tabs{display:flex;gap:8px}
 .address-tab{flex:1;height:32px;padding:0 14px;border:1px solid var(--border);border-radius:16px;background:var(--chip);display:grid;place-items:center;font-size:15px;line-height:20px;font-weight:500;color:var(--subdued)}
@@ -489,6 +491,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
   /* The domain panel keeps coming down, but from the globe rather than from
      the top edge of the window: a menu belonging to the button that opened it. */
   .dropdown{top:var(--header);left:auto;right:max(16px,calc((100vw - var(--shell))/2));width:min(480px,calc(100vw - 48px));border-radius:24px;padding:4px 18px 0;min-height:0;max-height:calc(100% - var(--header) - 32px)}
+  .preview-unbuilt,.address{height:var(--chrome-dropdown);min-height:var(--chrome-dropdown)}
   .dropdown .handle{display:none}
   .dropdown header{height:56px}
   /* The drawer has room to breathe, and the settings screens read as panels
