@@ -81,32 +81,38 @@ codebase: the same HTML, CSS and JS serve both. What differs is width.
   done. If a feature only makes sense on one, say so out loud rather than
   quietly leaving the other behind.
 
-## Rule 4: every UI change goes through the frontend-design skill
+## Rule 4: all design work goes through the frontend-design skill
 
-**Invoke the `frontend-design` skill before changing anything a user looks
-at** — a screen, a sheet, a control, an empty state, a line of copy. It is
-checked into this repository at `.claude/skills/frontend-design/SKILL.md`, so
-it loads in every session here and needs no setup; there is no version of this
-work that skips it. Use it on the way in, to plan, and on the way out, to
-critique what was built.
+**Invoke the `frontend-design` skill before any design work. No exceptions.**
 
-It is not licence to restyle the app a screen at a time. Forge already has a
-visual language — the tokens, radii, type scale and components in
-`docs/styles.css` — and Rule 3 says a change lands at both widths. So:
+Design work is anything a user sees or reads: a screen, a sheet, a control, an
+icon, a layout, spacing, colour, a chip, an empty state, an error, a line of
+copy — whether it is new or being reshaped. A one-line CSS change is design
+work. Renaming a button is design work. There is no change small enough to
+skip the skill and no deadline that earns an exemption.
 
-- Its **craft applies always**: the quality floor (responsive to phone width,
-  visible keyboard focus, reduced motion respected, harmonious colour), the
-  self-critique pass before calling something done, and its guidance on
-  writing, which governs every string in `docs/` — active voice, an action
-  named the same thing through a whole flow, an empty state that invites
-  rather than apologises, an error that says what to do next.
-- Its **aesthetic direction applies where something new is being shaped**, and
-  is spent inside the existing system: reach for a token or an existing
-  component first, and when a component genuinely needs a new shape, give it
-  one deliberately rather than by accident.
+It is checked into this repository at `.claude/skills/frontend-design/SKILL.md`
+so it loads in every session here with nothing to install. Use it twice: on the
+way in to plan, and on the way out to critique what was built.
 
-Where the skill and the established system disagree, say which you followed
-and why, rather than silently picking one.
+Forge already has a visual language — the tokens, radii, type scale and
+components in `docs/styles.css` — and Rule 3 puts every change at both widths.
+The skill is how that language gets extended and kept honest, not a competitor
+to it:
+
+- Reach for an existing token or component first. When something genuinely
+  needs a shape the system does not have, the skill decides what that shape is
+  rather than the nearest default.
+- Its quality floor is the floor here: responsive to phone width, visible
+  keyboard focus, reduced motion respected, harmonious colour.
+- Its guidance on writing governs every string in `docs/` — active voice, an
+  action named the same thing through a whole flow, an empty state that
+  invites rather than apologises, an error that says what went wrong and what
+  to do next.
+- Run its self-critique pass before calling anything done.
+
+Where the skill and something already here disagree, follow one and say which,
+and why. Silently picking either is the only wrong answer.
 
 ## The name
 
