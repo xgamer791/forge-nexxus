@@ -10,7 +10,7 @@
   --font-display:"Cabinet Grotesk","General Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --font-text:"General Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --wrap:1520px;--gutter:clamp(20px,4vw,64px);--header:72px;
-  --hero-overlay:rgba(0,0,0,.3);
+  --hero-overlay:rgba(0,0,0,.2);
   /* Modular scale, ratio 1.25 from 17px. */
   --t-1:13.6px;--t0:17px;--t1:21px;--t2:26.5px;--t3:33px;--t4:41.5px;--t5:52px;--t6:65px;--t7:81px;--t8:101px;
   /* 10px on a 42–60px control: visible, not a pill. */
