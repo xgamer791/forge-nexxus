@@ -321,9 +321,12 @@ window.ForgeData?.settings?.subscribe(stored => {
   applySettings(settings);
 });
 let opener;
+let menuLockUntil = 0;
+let menuLockTimer;
 const pendingPanelHides = new WeakMap();
 const DRAWER_MS = 100;
 const DROPDOWN_MS = 200;
+const MENU_LOCK_MS = 350;
 const DRAWER_EASE = 'cubic-bezier(.45,0,.55,1)';
 const DRAWER_OFF = 'translate3d(-100%,0,0)';
 const DRAWER_ON = 'translate3d(0,0,0)';
@@ -377,6 +380,10 @@ function currentOpacity(element, fallback) {
 }
 function fadeLayer(element, from, to, duration = DRAWER_MS) {
   if (!element) return Promise.resolve();
+  if (Math.abs(from - to) < 0.02 && element.getAnimations().length === 0) {
+    element.style.opacity = String(to);
+    return Promise.resolve();
+  }
   element.getAnimations().forEach(animation => animation.cancel());
   element.style.opacity = String(from);
   element.style.transform = 'none';
@@ -402,12 +409,40 @@ function showDim(duration = DRAWER_MS) {
   backdrop.hidden = false;
   backdrop.classList.add('is-open', 'is-dim');
   backdrop.style.transform = 'none';
+  if (from > 0.98) {
+    backdrop.getAnimations().forEach(animation => animation.cancel());
+    backdrop.style.opacity = '1';
+    return Promise.resolve();
+  }
   backdrop.style.opacity = String(from);
   return fadeLayer(backdrop, from, 1, duration);
 }
 function dimmerInUse() {
   if (app.classList.contains('navigation-open')) return true;
   return panels.some(panel => !panel.hidden && !panel.classList.contains('is-closing'));
+}
+function lockMenu(ms = MENU_LOCK_MS) {
+  menuLockUntil = performance.now() + ms;
+  backdrop.classList.add('is-locked');
+  clearTimeout(menuLockTimer);
+  menuLockTimer = setTimeout(() => backdrop.classList.remove('is-locked'), ms);
+}
+function menuLocked() {
+  return performance.now() < menuLockUntil;
+}
+function releaseDimmer(duration = DROPDOWN_MS) {
+  if (dimmerInUse()) {
+    showDim(duration);
+    return;
+  }
+  fadeLayer(backdrop, currentOpacity(backdrop, 1), 0, duration).then(() => {
+    if (dimmerInUse()) {
+      showDim(duration);
+      return;
+    }
+    finishHide(backdrop);
+    if (!dimmerInUse()) app.classList.remove('sheet-open');
+  });
 }
 function finishHide(element) {
   const pending = pendingPanelHides.get(element);
@@ -435,47 +470,52 @@ function finishHide(element) {
 function hideOverlay(element, {keepDim = false} = {}) {
   if (!element) return;
   if (element.classList.contains('navigation')) return;
-  if (pendingPanelHides.has(element)) return;
+  if (element.hidden && !element.classList.contains('is-open') && !element.classList.contains('is-closing')) return;
+  if (pendingPanelHides.has(element)) {
+    if (keepDim) pendingPanelHides.get(element).keepDim = true;
+    return;
+  }
   const reduceMotion = prefersReducedMotion();
   const animatedDropdown = element.matches?.('.dropdown.is-open') && !reduceMotion;
   if (!animatedDropdown) {
     finishHide(element);
+    if (!keepDim) releaseDimmer();
     return;
   }
   element.classList.remove('is-open');
   element.classList.add('is-closing');
-  if (!keepDim) fadeLayer(backdrop, currentOpacity(backdrop, 1), 0, DROPDOWN_MS);
+  const pending = {keepDim};
   const finish = event => {
     if (event?.target && event.target !== element) return;
+    const stay = pending.keepDim;
     finishHide(element);
-    if (keepDim || dimmerInUse()) return;
-    finishHide(backdrop);
-    app.classList.remove('sheet-open');
+    if (stay || dimmerInUse()) return;
+    releaseDimmer();
   };
-  const timer = setTimeout(() => finish(), DROPDOWN_MS + 80);
-  pendingPanelHides.set(element, {finish, timer});
+  pending.finish = finish;
+  pending.timer = setTimeout(() => finish(), DROPDOWN_MS + 80);
+  pendingPanelHides.set(element, pending);
   element.addEventListener('animationend', finish);
+  if (!keepDim) releaseDimmer();
 }
 function closeDrawer({keepDim = false} = {}) {
   const drawer = document.querySelector('.navigation');
   if (!drawer || drawer.hidden && !drawer.classList.contains('is-open')) {
-    if (!keepDim && !dimmerInUse()) {
-      finishHide(backdrop);
-      app.classList.remove('sheet-open');
-    }
     app.classList.remove('navigation-open');
     parkStage();
+    if (!keepDim) releaseDimmer(DRAWER_MS);
     return;
   }
-  if (pendingPanelHides.has(drawer)) return;
+  if (pendingPanelHides.has(drawer)) {
+    if (keepDim) pendingPanelHides.get(drawer).keepDim = true;
+    return;
+  }
+  const pending = {keepDim};
   const done = () => {
     if (!pendingPanelHides.has(drawer)) return;
     finishHide(drawer);
     app.classList.remove('navigation-open');
-    if (!keepDim && !dimmerInUse()) {
-      finishHide(backdrop);
-      app.classList.remove('sheet-open');
-    }
+    if (!pending.keepDim) releaseDimmer(DRAWER_MS);
     requestAnimationFrame(() => {
       resetViewport();
       refreshStatusBarTint();
@@ -486,16 +526,19 @@ function closeDrawer({keepDim = false} = {}) {
   drawer.style.transform = currentTransform(drawer, DRAWER_ON);
   if (stage) stage.style.transform = currentTransform(stage, stageOn());
   void drawer.offsetWidth;
-  pendingPanelHides.set(drawer, {timer: setTimeout(done, DRAWER_MS + 80)});
+  pending.timer = setTimeout(done, DRAWER_MS + 80);
+  pendingPanelHides.set(drawer, pending);
   app.classList.remove('navigation-open');
-  const jobs = [
+  Promise.all([
     slideLayer(drawer, currentTransform(drawer, DRAWER_ON), DRAWER_OFF),
     slideLayer(stage, currentTransform(stage, stageOn()), STAGE_OFF),
-  ];
-  if (!keepDim) jobs.push(fadeLayer(backdrop, currentOpacity(backdrop, 1), 0));
-  Promise.all(jobs).then(done);
+  ]).then(done);
+  if (!keepDim) releaseDimmer(DRAWER_MS);
 }
 function closeMenu() {
+  menuLockUntil = 0;
+  backdrop.classList.remove('is-locked');
+  clearTimeout(menuLockTimer);
   closePopovers();
   const active = document.activeElement;
   if (active && app.contains(active) && active !== document.body) active.blur();
@@ -507,8 +550,8 @@ function closeMenu() {
   const dropdownClosing = panels.some(panel => panel.classList.contains('dropdown') && panel.classList.contains('is-closing'));
   if (drawerOpen) closeDrawer();
   else if (!drawerClosing && !dropdownClosing) {
-    finishHide(backdrop);
-    app.classList.remove('navigation-open', 'sheet-open');
+    releaseDimmer();
+    app.classList.remove('navigation-open');
     parkStage();
   } else if (dropdownClosing) {
     app.classList.remove('navigation-open');
@@ -546,6 +589,7 @@ function openMenu(name, trigger) {
     slideLayer(panel, from, DRAWER_ON);
     slideLayer(stage, stageFrom, stageOn());
     showDim(DRAWER_MS);
+    lockMenu();
     trigger?.setAttribute('aria-expanded', 'true');
     panel.querySelector('button')?.focus({preventScroll:true});
     resetViewport();
@@ -568,7 +612,8 @@ function openMenu(name, trigger) {
   backdrop.hidden = false;
   backdrop.classList.add('is-open');
   app.classList.add('sheet-open');
-  if (panel.classList.contains('dropdown')) showDim(DROPDOWN_MS);
+  showDim(panel.classList.contains('dropdown') ? DROPDOWN_MS : DRAWER_MS);
+  lockMenu();
   trigger?.setAttribute('aria-expanded', 'true');
   // Focus the dialog itself, not its close button. iOS draws a native ring
   // around a programmatically focused button even when the app removes its
@@ -581,7 +626,10 @@ document.querySelectorAll('[data-open]').forEach(button => {
   button.setAttribute('aria-expanded', 'false');
   button.addEventListener('click', () => {
     const panel = document.querySelector(`.${button.dataset.open}`);
-    if (!panel.hidden && !panel.classList.contains('is-closing')) closeMenu();
+    if (!panel.hidden && !panel.classList.contains('is-closing')) {
+      if (menuLocked()) return;
+      closeMenu();
+    }
     else openMenu(button.dataset.open, button);
   });
 });
@@ -589,7 +637,10 @@ document.querySelectorAll('.dismiss').forEach(button => button.addEventListener(
 document.querySelectorAll('[data-sheet-back]').forEach(button => {
   button.addEventListener('click', () => openMenu(button.dataset.sheetBack));
 });
-backdrop.addEventListener('click', closeMenu);
+backdrop.addEventListener('click', () => {
+  if (menuLocked()) return;
+  closeMenu();
+});
 document.addEventListener('click', event => {
   if (!event.target.closest('.theme-select,.theme-menu,.font-select,.font-menu')) closePopovers();
 });
@@ -1564,12 +1615,19 @@ if (forge?.sites && previewScreen) {
   openPreview = () => {
     if (!window.ForgeOnboarding?.canPreview()) return;
     if (!previewScreen.hidden) {
+      if (menuLocked()) return;
       closeMenu();
       return;
     }
-    closeMenu();
+    closePopovers();
+    panels.forEach(item => { if (!item.hidden) hideOverlay(item, {keepDim: true}); });
+    const drawer = document.querySelector('.navigation');
+    if (drawer?.classList.contains('is-open') && !drawer.classList.contains('is-closing')) {
+      closeDrawer({keepDim: true});
+    }
     showNote(error, '');
     showOverlay(previewScreen);
+    lockMenu();
     document.querySelector('.website-preview-button')?.setAttribute('aria-expanded', 'true');
     navigation.setAttribute('aria-label', 'Site preview');
     watch();
@@ -1635,6 +1693,7 @@ websitePreviewButton?.addEventListener('click', () => {
   }
   const unbuilt = document.querySelector('.preview-unbuilt');
   if (unbuilt && !unbuilt.hidden && !unbuilt.classList.contains('is-closing')) {
+    if (menuLocked()) return;
     closeMenu();
     return;
   }
@@ -1967,7 +2026,7 @@ if (forge?.sites && addressSheet) {
   });
   addressSheet.querySelectorAll('.open-plan-from-address').forEach(button => {
     button.addEventListener('click', () => {
-      closeMenu();
+      if (addressSheet && !addressSheet.hidden) hideOverlay(addressSheet, {keepDim: true});
       openMenu('navigation');
       showSettings(true);
       showSettingsScreen('plan');

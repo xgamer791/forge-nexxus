@@ -28,6 +28,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .sheet[hidden],.appearance[hidden]{display:block!important;position:fixed!important;top:auto!important;left:-100vw!important;right:auto!important;bottom:auto!important;width:0!important;height:0!important;max-height:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;transform:translate3d(0,100vh,0)!important}
 /* The dimmer stays in place. Transform parking made it slide up from the bottom. */
 .backdrop[hidden]{display:block!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;transform:none!important}
+.backdrop.is-locked{pointer-events:none}
 /* The drawer slides on X only. Parking it at 100vh made open/close come from the bottom. */
 .navigation[hidden]{display:flex!important;visibility:hidden!important;pointer-events:none!important;opacity:1!important;transform:translate3d(-100%,0,0)!important}
 .backdrop{position:fixed}
@@ -321,7 +322,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 @media(prefers-reduced-motion:no-preference){
   .dropdown.is-open{animation:dropdown-in .2s cubic-bezier(.22,1,.36,1) both}
   .dropdown.is-closing{animation:dropdown-out .2s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
-  .app.navigation-open .dropdown{animation:none}
+  .app.navigation-open .dropdown:not(.is-closing){animation:none}
 }
 @keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 @keyframes dropdown-out{from{transform:translateY(0)}to{transform:translateY(-100%)}}
