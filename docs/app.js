@@ -1444,7 +1444,10 @@ if (forge?.sites && addressSheet) {
     // upsell and the way to the plan screen instead of the picker.
     const addressable = Boolean(summary?.plan.publicAddress);
     const paid = catalog?.plans.find(plan => plan.publicAddress);
-    if (globeButton) globeButton.hidden = !(activeSite || !addressable);
+    // Always show the globe once the member is in the app. Free sees the
+    // upsell; paid without a site yet still needs a way in. Hiding it when
+    // `!activeSite && addressable` made it flash and vanish.
+    if (globeButton) globeButton.hidden = false;
     if (upsell) upsell.hidden = addressable;
     if (addressBody) addressBody.hidden = !addressable;
     if (!addressable) {
