@@ -48,16 +48,11 @@ const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel =>
 const navigation = document.querySelector('.navigation');
 const historyContent = document.querySelector('.nav-content');
 const settingsContent = document.querySelector('.settings-content');
-// status-bar-style=default keeps the system bar outside the web layer.
-// Only a real safe-area inset belongs in --status-strip; screen.height minus
-// innerHeight double-counts that bar and opened a tall empty band under it.
+// status-bar-style=default already parks the system bar outside the web layer.
+// env(safe-area-inset-top) still reports the notch because of viewport-fit=cover,
+// and writing that into --status-strip reopened the empty band under the island.
 function measureStatusStrip() {
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-top,0px)';
-  document.body.append(probe);
-  const inset = probe.getBoundingClientRect().height;
-  probe.remove();
-  document.documentElement.style.setProperty('--status-strip', `${inset}px`);
+  document.documentElement.style.setProperty('--status-strip', '0px');
 }
 measureStatusStrip();
 window.addEventListener('resize', measureStatusStrip);
