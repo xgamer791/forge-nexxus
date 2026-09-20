@@ -327,12 +327,12 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .dropdown header h2{max-width:none}
 .dropdown.is-dragging,.sheet.is-dragging,.navigation.is-dragging{animation:none!important;transition:none}
 @media(max-width:899.98px){
-  .sheet.is-dismissing,.dropdown.is-dismissing,.sheet.is-closing,.dropdown.is-closing{animation:none!important}
+  .sheet.is-dismissing,.dropdown.is-dismissing{animation:none!important}
 }
 .nav-edge{position:absolute;top:0;right:0;width:28px;bottom:0;z-index:2;touch-action:none}
 @media(prefers-reduced-motion:no-preference){
-  .dropdown.is-open{animation:dropdown-in .2s cubic-bezier(.22,1,.36,1) both}
-  .dropdown.is-closing{animation:dropdown-out .2s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
+  .dropdown.is-open{animation:dropdown-in .16s cubic-bezier(.22,1,.36,1) both}
+  .dropdown.is-closing{animation:dropdown-out .16s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
   .app.navigation-open .dropdown:not(.is-closing){animation:none}
 }
 @keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
