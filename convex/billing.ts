@@ -112,7 +112,15 @@ export async function subscriptionByStripe(
 // query can use it as well as a mutation.
 export async function currentPlan(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
   const sub = await subscriptionFor(ctx, userId);
-  return planFor(sub ? projected(sub, Date.now()).planKey : "free");
+  const stored = planFor(sub ? projected(sub, Date.now()).planKey : "free");
+  // Every mutation that touches a subscription puts an admin back on the top
+  // plan, but only a mutation can write one. Read the same answer here, or the
+  // gates refuse what the rule grants: an admin whose stored row had not been
+  // rolled onto the top plan yet could take an address (Starter carries one)
+  // and then be told a custom domain was not on their plan, by the deployment
+  // that holds them on the plan which has it.
+  const user = await ctx.db.get(userId);
+  return isAdminEmail(user?.email) ? topPlan() : stored;
 }
 
 async function record(
@@ -207,7 +215,7 @@ export const summary = query({
     const now = Date.now();
     const stored = await subscriptionFor(ctx, user._id);
     const balance = stored ? projected(stored, now) : opening("free", now);
-    const plan = planFor(balance.planKey);
+    const plan = isAdminEmail(user.email) ? topPlan() : planFor(balance.planKey);
     const unlimited = plan.monthlyCredits === null;
     return {
       plan,

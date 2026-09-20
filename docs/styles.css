@@ -281,8 +281,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
    the way the globe is reached, rather than up from the thumb. It keeps every
    sheet part — header, dismiss, copy, groups — and turns the geometry over:
    square at the top edge, rounded below, handle at the bottom. */
-.dropdown{top:0;bottom:auto;border-radius:0 0 28px 28px;padding:max(10px,env(safe-area-inset-top)) 16px 0;max-height:calc(100% - 28px);box-shadow:0 18px 44px rgba(0,0,0,.34)}
-.dropdown .handle{margin:14px auto max(10px,var(--bottom))}
+.dropdown{top:0;bottom:auto;border-radius:0 0 28px 28px;padding:max(10px,env(safe-area-inset-top)) 16px 0;min-height:50%;max-height:calc(100% - 28px);display:flex;flex-direction:column;box-shadow:0 18px 44px rgba(0,0,0,.34)}
+.dropdown .handle{margin:auto auto max(10px,var(--bottom));flex:none}
 .dropdown header{height:52px}
 @media(prefers-reduced-motion:no-preference){
   .dropdown{animation:dropdown-in .34s cubic-bezier(.32,.72,0,1)}
@@ -356,7 +356,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
   html[data-theme=light] .sheet:not(.dropdown){box-shadow:0 24px 60px rgba(0,0,0,.18)}
   /* The domain panel keeps coming down, but from the globe rather than from
      the top edge of the window: a menu belonging to the button that opened it. */
-  .dropdown{top:64px;left:auto;right:max(16px,calc((100vw - var(--shell))/2));width:min(440px,calc(100vw - 48px));border-radius:24px;padding:4px 18px 0;max-height:calc(100% - 96px)}
+  .dropdown{top:64px;left:auto;right:max(16px,calc((100vw - var(--shell))/2));width:min(440px,calc(100vw - 48px));border-radius:24px;padding:4px 18px 0;min-height:0;max-height:calc(100% - 96px)}
   .dropdown .handle{display:none}
   .dropdown header{height:56px}
   /* The drawer has room to breathe, and the settings screens read as panels

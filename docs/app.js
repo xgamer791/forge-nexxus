@@ -1413,6 +1413,7 @@ if (forge?.sites && addressSheet) {
   const live = addressSheet.querySelector('[data-address-live]');
   const domainForm = addressSheet.querySelector('.address-domain-form');
   const gate = addressSheet.querySelector('.address-gate');
+  const needsSlug = addressSheet.querySelector('.address-needs-slug');
   const domainList = addressSheet.querySelector('[data-address-domains]');
   const domainEmpty = addressSheet.querySelector('.address-empty');
   const error = addressSheet.querySelector('.address-error');
@@ -1481,11 +1482,20 @@ if (forge?.sites && addressSheet) {
       restingNote();
       saveButton.disabled = false;
     }
+    // This section is one of three things and never none of them. It used to
+    // wait on the catalog to name the plan it was selling, and a plan without
+    // domains plus a catalog that had not answered hid the form and the upsell
+    // together -- leaving the heading standing over nothing at all.
     const allowed = Boolean(summary?.plan.customDomains);
     const cheapest = catalog?.plans.find(plan => plan.customDomains);
-    setText('[data-address-plan]', cheapest?.name ?? '');
-    domainForm.hidden = !allowed;
-    gate.hidden = allowed || !cheapest;
+    const hasSlug = Boolean(activeSite.slug);
+    setText('[data-address-plan]', cheapest?.name ? `the ${cheapest.name} plan` : 'a higher plan');
+    // Name the plan being read, so a plan that is not what it should be is
+    // visible here rather than only in what the sheet refuses to show.
+    setText('[data-address-current-plan]', summary?.plan?.name ? ` — you're on ${summary.plan.name}` : '');
+    domainForm.hidden = !allowed || !hasSlug;
+    if (needsSlug) needsSlug.hidden = !allowed || hasSlug;
+    gate.hidden = allowed;
     renderDomainRows();
   }
   function restingNote(text = null, kind = null) {
@@ -1545,7 +1555,8 @@ if (forge?.sites && addressSheet) {
   }
   function renderDomainRows() {
     const rows = siteDomains();
-    domainEmpty.hidden = rows.length > 0 || domainForm.hidden;
+    const allowed = Boolean(summary?.plan.customDomains);
+    domainEmpty.hidden = rows.length > 0 || !allowed || !activeSite?.slug;
     domainList.hidden = rows.length === 0;
     domainList.replaceChildren(...rows.map(domain => {
       const row = document.createElement('div');
