@@ -43,7 +43,9 @@
 <button type="button" class="account-button open-plan-from-address">See plans</button>
 </div>
 <div class="address-body">
-<p class="sheet-copy">Your site's address on the web. Pick the name, then point your own domain at it.</p>
+<p class="sheet-copy" data-address-lead>Your site's address on the web. Pick the name, then point your own domain at it.</p>
+<p class="sheet-copy address-no-site" hidden>No site yet. Describe the site you want in the composer — once Forge has built it, its address is picked here.</p>
+<div class="address-site">
 <h3 class="address-heading">Forge address</h3>
 <form class="address-form">
 <div class="address-field"><input class="address-slug" name="slug" placeholder="your-site" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="40" aria-label="Site address" required><span class="address-suffix" data-address-domain></span></div>
@@ -61,6 +63,7 @@
 <p class="sheet-copy address-needs-slug" hidden>Save a Forge address above first — a domain of your own is pointed at it.</p>
 <div class="group address-domains" data-address-domains></div>
 <p class="sheet-copy address-empty" hidden>No custom domain yet. Adding one shows the single DNS record to copy.</p>
+</div>
 </div>
 <p class="address-error" role="alert" hidden></p>
 <div class="handle"></div>

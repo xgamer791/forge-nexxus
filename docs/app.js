@@ -1414,6 +1414,9 @@ if (forge?.sites && addressSheet) {
   const domainForm = addressSheet.querySelector('.address-domain-form');
   const gate = addressSheet.querySelector('.address-gate');
   const needsSlug = addressSheet.querySelector('.address-needs-slug');
+  const siteBlock = addressSheet.querySelector('.address-site');
+  const noSite = addressSheet.querySelector('.address-no-site');
+  const lead = addressSheet.querySelector('[data-address-lead]');
   const domainList = addressSheet.querySelector('[data-address-domains]');
   const domainEmpty = addressSheet.querySelector('.address-empty');
   const error = addressSheet.querySelector('.address-error');
@@ -1461,7 +1464,11 @@ if (forge?.sites && addressSheet) {
         : 'One DNS record points it at your site.');
       return;
     }
-    if (!activeSite) return;
+    const hasSite = Boolean(activeSite);
+    if (siteBlock) siteBlock.hidden = !hasSite;
+    if (noSite) noSite.hidden = hasSite;
+    if (lead) lead.hidden = !hasSite;
+    if (!hasSite) return;
     if (suffix) suffix.textContent = hosting?.domain ? `.${hosting.domain}` : '';
     if (document.activeElement !== slugField) {
       slugField.value = activeSite.slug ?? '';
