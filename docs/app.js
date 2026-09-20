@@ -557,7 +557,11 @@ function openMenu(name, trigger) {
   app.classList.add('sheet-open');
   if (panel.classList.contains('dropdown')) showDim(DROPDOWN_MS);
   trigger?.setAttribute('aria-expanded', 'true');
-  panel.querySelector('button')?.focus({preventScroll:true});
+  // Focus the dialog itself, not its close button. iOS draws a native ring
+  // around a programmatically focused button even when the app removes its
+  // background, which made the bare X look circled.
+  panel.tabIndex = -1;
+  panel.focus({preventScroll:true});
   resetViewport();
 }
 document.querySelectorAll('[data-open]').forEach(button => {
