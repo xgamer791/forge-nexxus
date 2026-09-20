@@ -1,5 +1,9 @@
 # Website onboarding
 
+The full-screen setup route is parked. `ENABLED` in `docs/onboarding.js` is
+`false`, so members land on the dashboard. Flip that flag to restore this flow.
+Drafts already saved in Convex stay put.
+
 Paid members cannot open the dashboard until a site has a saved generated
 version. An empty planning thread, draft row, cached browser flag or URL does
 not satisfy that gate. Free members keep dashboard access; preview and domain

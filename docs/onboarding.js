@@ -1,5 +1,7 @@
 // One full-screen route owns access to the app. The server decides whether a
 // paid member has a built website; local flags and URL parameters never do.
+// Flip ENABLED to true to restore the website-setup route.
+const ENABLED = false;
 (() => {
   const data = window.ForgeData;
   const questions = data?.onboardingQuestions ?? [];
@@ -36,7 +38,10 @@
     if (changed && show) window.dispatchEvent(new Event('resize'));
   }
   function paymentPending() { return awaitingPayment && state?.isFree; }
-  function canPreview() { return Boolean(member && state?.userId === member._id && !state.isFree && !state.required); }
+  function canPreview() {
+    if (!ENABLED) return true;
+    return Boolean(member && state?.userId === member._id && !state.isFree && !state.required);
+  }
   function controls() {
     const allowed = canPreview();
     document.querySelectorAll('.globe-button,.website-preview-button,.site-bar-preview,.open-domains,.message-view').forEach(button => {
@@ -130,6 +135,12 @@
   }
   function render() {
     controls();
+    if (!ENABLED) {
+      screen.hidden = true;
+      screen.replaceChildren();
+      revealDashboard(Boolean(member));
+      return;
+    }
     if (!member) { screen.hidden = true; revealDashboard(false); return; }
     if (state?.userId !== member._id || subscriptionError) {
       revealDashboard(false); screen.hidden = false;
@@ -271,6 +282,7 @@
     }
   });
   window.ForgeOnboarding = {
+    enabled: ENABLED,
     canPreview,
     setMember(user) {
       if (member?._id !== user?._id) { activeDraft = null; rendered = ''; }
@@ -278,7 +290,7 @@
       render();
     },
     async start() {
-      if (!member) return;
+      if (!ENABLED || !member) return;
       await data.onboarding.start();
     },
   };

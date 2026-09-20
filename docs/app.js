@@ -929,8 +929,12 @@ if (forge?.sites && siteList && thread) {
   }
   newSite?.addEventListener('click', () => {
     showNote(sitesError, '');
-    window.ForgeOnboarding?.start().then(() => {
+    const begin = window.ForgeOnboarding?.enabled
+      ? window.ForgeOnboarding.start()
+      : createSite();
+    begin.then(() => {
       closeMenu();
+      if (!window.ForgeOnboarding?.enabled) promptInput?.focus({preventScroll:true});
     }).catch(error => {
       reportError(error);
       showNote(sitesError, messageOf(error));
@@ -948,8 +952,8 @@ if (forge?.sites && siteList && thread) {
     const body = promptInput.value.trim();
     if (!body) return;
     if (forge.auth.state().kind !== 'member') { openMenu('account', promptInput); return; }
-    if (summary?.plan.key !== 'free' && !activeSite?.currentVersionId) {
-      await window.ForgeOnboarding?.start();
+    if (window.ForgeOnboarding?.enabled && summary?.plan.key !== 'free' && !activeSite?.currentVersionId) {
+      await window.ForgeOnboarding.start();
       return;
     }
     promptInput.value = '';
@@ -1638,7 +1642,11 @@ websitePreviewButton?.addEventListener('click', () => {
 });
 previewStartButton?.addEventListener('click', () => {
   closeMenu();
-  window.ForgeOnboarding?.start().catch(error => showNote(composerError, messageOf(error)));
+  if (window.ForgeOnboarding?.enabled) {
+    window.ForgeOnboarding.start().catch(error => showNote(composerError, messageOf(error)));
+    return;
+  }
+  promptInput?.focus({preventScroll: true});
 });
 
 // The globe by the composer: where this site lives. The address under the
