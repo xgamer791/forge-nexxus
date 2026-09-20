@@ -509,7 +509,7 @@ function closeMenu() {
   } else if (dropdownClosing) {
     app.classList.remove('navigation-open');
   }
-  document.querySelectorAll('[data-open]').forEach(button => button.setAttribute('aria-expanded', 'false'));
+  document.querySelectorAll('[data-open],.website-preview-button').forEach(button => button.setAttribute('aria-expanded', 'false'));
   if (!drawerOpen) resetViewport();
 }
 function openMenu(name, trigger) {
@@ -1584,6 +1584,24 @@ if (forge?.sites && previewScreen) {
   });
   document.addEventListener('forge:billing', () => { if (!previewScreen.hidden) renderPreview(); });
 }
+
+// The Lucide eye beside the globe is always available. A built site opens the
+// existing sandboxed browser preview; an empty thread gets a small, actionable
+// sheet instead of a disabled control.
+const websitePreviewButton = document.querySelector('.website-preview-button');
+const previewStartButton = document.querySelector('.preview-start');
+websitePreviewButton?.addEventListener('click', () => {
+  if (activeSite?.currentVersionId) {
+    websitePreviewButton.setAttribute('aria-expanded', 'true');
+    openPreview();
+    return;
+  }
+  openMenu('preview-unbuilt', websitePreviewButton);
+});
+previewStartButton?.addEventListener('click', () => {
+  closeMenu();
+  promptInput?.focus({preventScroll: true});
+});
 
 // The globe by the composer: where this site lives. The address under the
 // hosting domain is the site's to choose, and a domain of their own is pointed

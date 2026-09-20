@@ -306,9 +306,19 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 
 /* The globe: the site's address, opposite the drawer button. It appears only
    once there is a site to have an address. */
-.globe-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
+.globe-button{position:absolute;right:58px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
 .globe-button svg{width:28px;height:28px;fill:none;stroke:currentColor}
-.app.reference .globe-button{top:61px}
+.website-preview-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
+.website-preview-button svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2}
+.app.reference .globe-button,.app.reference .website-preview-button{top:61px}
+
+/* Preview empty state: the same sheet, type scale and primary action used by
+   account flows. It appears only when the top preview control has no build. */
+.preview-unbuilt{padding-bottom:max(24px,var(--bottom))}
+.preview-unbuilt-content{padding:2px 8px 4px;text-align:center}
+.preview-unbuilt-icon{display:block;width:38px;height:38px;margin:2px auto 14px;color:var(--text);stroke-width:1.7}
+.preview-unbuilt-content h3{margin:0;font-size:19px;line-height:24px;font-weight:600}
+.preview-unbuilt-content p{max-width:360px;margin:7px auto 20px;color:var(--muted);font-size:17px;line-height:22px}
 
 /* Address sheet: the same card and pill language as plans and the site bar,
    with one section showing at a time so the globe menu stays short. */
@@ -412,7 +422,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 /* A pointer can hover, so the things that respond to a tap say so first. */
 @media(hover:hover) and (pointer:fine){
   .group button:hover,.row-button:hover:not([disabled]),.settings-list button:hover,.add-list button:hover:not([aria-disabled=true]),.theme-menu button:hover,.font-menu button:hover,.topup-row:hover{background:var(--chip)}
-  .icon-button:hover,.dismiss:hover,.hamburger:hover,.globe-button:hover,.settings:hover,.site-options:hover{background:var(--chip);border-radius:50%}
+  .icon-button:hover,.dismiss:hover,.hamburger:hover,.globe-button:hover,.website-preview-button:hover,.settings:hover,.site-options:hover{background:var(--chip);border-radius:50%}
   .site:hover{color:var(--text)}
   .address-tab:hover:not([aria-selected=true]){color:var(--text);background:var(--surface)}
   .chip-button:hover:not([disabled]),.plan-cta:hover:not([disabled]),.account-button:hover:not(:disabled),.credits-cta:hover,.new-site:hover,.site-bar-preview:hover:not([disabled]){filter:brightness(1.08)}
