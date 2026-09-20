@@ -24,14 +24,17 @@ $showcase = [
 ];
 
 get_header();
+
+$hero_video  = add_query_arg( 'ver', FORGE_THEME_VERSION, get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) );
+$hero_poster = add_query_arg( 'ver', FORGE_THEME_VERSION, get_theme_file_uri( 'assets/video/forge-viking-poster.jpg' ) );
 ?>
 
 <section class="hero">
-	<video class="hero-background-video is-active" autoplay muted loop playsinline preload="auto" poster="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-poster.jpg' ) ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
-		<source src="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) ); ?>" type="video/mp4">
+	<video class="hero-background-video is-active" autoplay muted playsinline webkit-playsinline preload="auto" poster="<?php echo esc_url( $hero_poster ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture disableRemotePlayback data-hero-loop>
+		<source src="<?php echo esc_url( $hero_video ); ?>" type="video/mp4">
 	</video>
-	<video class="hero-background-video" muted loop playsinline preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
-		<source src="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) ); ?>" type="video/mp4">
+	<video class="hero-background-video" autoplay muted playsinline webkit-playsinline preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture disableRemotePlayback data-hero-loop>
+		<source src="<?php echo esc_url( $hero_video ); ?>" type="video/mp4">
 	</video>
 	<div class="wrap hero-stage">
 		<h1 class="visually-hidden">Forge Nexxus</h1>

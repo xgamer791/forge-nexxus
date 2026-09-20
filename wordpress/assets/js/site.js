@@ -26,58 +26,111 @@
     document.querySelectorAll('[data-member-text]').forEach(el => { el.textContent = el.dataset.memberText; });
   }
 
-  // The generated clip settles at both matching endpoint frames. Two primed
-  // layers skip those holds and crossfade before the file ends, so iOS never
-  // has to stop, seek and decode before the next visible frame.
+  // Native loop seeks the visible element and flashes a hold. Two unlocked
+  // layers trade places before the file ends; the visible one never seeks.
   const heroLoops = [...document.querySelectorAll('[data-hero-loop]')];
-  if (heroLoops.length === 2 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const loopStart = 0.5;
-    const loopEndPadding = 0.5;
-    const crossfadeMs = 140;
+  if (heroLoops.length && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const lead = 0.22;
     let active = heroLoops[0];
-    let standby = heroLoops[1];
+    let standby = heroLoops[1] || null;
     let switching = false;
 
-    const prime = video => {
-      const seek = () => {
-        video.currentTime = Math.min(loopStart, Math.max(0, video.duration - loopEndPadding));
-      };
-      if (video.readyState >= 1) seek();
-      else video.addEventListener('loadedmetadata', seek, { once: true });
+    const play = video => {
+      if (!video) return Promise.resolve();
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      video.loop = false;
+      const run = video.play();
+      return run ? run.catch(() => {}) : Promise.resolve();
     };
-    prime(active);
-    prime(standby);
 
-    const swap = async () => {
+    const rewind = video => {
+      if (!video) return;
+      try {
+        if (video.currentTime > 0.02) video.currentTime = 0;
+      } catch { /* iOS can reject a seek until metadata is ready */ }
+    };
+
+    const arm = video => {
+      if (!video) return;
+      rewind(video);
+      play(video).then(() => {
+        if (video !== active) video.pause();
+        rewind(video);
+      });
+    };
+
+    const swap = () => {
       if (switching) return;
       switching = true;
-      const previous = active;
-      const next = standby;
-      try {
-        await next.play();
-        next.classList.add('is-active');
-        previous.classList.remove('is-active');
-        active = next;
-        standby = previous;
-        setTimeout(() => {
-          standby.pause();
-          prime(standby);
+      const outgoing = active;
+      const incoming = standby || active;
+      let revealed = false;
+      const reveal = () => {
+        if (revealed) return;
+        revealed = true;
+        incoming.classList.add('is-active');
+        if (incoming !== outgoing) outgoing.classList.remove('is-active');
+        active = incoming;
+        standby = incoming === outgoing ? null : outgoing;
+        requestAnimationFrame(() => {
+          if (standby) {
+            standby.pause();
+            rewind(standby);
+          } else {
+            rewind(active);
+            play(active);
+          }
           switching = false;
-        }, crossfadeMs);
-      } catch {
-        switching = false;
-      }
+        });
+      };
+      play(incoming).then(() => {
+        if (incoming.readyState >= 2 && !incoming.paused) reveal();
+        else incoming.addEventListener('playing', reveal, { once: true });
+      });
+      setTimeout(reveal, 180);
     };
 
-    const follow = () => {
-      if (
-        !switching &&
-        Number.isFinite(active.duration) &&
-        active.currentTime >= active.duration - loopEndPadding
-      ) swap();
-      requestAnimationFrame(follow);
+    const remaining = video => {
+      const duration = video.duration;
+      if (!Number.isFinite(duration) || duration < 0.5) return Infinity;
+      return duration - video.currentTime;
     };
-    requestAnimationFrame(follow);
+
+    const consider = () => {
+      if (switching) return;
+      if (active.ended || remaining(active) <= lead) swap();
+    };
+
+    heroLoops.forEach(video => {
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      video.loop = false;
+      video.addEventListener('ended', () => {
+        if (video === active) swap();
+        else arm(video);
+      });
+      video.addEventListener('timeupdate', () => { if (video === active) consider(); });
+      video.addEventListener('stalled', () => { if (video === active) play(video); });
+      video.addEventListener('waiting', () => { if (video === active) play(video); });
+    });
+
+    play(active);
+    arm(standby);
+
+    const clock = () => {
+      consider();
+      requestAnimationFrame(clock);
+    };
+    requestAnimationFrame(clock);
+
+    const resume = () => play(active);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
+    window.addEventListener('pageshow', resume);
+    window.addEventListener('focus', resume);
+    setInterval(() => { if (active.paused || active.ended) play(active); }, 1000);
   }
 
   // The hero composer is the mobile app's pill. Enter and a typed prompt go
