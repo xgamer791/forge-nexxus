@@ -406,7 +406,7 @@ function openMenu(name, trigger) {
         {transform: 'translate3d(0,0,0)'},
       ],
       {
-        duration: 700,
+        duration: 300,
         easing: 'cubic-bezier(.45,0,.55,1)',
         fill: 'both',
       },
