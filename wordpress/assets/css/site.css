@@ -287,7 +287,7 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
 }
 @media (min-width:900px){
   .hero-composer{max-width:860px;height:104px;padding:16px 20px 12px}
-  .hero-message{font-size:23px;transform:translateY(10px)}
+  .hero-message{font-size:23px;transform:translateY(22px)}
 }
 @media (prefers-reduced-motion:reduce){
   .button,.site-header,.nav-toggle span{transition:none}
