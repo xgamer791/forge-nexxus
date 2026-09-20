@@ -777,7 +777,7 @@ function bindSlideDismiss(element, {axis, sign, both = false, companions = []} =
     if (sheetLike && !element.classList.contains('dropdown') && !isPhoneMenu()) return;
     if (!live()) return;
     if (element.getAnimations().some(animation => animation.playState === 'running')) return;
-    const onGrip = Boolean(event.target.closest('.handle,header,.nav-edge'));
+    const onGrip = Boolean(event.target.closest('.handle,header,.nav-handle'));
     if (sheetLike && !onGrip) return;
     if (!onGrip && event.target.closest('button,a,input,textarea,select,label,[role=tab]')) return;
     start = {...client(event), id: event.pointerId, grip: onGrip};
