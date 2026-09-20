@@ -12,8 +12,9 @@ import {
   REQUEST_COSTS,
   REQUEST_LABELS,
   TOP_UPS,
+  incomingPlanKey,
+  normalizePlanKey,
   planFor,
-  planKey,
   requestKind,
   topPlan,
   topUpFor,
@@ -68,15 +69,18 @@ function opening(key: PlanKey, now: number): Balance {
 // Where a subscription stands at `now`. A period that has ended is reported as
 // it will be once a mutation rolls it forward: the leftover has expired, a
 // scheduled downgrade has happened, and the new allowance is in place.
-export function projected(sub: Balance, now: number): Balance {
-  if (now < sub.periodEnd) return sub;
+export function projected(sub: Omit<Balance, "planKey"> & { planKey: string }, now: number): Balance {
+  const stored = normalizePlanKey(sub.planKey);
+  if (now < sub.periodEnd) {
+    return stored === sub.planKey ? sub : { ...sub, planKey: stored };
+  }
   let periodStart = sub.periodEnd;
   let periodEnd = addMonth(periodStart);
   while (now >= periodEnd) {
     periodStart = periodEnd;
     periodEnd = addMonth(periodStart);
   }
-  const key = sub.cancelAtPeriodEnd ? "free" : sub.planKey;
+  const key = sub.cancelAtPeriodEnd ? "free" : stored;
   return {
     planKey: key,
     periodStart,
@@ -152,7 +156,7 @@ async function holdAdminPlan(
 ) {
   const user = await ctx.db.get(userId);
   const top = topPlan();
-  if (!isAdminEmail(user?.email) || sub.planKey === top.key) return sub;
+  if (!isAdminEmail(user?.email) || normalizePlanKey(sub.planKey) === top.key) return sub;
   await setPlan(ctx, userId, sub, top.key, { now });
   return (await ctx.db.get(sub._id))!;
 }
@@ -175,7 +179,14 @@ async function rolledForward(ctx: MutationCtx, userId: Id<"users">, now: number)
     if (credits > 0) await record(ctx, userId, "grant", credits, credits, "Welcome credits", now);
     return (await ctx.db.get(id))!;
   }
-  if (now < existing.periodEnd) return existing;
+  if (now < existing.periodEnd) {
+    const canonical = normalizePlanKey(existing.planKey);
+    if (canonical !== existing.planKey) {
+      await ctx.db.patch(existing._id, { planKey: canonical, updatedAt: now });
+      return (await ctx.db.get(existing._id))!;
+    }
+    return existing;
+  }
   const next = projected(existing, now);
   if (existing.credits > 0) {
     await record(ctx, userId, "expire", -existing.credits, 0, "Period ended", now);
@@ -197,7 +208,7 @@ async function rolledForward(ctx: MutationCtx, userId: Id<"users">, now: number)
 
 // The cheapest plan that has an entitlement, for messages that point at it.
 function cheapestWith(entitlement: "topUps" | "customDomains") {
-  return PLANS.find((plan) => plan[entitlement])?.name ?? "Premium";
+  return PLANS.find((plan) => plan[entitlement])?.name ?? "Pro";
 }
 
 async function memberOrNull(ctx: QueryCtx) {
@@ -329,24 +340,25 @@ export const portal = action({
 // set, the app is told plainly that payments are not open.
 export const checkout = action({
   args: {
-    plan: v.optional(planKey),
+    plan: v.optional(incomingPlanKey),
     interval: v.optional(v.union(v.literal("month"), v.literal("year"))),
     topUp: v.optional(v.string()),
   },
   handler: async (ctx, { plan, interval, topUp }): Promise<{ url: string }> => {
     const me = await ctx.runQuery(internal.billing.checkoutContext, {});
     if (!me) throw new ConvexError("Sign in to change your plan");
+    const chosen = plan ? normalizePlanKey(plan) : undefined;
     if (plan === "free") throw new ConvexError("Downgrading happens from Plan & credits");
-    if (!plan && !topUpFor(topUp ?? "")) throw new ConvexError("Choose a plan or a credit pack");
-    if (!plan && topUp && !me.plan.topUps) {
+    if (!chosen && !topUpFor(topUp ?? "")) throw new ConvexError("Choose a plan or a credit pack");
+    if (!chosen && topUp && !me.plan.topUps) {
       throw new ConvexError(`Extra credits come with the ${cheapestWith("topUps")} plan`);
     }
-    if (plan && plan === me.planKey) throw new ConvexError("You're already on that plan");
+    if (chosen && chosen === me.planKey) throw new ConvexError("You're already on that plan");
     return await createCheckoutSession({
       userId: me.userId,
       email: me.email,
       stripeCustomerId: me.stripeCustomerId,
-      plan,
+      plan: chosen,
       interval,
       pack: topUp,
     });
@@ -505,13 +517,13 @@ export const grantPlan = internalMutation({
   args: {
     userId: v.optional(v.id("users")),
     email: v.optional(v.string()),
-    plan: planKey,
+    plan: incomingPlanKey,
     stripeCustomerId: v.optional(v.string()),
     stripeSubscriptionId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await resolveUserId(ctx, args);
-    await applyPlan(ctx, userId, args.plan, {
+    await applyPlan(ctx, userId, normalizePlanKey(args.plan), {
       stripeCustomerId: args.stripeCustomerId,
       stripeSubscriptionId: args.stripeSubscriptionId,
     });
@@ -555,7 +567,7 @@ async function setPlan(
   } = {},
 ) {
   const now = options.now ?? Date.now();
-  const next = opening(plan, options.periodStart ?? now);
+  const next = opening(normalizePlanKey(plan), options.periodStart ?? now);
   if (options.periodEnd) next.periodEnd = options.periodEnd;
   let carried = sub.credits;
   if (options.renewal && sub.credits > 0) {

@@ -2,7 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-import { planKey } from "./plans";
+import { storedPlanKey } from "./plans";
 
 export default defineSchema({
   ...authTables,
@@ -79,7 +79,7 @@ export default defineSchema({
   // nothing rolls over, top-ups included.
   subscriptions: defineTable({
     userId: v.id("users"),
-    planKey,
+    planKey: storedPlanKey,
     periodStart: v.number(),
     periodEnd: v.number(),
     credits: v.number(),

@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import { addMonth, projected } from "./billing";
-import { PLANS, REQUEST_COSTS, planFor } from "./plans";
+import { PLANS, REQUEST_COSTS, planFor, topPlan } from "./plans";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -26,7 +26,8 @@ async function createUser(
 
 const free = planFor("free");
 const starter = planFor("starter");
-const premium = planFor("premium");
+const pro = planFor("pro");
+const ultra = topPlan();
 // What a brand-new member holds: the free period's allowance plus the welcome grant.
 const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits;
 const DAY = 24 * 3600 * 1000;
@@ -88,13 +89,30 @@ describe("billing", () => {
     expect(await guest.as.query(api.billing.summary, {})).toBeNull();
     expect(await guest.as.query(api.billing.history, {})).toEqual([]);
     const catalog = await t.query(api.billing.catalog, {});
-    expect(catalog.plans.map((plan) => plan.key)).toEqual(["free", "starter", "premium"]);
-    expect(catalog.plans.map((plan) => plan.monthlyPriceCents)).toEqual([0, 3990, 6990]);
-    expect(catalog.plans.map((plan) => plan.yearlyPriceCents)).toEqual([0, 28680, 50280]);
-    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([10, 600, 2000]);
+    expect(catalog.plans.map((plan) => plan.key)).toEqual(["free", "starter", "pro", "ultra"]);
+    expect(catalog.plans.map((plan) => plan.monthlyPriceCents)).toEqual([0, 6000, 10000, 20000]);
+    expect(catalog.plans.map((plan) => plan.yearlyPriceCents)).toEqual([0, 43200, 72000, 144000]);
+    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([10, 600, 2000, 5000]);
+    expect(planFor("premium")).toEqual(pro);
+    expect(ultra.key).toBe("ultra");
     expect(catalog.plans[0].signupCredits).toBe(20);
     expect(catalog.topUps.length).toBeGreaterThan(0);
     expect(catalog.requestCosts).toEqual(REQUEST_COSTS);
+  });
+
+  test("a stored Premium row is Pro, and granting premium writes pro", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.ensure, { userId: member.userId });
+    await t.run(async (ctx) => {
+      const sub = (await ctx.db.query("subscriptions").first())!;
+      await ctx.db.patch(sub._id, { planKey: "premium" });
+    });
+    expect((await member.as.query(api.billing.summary, {}))!.plan.key).toBe("pro");
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    const stored = (await t.run((ctx) => ctx.db.query("subscriptions").first()))!;
+    expect(stored.planKey).toBe("pro");
+    expect((await member.as.query(api.billing.summary, {}))!.plan.key).toBe("pro");
   });
 
   test("a member starts on the free plan with its welcome credits", async () => {
@@ -210,10 +228,10 @@ describe("billing", () => {
   test("the top plan spends its allowance down, and every spend is written down", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
-    const opening = OPENING + premium.monthlyCredits!;
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "ultra" });
+    const opening = OPENING + ultra.monthlyCredits!;
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      plan: { key: "premium" },
+      plan: { key: "ultra" },
       unlimited: false,
       credits: opening,
       available: opening,
@@ -233,7 +251,7 @@ describe("billing", () => {
   test("the top plan runs out like any other, so a period cannot cost without end", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "ultra" });
     await t.run(async (ctx) => {
       const sub = await ctx.db
         .query("subscriptions")
@@ -367,15 +385,15 @@ describe("billing", () => {
     const member = await createUser(t, { email: "m@example.com" });
     await expect(
       t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-100" }),
-    ).rejects.toThrow("Extra credits come with the Premium plan");
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    ).rejects.toThrow("Extra credits come with the Pro plan");
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     await t.mutation(internal.billing.grantTopUp, { userId: member.userId, pack: "topup-100" });
     await t.mutation(internal.billing.grantTopUp, {
       email: "M@example.com",
       credits: 7,
       note: "Sorry about the outage",
     });
-    const opening = OPENING + premium.monthlyCredits!;
+    const opening = OPENING + pro.monthlyCredits!;
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       credits: opening + 107,
       granted: opening + 107,
@@ -399,7 +417,7 @@ describe("billing", () => {
   test("checkout is refused until payments are open", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await expect(member.as.action(api.billing.checkout, { plan: "premium" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { plan: "pro" })).rejects.toThrow(
       "Payments aren't open yet",
     );
     await expect(member.as.action(api.billing.checkout, { plan: "starter", interval: "year" })).rejects.toThrow(
@@ -407,9 +425,9 @@ describe("billing", () => {
     );
     // Packs are refused on plans without them before payments are even considered.
     await expect(member.as.action(api.billing.checkout, { topUp: "topup-100" })).rejects.toThrow(
-      "Extra credits come with the Premium plan",
+      "Extra credits come with the Pro plan",
     );
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     await expect(member.as.action(api.billing.checkout, { topUp: "topup-100" })).rejects.toThrow(
       "Payments aren't open yet",
     );
@@ -418,7 +436,7 @@ describe("billing", () => {
       "Downgrading",
     );
     const guest = await createUser(t, { isAnonymous: true });
-    await expect(guest.as.action(api.billing.checkout, { plan: "premium" })).rejects.toThrow("Sign in");
+    await expect(guest.as.action(api.billing.checkout, { plan: "pro" })).rejects.toThrow("Sign in");
   });
 
   test("balances and history are private to the account", async () => {
@@ -450,14 +468,14 @@ describe("admins", () => {
     const { t, user } = await asAdmin("boss@example.com");
     try {
       const summary = (await user.as.query(api.billing.summary, {}))!;
-      expect(summary.plan.key).toBe(premium.key);
+      expect(summary.plan.key).toBe(ultra.key);
       // An upgrade carries the leftover over, as any other upgrade does.
-      expect(summary.credits).toBe((premium.monthlyCredits ?? 0) + OPENING);
+      expect(summary.credits).toBe((ultra.monthlyCredits ?? 0) + OPENING);
       // A downgrade — a cancelled card, a Stripe deletion — does not stick.
       await t.mutation(internal.billing.grantPlan, { email: "boss@example.com", plan: "free" });
       expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe("free");
       await t.mutation(internal.billing.ensure, { userId: user.userId });
-      expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe(premium.key);
+      expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe(ultra.key);
     } finally {
       delete process.env.ADMIN_EMAILS;
     }

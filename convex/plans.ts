@@ -6,8 +6,23 @@
 // is wired up.
 import { v } from "convex/values";
 
-export const planKey = v.union(v.literal("free"), v.literal("starter"), v.literal("premium"));
-export type PlanKey = "free" | "starter" | "premium";
+export const planKey = v.union(
+  v.literal("free"),
+  v.literal("starter"),
+  v.literal("pro"),
+  v.literal("ultra"),
+);
+export type PlanKey = "free" | "starter" | "pro" | "ultra";
+
+// Rows and Stripe metadata written when the paid tier was called Premium still
+// say `premium`. The schema accepts that key so those documents stay valid;
+// every reader maps it to `pro`, and every writer stores `pro`.
+export const storedPlanKey = v.union(planKey, v.literal("premium"));
+export type StoredPlanKey = PlanKey | "premium";
+export const incomingPlanKey = storedPlanKey;
+
+export const PAID_PLAN_KEYS = ["starter", "pro", "ultra"] as const;
+export type PaidPlanKey = (typeof PAID_PLAN_KEYS)[number];
 
 export type Plan = {
   key: PlanKey;
@@ -64,8 +79,8 @@ export const PLANS: readonly Plan[] = [
     key: "starter",
     name: "Starter",
     tagline: "Build and publish real sites every month.",
-    monthlyPriceCents: 3990,
-    yearlyPriceCents: 28680,
+    monthlyPriceCents: 6000,
+    yearlyPriceCents: 43200,
     monthlyCredits: 600,
     signupCredits: 0,
     maxSites: 15,
@@ -83,11 +98,11 @@ export const PLANS: readonly Plan[] = [
     ],
   },
   {
-    key: "premium",
-    name: "Premium",
+    key: "pro",
+    name: "Pro",
     tagline: "Your own domain, unlimited sites, and analytics.",
-    monthlyPriceCents: 6990,
-    yearlyPriceCents: 50280,
+    monthlyPriceCents: 10000,
+    yearlyPriceCents: 72000,
     // An allowance rather than `null`: unlimited credits mean unlimited
     // provider spend against a fixed monthly price, which the deployment pays
     // for. Sites and visitors stay uncapped; the model calls do not.
@@ -105,6 +120,30 @@ export const PLANS: readonly Plan[] = [
       "SSL certificate",
       "Google Analytics",
       "AI-generated images",
+      "Priority support",
+    ],
+  },
+  {
+    key: "ultra",
+    name: "Ultra",
+    tagline: "Every entitlement, and the largest monthly allowance.",
+    monthlyPriceCents: 20000,
+    yearlyPriceCents: 144000,
+    monthlyCredits: 5000,
+    signupCredits: 0,
+    maxSites: null,
+    visitorsPerMonth: null,
+    publicAddress: true,
+    customDomains: true,
+    removeBadge: true,
+    codeDownload: true,
+    topUps: true,
+    features: [
+      "Everything in Pro",
+      "5,000 credits every month",
+      "Unlimited pages and visitors",
+      "Custom domains and SSL",
+      "Google Analytics",
       "Priority support",
     ],
   },
@@ -152,8 +191,23 @@ export const REQUEST_LABELS: Record<RequestKind, string> = {
   video: "Video",
 };
 
+// Premium was renamed to Pro. Stored rows and Stripe metadata still say
+// `premium`; treat that as Pro and write `pro` from here on.
+export function normalizePlanKey(key: string): PlanKey {
+  if (key === "premium") return "pro";
+  if (key === "free" || key === "starter" || key === "pro" || key === "ultra") return key;
+  return "free";
+}
+
+// A paid plan from checkout metadata or a grant. Unknown and Free are refused.
+export function paidPlanKey(key: string): PaidPlanKey | null {
+  if (key === "premium") return "pro";
+  if (key === "starter" || key === "pro" || key === "ultra") return key;
+  return null;
+}
+
 export function planFor(key: string): Plan {
-  return PLANS.find((plan) => plan.key === key) ?? PLANS[0];
+  return PLANS.find((plan) => plan.key === normalizePlanKey(key)) ?? PLANS[0];
 }
 
 // The catalog runs cheapest first, so the last plan is the top tier: what an
