@@ -1,12 +1,12 @@
 /* Reference screens use a 430pt iPhone canvas. Native status bars remain native. */
-.auth-gate{--auth-bg:#121315;--hero-overlay:rgba(0,0,0,.2);--font-display:"Cabinet Grotesk","General Sans",system-ui,-apple-system,"Segoe UI",sans-serif;position:fixed;inset:0;z-index:10;overflow-y:auto;overscroll-behavior:contain;background:var(--auth-bg);color:#e9ebee;color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:16px;scrollbar-width:none;-webkit-text-size-adjust:100%}
+.auth-gate{--auth-bg:#121315;--hero-overlay:rgba(0,0,0,.2);--font-display:"Cabinet Grotesk","General Sans",system-ui,-apple-system,"Segoe UI",sans-serif;position:fixed;inset:0;width:100%;height:100%;height:100dvh;min-height:100svh;z-index:10;overflow-y:auto;overscroll-behavior:contain;background:var(--auth-bg);color:#e9ebee;color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:16px;scrollbar-width:none;-webkit-text-size-adjust:100%}
 .auth-gate button,.auth-gate input{font:inherit}
 .auth-gate button:focus-visible,.auth-gate input:focus-visible{outline:2px solid #b6b8ba;outline-offset:3px}
 .auth-button{width:100%;height:52px;border:1px solid #434548;border-radius:14px;display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;font-size:16px!important;font-weight:600!important;line-height:20px;padding:0 12px}
 .auth-button svg{width:20px;height:20px}
 .auth-primary{background:#e2e4e7;color:#121315;border-color:#e2e4e7}
 .auth-button:disabled{opacity:.5;cursor:default}
-.auth-welcome{position:relative;isolation:isolate;background:#000;display:flex;flex-direction:column;justify-content:flex-end}
+.auth-welcome{isolation:isolate;background:#000;display:flex;flex-direction:column;justify-content:flex-end}
 .auth-hero-film{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;background:#000}
 .auth-hero-video{position:absolute;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center;opacity:0;transition:opacity .14s linear}
 .auth-hero-video.is-active{opacity:1}
@@ -22,7 +22,7 @@
 .hero-message.is-active .hero-message-word{opacity:1;filter:blur(0);transform:translate3d(0,0,0)}
 .hero-message.is-leaving .hero-message-word{opacity:0;filter:blur(4px);transform:translate3d(0,-.42em,0);transition-duration:.37s;transition-delay:0ms}
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.auth-welcome-sheet{position:relative;z-index:1;width:100%;max-width:640px;margin:0 auto;padding:16px 20px max(34px,env(safe-area-inset-bottom));border-radius:28px 28px 0 0;background:#1e1e1e;display:grid;gap:10px}
+.auth-welcome-sheet{position:relative;z-index:1;width:100%;max-width:640px;margin:0 auto;padding:16px 20px max(34px,env(safe-area-inset-bottom));border-radius:28px 28px 0 0;background:#1e1e1e;display:grid;gap:10px;flex-shrink:0}
 .auth-welcome .auth-button{height:50px;border-radius:12px;border:0;background:#3a3a3c;color:#fff}
 .auth-welcome .apple{background:#fff;color:#000}
 .auth-fineprint{margin:4px 0 0;text-align:center;color:#8a8c8f;font-size:13px;line-height:18px}
