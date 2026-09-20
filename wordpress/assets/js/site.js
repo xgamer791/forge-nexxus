@@ -90,11 +90,11 @@
   const heroMessages = [...(messageStage?.querySelectorAll('.hero-message') || [])];
   if (heroMessages.length) {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const wordDelayMs = 72;
-    const wordEnterMs = 580;
-    const exitMs = 320;
-    const regularHoldMs = 1300;
-    const returningFirstHoldMs = 3600;
+    const wordDelayMs = 86;
+    const wordEnterMs = 696;
+    const exitMs = 384;
+    const regularHoldMs = 1560;
+    const returningFirstHoldMs = 4320;
     let stopped = false;
 
     heroMessages.forEach(message => {
@@ -122,7 +122,7 @@
         while (!stopped) {
           const message = heroMessages[index];
           message.classList.remove('is-leaving');
-          await wait(40);
+          await wait(48);
           if (stopped) break;
           message.classList.add('is-active');
 
