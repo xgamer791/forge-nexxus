@@ -361,13 +361,13 @@ function hideOverlay(element) {
         {transform: 'translate3d(-100%,0,0)'},
       ],
       {
-        duration: 700,
+        duration: 1200,
         easing: 'cubic-bezier(.45,0,.55,1)',
         fill: 'both',
       },
     );
     animation.onfinish = () => finishHide(element);
-    const timer = setTimeout(() => finishHide(element), 840);
+    const timer = setTimeout(() => finishHide(element), 1340);
     pendingPanelHides.set(element, {animation, timer});
     return;
   }
