@@ -26,44 +26,43 @@
     document.querySelectorAll('[data-member-text]').forEach(el => { el.textContent = el.dataset.memberText; });
   }
 
-  // The generated clip settles at both matching endpoint frames. Two primed
-  // layers skip those holds and crossfade before the file ends, so iOS never
-  // has to stop, seek and decode before the next visible frame.
+  // The file is one forward pass that already fades into its first frame.
+  // Two layers hand off during that fade so the browser never seeks a
+  // playing element, which is what used to hitch the loop.
   const heroLoops = [...document.querySelectorAll('[data-hero-loop]')];
   if (heroLoops.length === 2 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const loopStart = 0.5;
-    const loopEndPadding = 0.5;
-    const crossfadeMs = 140;
+    const lead = 0.16;
+    const fadeMs = 140;
     let active = heroLoops[0];
     let standby = heroLoops[1];
     let switching = false;
 
-    const prime = video => {
-      const seek = () => {
-        video.currentTime = Math.min(loopStart, Math.max(0, video.duration - loopEndPadding));
-      };
-      if (video.readyState >= 1) seek();
-      else video.addEventListener('loadedmetadata', seek, { once: true });
+    const rewind = video => {
+      try { video.currentTime = 0; } catch { /* seek before metadata */ }
     };
-    prime(active);
-    prime(standby);
+    heroLoops.forEach(video => {
+      video.loop = false;
+      video.muted = true;
+      if (video.readyState >= 1) rewind(video);
+      else video.addEventListener('loadedmetadata', () => rewind(video), { once: true });
+    });
 
     const swap = async () => {
       if (switching) return;
       switching = true;
-      const previous = active;
-      const next = standby;
+      rewind(standby);
       try {
-        await next.play();
-        next.classList.add('is-active');
-        previous.classList.remove('is-active');
-        active = next;
+        await standby.play();
+        standby.classList.add('is-active');
+        active.classList.remove('is-active');
+        const previous = active;
+        active = standby;
         standby = previous;
         setTimeout(() => {
-          standby.pause();
-          prime(standby);
+          previous.pause();
+          rewind(previous);
           switching = false;
-        }, crossfadeMs);
+        }, fadeMs);
       } catch {
         switching = false;
       }
@@ -73,11 +72,75 @@
       if (
         !switching &&
         Number.isFinite(active.duration) &&
-        active.currentTime >= active.duration - loopEndPadding
+        active.duration > lead &&
+        active.currentTime >= active.duration - lead
       ) swap();
       requestAnimationFrame(follow);
     };
     requestAnimationFrame(follow);
+    active.addEventListener('ended', () => { if (!switching) swap(); });
+  } else if (heroLoops[0] && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    heroLoops[0].loop = true;
+  }
+
+  // Cycle the five homepage promises through one word-cascade stage. Every
+  // line must sit for four seconds after the last word lands so it can be
+  // read. Do not drop this back to 1.3s.
+  const messageStage = document.querySelector('[data-hero-messages]');
+  const heroMessages = [...(messageStage?.querySelectorAll('.hero-message') || [])];
+  if (heroMessages.length) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const wordDelayMs = 95;
+    const wordEnterMs = 766;
+    const exitMs = 422;
+    const holdMs = 4000;
+    let stopped = false;
+
+    heroMessages.forEach(message => {
+      const words = message.textContent.trim().split(/\s+/);
+      const fragment = document.createDocumentFragment();
+      words.forEach((word, index) => {
+        const span = document.createElement('span');
+        span.className = 'hero-message-word';
+        span.style.setProperty('--word-index', String(index));
+        span.textContent = word;
+        fragment.append(span);
+      });
+      message.replaceChildren(fragment);
+      message.classList.remove('is-active', 'is-leaving');
+      message.dataset.wordCount = String(words.length);
+    });
+
+    if (reducedMotion) {
+      heroMessages[0].classList.add('is-active');
+    } else {
+      const wait = duration => new Promise(resolve => setTimeout(resolve, duration));
+      const playMessages = async () => {
+        let index = 0;
+        while (!stopped) {
+          const message = heroMessages[index];
+          message.classList.remove('is-leaving');
+          await wait(53);
+          if (stopped) break;
+          message.classList.add('is-active');
+
+          const wordCount = Number(message.dataset.wordCount) || 1;
+          await wait(wordEnterMs + ((wordCount - 1) * wordDelayMs));
+          await wait(holdMs);
+          if (stopped) break;
+
+          message.classList.remove('is-active');
+          message.classList.add('is-leaving');
+          await wait(exitMs);
+          message.classList.remove('is-leaving');
+
+          index += 1;
+          if (index === heroMessages.length) index = 0;
+        }
+      };
+      void playMessages();
+      window.addEventListener('pagehide', () => { stopped = true; }, { once: true });
+    }
   }
 
   // The hero composer is the mobile app's pill. Enter and a typed prompt go
