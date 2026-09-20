@@ -1417,6 +1417,7 @@ if (forge?.sites && addressSheet) {
   const siteBlock = addressSheet.querySelector('.address-site');
   const noSite = addressSheet.querySelector('.address-no-site');
   const lead = addressSheet.querySelector('[data-address-lead]');
+  const loading = addressSheet.querySelector('.address-loading');
   const domainList = addressSheet.querySelector('[data-address-domains]');
   const domainEmpty = addressSheet.querySelector('.address-empty');
   const error = addressSheet.querySelector('.address-error');
@@ -1442,20 +1443,28 @@ if (forge?.sites && addressSheet) {
     return activeSite ? accountDomains.filter(domain => domain.siteId === activeSite._id) : [];
   }
   function renderAddress() {
-    // An address is a plan entitlement. On a plan without one the globe still
-    // opens -- it is how a member finds out what it costs -- but it shows the
-    // upsell and the way to the plan screen instead of the picker.
+    // The globe is every member's, on every plan. An address is an
+    // entitlement, so on a plan without one it opens the upsell and the way to
+    // the plan screen rather than the picker -- which is how someone finds out
+    // what it costs. Hiding the button instead just made it flash and vanish.
+    if (globeButton) globeButton.hidden = false;
+    // Until billing answers we do not know the plan, and guessing it is `free`
+    // showed a paying member the upsell for what they already have -- briefly
+    // on every load, and for good on a deployment whose summary never answers.
+    const known = Boolean(summary);
     const addressable = Boolean(summary?.plan.publicAddress);
     const paid = catalog?.plans.find(plan => plan.publicAddress);
-    // Always show the globe once the member is in the app. Free sees the
-    // upsell; paid without a site yet still needs a way in. Hiding it when
-    // `!activeSite && addressable` made it flash and vanish.
-    if (globeButton) globeButton.hidden = false;
-    if (upsell) upsell.hidden = addressable;
-    if (addressBody) addressBody.hidden = !addressable;
+    if (loading) loading.hidden = known;
+    if (upsell) upsell.hidden = !known || addressable;
+    if (addressBody) addressBody.hidden = !known || !addressable;
+    if (!known) return;
     if (!addressable) {
       const domainPlan = catalog?.plans.find(plan => plan.customDomains);
-      setText('[data-address-upsell-plan]', paid?.name ?? '');
+      // The catalog names the plan when it has answered. When it has not, the
+      // sentence still has to read as a sentence, and still has to send them
+      // to the plans -- an upsell with a blank where the plan goes sells
+      // nothing, and that blank was one unanswered query away.
+      setText('[data-address-upsell-plan]', paid?.name ? `the ${paid.name} plan` : 'a paid plan');
       setText('[data-address-upsell-example]', hosting?.domain
         ? `your-site.${hosting.domain}`
         : 'A name you pick, live the moment you publish.');
