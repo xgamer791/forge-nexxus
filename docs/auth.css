@@ -67,7 +67,7 @@
 }
 @media(min-width:900px){
   .auth-hero{padding-left:48px;padding-right:48px;padding-bottom:6px}
-  .auth-message-rotator{width:min(100%,860px);height:clamp(240px,32svh,340px)}
+  .auth-message-rotator{width:min(100%,860px);height:clamp(240px,32svh,340px);transform:translateY(12px)}
   .auth-hero .hero-message{font-size:23px}
 }
 @media(hover:hover){
