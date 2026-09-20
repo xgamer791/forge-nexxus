@@ -637,9 +637,76 @@ document.querySelectorAll('.dismiss').forEach(button => button.addEventListener(
 document.querySelectorAll('[data-sheet-back]').forEach(button => {
   button.addEventListener('click', () => openMenu(button.dataset.sheetBack));
 });
-backdrop.addEventListener('click', () => {
-  if (menuLocked()) return;
-  closeMenu();
+backdrop.addEventListener('click', closeMenu);
+const DISMISS_PX = 72;
+const DISMISS_VEL = 0.45;
+function bindSlideDismiss(element, {axis, sign, companions = []} = {}) {
+  if (!element) return;
+  let start = null;
+  function point(event) {
+    return {x: event.clientX, y: event.clientY, t: event.timeStamp};
+  }
+  function apply(delta) {
+    const clamped = sign < 0 ? Math.min(0, delta) : Math.max(0, delta);
+    element.style.transform = axis === 'x'
+      ? `translate3d(${clamped}px,0,0)`
+      : `translate3d(0,${clamped}px,0)`;
+    companions.forEach(item => {
+      if (!item?.node) return;
+      const base = typeof item.base === 'function' ? item.base() : 0;
+      item.node.style.transform = `translate3d(${base + clamped}px,0,0)`;
+    });
+  }
+  function clearDrag() {
+    element.style.transform = '';
+    companions.forEach(item => { if (item?.node) item.node.style.transform = ''; });
+  }
+  element.addEventListener('pointerdown', event => {
+    if (event.button) return;
+    if (element.hidden || !element.classList.contains('is-open') || element.classList.contains('is-closing')) return;
+    if (event.target.closest('button,a,input,textarea,select,label,[role=tab]')) return;
+    const scroller = event.target.closest('.address-body,.address-upsell,.preview-unbuilt-content,.nav-content,.settings-content');
+    if (scroller && scroller.scrollHeight > scroller.clientHeight + 4 && !event.target.closest('header,.handle')) return;
+    start = {...point(event), id: event.pointerId};
+    try { element.setPointerCapture(event.pointerId); } catch { /* capture is optional */ }
+  });
+  element.addEventListener('pointermove', event => {
+    if (!start || event.pointerId !== start.id) return;
+    const now = point(event);
+    const delta = axis === 'x' ? now.x - start.x : now.y - start.y;
+    const cross = axis === 'x' ? now.y - start.y : now.x - start.x;
+    if (Math.abs(delta) < 8 && Math.abs(cross) < 8) return;
+    if (Math.abs(cross) > Math.abs(delta) + 6) { start = null; return; }
+    element.classList.add('is-dragging');
+    apply(delta);
+  }, {passive: true});
+  function end(event) {
+    if (!start || event.pointerId !== start.id) return;
+    const now = point(event);
+    const delta = axis === 'x' ? now.x - start.x : now.y - start.y;
+    const velocity = delta / Math.max(1, now.t - start.t);
+    const dragging = element.classList.contains('is-dragging');
+    start = null;
+    element.classList.remove('is-dragging');
+    const away = sign < 0
+      ? delta < -DISMISS_PX || velocity < -DISMISS_VEL
+      : delta > DISMISS_PX || velocity > DISMISS_VEL;
+    if (dragging && away) {
+      clearDrag();
+      closeMenu();
+      return;
+    }
+    clearDrag();
+  }
+  element.addEventListener('pointerup', end);
+  element.addEventListener('pointercancel', end);
+}
+document.querySelectorAll('.dropdown').forEach(panel => bindSlideDismiss(panel, {axis: 'y', sign: -1}));
+document.querySelectorAll('.sheet:not(.dropdown)').forEach(panel => bindSlideDismiss(panel, {axis: 'y', sign: 1}));
+bindSlideDismiss(document.querySelector('.navigation'), {
+  axis: 'x',
+  sign: -1,
+  companions: [{node: stage, base: drawerWidth}],
 });
 document.addEventListener('click', event => {
   if (!event.target.closest('.theme-select,.theme-menu,.font-select,.font-menu')) closePopovers();

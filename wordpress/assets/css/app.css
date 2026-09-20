@@ -319,8 +319,11 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
    sheet part — header, dismiss, copy, groups — and turns the geometry over:
    square at the top edge, rounded below, handle at the bottom. */
 .dropdown{top:var(--header);bottom:auto;border-radius:0 0 28px 28px;padding:4px 16px 0;min-height:0;max-height:calc(100% - var(--header) - 28px);display:flex;flex-direction:column;background:#fff;color:#1c1c1e;box-shadow:0 18px 44px rgba(0,0,0,.16)}
-.dropdown .handle{margin:16px auto 0;flex:none}
-.dropdown header{height:52px}
+.dropdown .handle{position:relative;margin:16px auto 0;flex:none;touch-action:none}
+.dropdown .handle::before{content:"";position:absolute;inset:-18px -48px -8px}
+.dropdown header{height:52px;touch-action:none}
+.dropdown header h2{max-width:none}
+.dropdown.is-dragging,.sheet.is-dragging,.navigation.is-dragging{animation:none!important}
 @media(prefers-reduced-motion:no-preference){
   .dropdown.is-open{animation:dropdown-in .2s cubic-bezier(.22,1,.36,1) both}
   .dropdown.is-closing{animation:dropdown-out .2s cubic-bezier(.4,0,.2,1) both;pointer-events:none}

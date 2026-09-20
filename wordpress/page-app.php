@@ -59,12 +59,12 @@ defined( 'ABSPATH' ) || exit;
 </div>
 </section>
 
-<section class="sheet dropdown preview-unbuilt" role="dialog" aria-modal="true" aria-labelledby="preview-unbuilt-title" hidden><header><button class="dismiss" aria-label="Close preview message"><svg><use href="#close"/></svg></button><h2 id="preview-unbuilt-title">Preview</h2></header>
+<section class="sheet dropdown preview-unbuilt" role="dialog" aria-modal="true" aria-labelledby="preview-unbuilt-title" hidden><header><h2 id="preview-unbuilt-title">Preview</h2></header>
 <div class="preview-unbuilt-content"><svg class="preview-unbuilt-icon" aria-hidden="true"><use href="#preview-eye"/></svg><h3>No website built yet</h3><p>Describe the website you want and Forge will build a first version.</p><button class="account-button preview-start" type="button">Start building</button></div>
 <div class="handle"></div>
 </section>
 
-<section class="sheet dropdown address" role="dialog" aria-modal="true" aria-labelledby="address-title" hidden><header><button class="dismiss" aria-label="Close domains"><svg><use href="#close"/></svg></button><h2 id="address-title">Domains</h2></header>
+<section class="sheet dropdown address" role="dialog" aria-modal="true" aria-labelledby="address-title" hidden><header><h2 id="address-title">Domains</h2></header>
 <p class="sheet-copy address-loading" hidden>Checking your plan…</p>
 <div class="address-upsell" hidden>
 <svg class="address-hero" aria-hidden="true"><use href="#globe"/></svg>
