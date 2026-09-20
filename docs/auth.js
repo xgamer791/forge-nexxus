@@ -120,7 +120,7 @@
         const span = document.createElement('span');
         span.className = 'hero-message-word';
         span.style.setProperty('--word-index', String(index));
-        span.textContent = word;
+        span.textContent = index < words.length - 1 ? `${word} ` : word;
         fragment.append(span);
       });
       message.replaceChildren(fragment);
