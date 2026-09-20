@@ -197,9 +197,12 @@ export const fail = internalMutation({
 });
 
 // The deployment names the model. When asked who is answering, say that —
-// never a different provider the weights were trained to claim.
+// never a different provider or version the weights were trained to claim.
+// AI_MODEL_LABEL is an optional product/display name (e.g. "4.1 Flash");
+// it is only for this identity message and is never sent to the provider.
 function chatIdentityMessage(): ChatMessage {
   const model = process.env.AI_MODEL?.trim() || "unset";
+  const label = process.env.AI_MODEL_LABEL?.trim() || "";
   const baseUrl = process.env.AI_BASE_URL?.replace(/\/+$/, "") ?? "";
   let host = "unset";
   if (baseUrl) {
@@ -209,12 +212,18 @@ function chatIdentityMessage(): ChatMessage {
       host = "unset";
     }
   }
+  const facts = label
+    ? `The configured chat model display name is ${label}, the API model id is ${model}, and the provider host is ${host}. `
+    : `The configured chat model id is ${model} and the provider host is ${host}. `;
+  const asked = label
+    ? "If the user asks what model, agent, LLM, or AI you are, answer plainly with that display name, API model id, and provider host. "
+    : "If the user asks what model, agent, LLM, or AI you are, answer plainly with that model id and provider host. ";
   return {
     role: "system",
     content:
-      `The configured chat model id is ${model} and the provider host is ${host}. ` +
-      "If the user asks what model, agent, LLM, or AI you are, answer plainly with that model id and provider host. " +
-      "Do not invent a different provider. For all other questions stay Forge the designer and follow the existing BUILD/TALK rules.",
+      facts +
+      asked +
+      "Do not invent a different provider or version. For all other questions stay Forge the designer and follow the existing BUILD/TALK rules.",
   };
 }
 
