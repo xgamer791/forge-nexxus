@@ -36,23 +36,35 @@
   const restingPlaceholder = 'Describe the site you want…';
   if (composer && field) {
     const root = document.documentElement;
-    const holdHero = () => {
-      window.scrollTo(0, 0);
+    const keyboardInset = () => {
+      const vk = navigator.virtualKeyboard?.boundingRect?.height;
+      if (typeof vk === 'number' && vk > 0) return Math.round(vk);
       const viewport = window.visualViewport;
-      if (viewport) root.style.setProperty('--vv-height', `${Math.round(viewport.height)}px`);
+      if (!viewport) return 0;
+      return Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop));
+    };
+    const holdHero = () => {
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+      root.style.setProperty('--keyboard', `${keyboardInset()}px`);
     };
     const startTyping = () => {
-      if (window.matchMedia('(max-width:899.98px)').matches) root.classList.add('hero-is-typing');
+      if (!window.matchMedia('(max-width:899.98px)').matches) return;
+      root.classList.add('hero-is-typing');
+      try { if (navigator.virtualKeyboard) navigator.virtualKeyboard.overlaysContent = true; } catch { /* older Chrome */ }
       holdHero();
+      requestAnimationFrame(holdHero);
+      [50, 150, 300].forEach(ms => setTimeout(holdHero, ms));
     };
     const stopTyping = () => {
       root.classList.remove('hero-is-typing');
-      root.style.removeProperty('--vv-height');
+      root.style.setProperty('--keyboard', '0px');
     };
     field.addEventListener('focus', startTyping);
     field.addEventListener('blur', stopTyping);
+    window.addEventListener('scroll', () => { if (root.classList.contains('hero-is-typing')) holdHero(); }, { passive: true });
     window.visualViewport?.addEventListener('resize', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
     window.visualViewport?.addEventListener('scroll', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
+    navigator.virtualKeyboard?.addEventListener('geometrychange', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
     field.addEventListener('keydown', event => {
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); composer.requestSubmit(); }
     });

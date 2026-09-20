@@ -2,7 +2,11 @@
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
+<?php if ( is_front_page() ) : ?>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=overlays-content">
+<?php else : ?>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<?php endif; ?>
 <?php if ( is_front_page() ) : ?>
 <script>
 // A member landing on the home page is sent straight into the builder, the
