@@ -196,31 +196,6 @@ export const fail = internalMutation({
   },
 });
 
-// Wire facts only: the API model id and the provider host. When asked who is
-// answering, those may be reported; a marketing or product name may not.
-function chatIdentityMessage(): ChatMessage {
-  const model = process.env.AI_MODEL?.trim() || "unset";
-  const baseUrl = process.env.AI_BASE_URL?.replace(/\/+$/, "") ?? "";
-  let host = "unset";
-  if (baseUrl) {
-    try {
-      host = new URL(baseUrl).hostname;
-    } catch {
-      host = "unset";
-    }
-  }
-  return {
-    role: "system",
-    content:
-      `The configured API model id is ${model} and the provider host is ${host}. ` +
-      "If the user asks what model, agent, LLM, or AI you are, you may report that model id and provider host as deployment facts. " +
-      "Do not invent a different provider. Do not invent or assert a marketing or product version name " +
-      '(for example do not claim "4.1" or any branded full name unless it appears in the model id itself). ' +
-      "If you do not know beyond those facts, say so plainly. " +
-      "For all other questions stay Forge the designer and follow the existing BUILD/TALK rules.",
-  };
-}
-
 function buildMessages(
   siteName: string,
   currentHtml: string | null,
@@ -229,7 +204,7 @@ function buildMessages(
   // Set when the balance cannot cover a build, which makes this turn TALK.
   talkOnly: { needed: number; available: number } | null,
 ): ChatMessage[] {
-  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, chatIdentityMessage()];
+  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
   if (currentHtml) {
     messages.push({
       role: "system",
