@@ -27,6 +27,9 @@ get_header();
 ?>
 
 <section class="hero">
+	<video class="hero-background-video" autoplay muted loop playsinline preload="auto" poster="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-poster.jpg' ) ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture>
+		<source src="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) ); ?>" type="video/mp4">
+	</video>
 	<div class="wrap hero-stage">
 		<h1 class="visually-hidden">Forge Nexxus</h1>
 		<form class="hero-composer" action="<?php echo esc_url( home_url( '/app/' ) ); ?>" method="get" data-hero-composer>

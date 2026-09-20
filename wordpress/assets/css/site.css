@@ -71,7 +71,14 @@ html.is-member [data-member-hide]{display:none}
 /* Hero: the composer is the product — the same pill as the mobile app,
    docked 25px from the section floor. It lives in the hero and scrolls away
    with the page; it is not sticky. */
-.hero-stage{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:25px}
+.hero{position:relative;min-height:100vh;min-height:100svh;overflow:hidden;isolation:isolate;background:#11151b}
+.hero-background-video{position:absolute;z-index:0;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center}
+.hero-stage{position:relative;z-index:1;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:25px}
+.is-home .site-header:not(.is-scrolled):not(.nav-open) .brand,
+.is-home .site-header:not(.is-scrolled):not(.nav-open) .brand-mark,
+.is-home .site-header:not(.is-scrolled):not(.nav-open) .nav-list a{color:#fff}
+.is-home .site-header:not(.is-scrolled):not(.nav-open) .header-actions .button{background:#fff;color:var(--ink);border-color:#fff}
+.is-home .site-header:not(.is-scrolled):not(.nav-open) .nav-toggle span{background:#fff}
 html.hero-is-typing{overflow:hidden;overscroll-behavior:none}
 html.hero-is-typing body{position:fixed;top:var(--locked-scroll-top,0px);left:0;right:0;width:100%;overflow:hidden;overscroll-behavior:none}
 html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px))}
@@ -87,6 +94,10 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
 .hero-composer .microphone[aria-pressed=true]{color:#1c1c1e}
 .hero-visual{margin:0;background:var(--plate)}
 .hero-visual img{width:100%}
+@media(prefers-reduced-motion:reduce){
+  .hero{background:#11151b url("../video/forge-viking-poster.jpg") center/cover no-repeat}
+  .hero-background-video{display:none}
+}
 
 /* Sections: rhythm from spacing and rules, not boxes. */
 .section{padding:clamp(80px,9vw,150px) 0}
