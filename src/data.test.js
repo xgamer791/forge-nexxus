@@ -323,7 +323,7 @@ describe("data access", () => {
     await data.settings.update({ theme: "light" });
     await data.sites.publish("s1");
     await data.sites.unpublish("s1");
-    await data.billing.checkout({ plan: "premium" });
+    await data.billing.checkout({ plan: "pro" });
     await data.billing.cancel();
     await data.billing.resume();
     await data.billing.portal();
@@ -354,7 +354,7 @@ describe("data access", () => {
       ["sites:unpublish", { id: "s1" }],
     ]);
     expect(client.action.mock.calls).toEqual([
-      ["billing:checkout", { plan: "premium" }],
+      ["billing:checkout", { plan: "pro" }],
       ["billing:cancel", {}],
       ["billing:resume", {}],
       ["billing:portal", {}],

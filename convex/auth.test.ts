@@ -161,7 +161,7 @@ describe("profile", () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     const bystander = await createUser(t, { email: "b@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     await member.as.mutation(api.messages.send, { conversationId, body: "hi" });
     await member.as.mutation(api.domains.add, { siteId, hostname: "shop.example" });

@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction, internalMutation } from "./_generated/server";
 import { addMonth, applyPlan, creditTopUp, subscriptionByStripe } from "./billing";
-import { planFor, topUpFor, type PlanKey } from "./plans";
+import { PAID_PLAN_KEYS, normalizePlanKey, paidPlanKey, topUpFor, type PlanKey } from "./plans";
 
 // Stripe over its REST API with form encoding, which is all checkout, the
 // portal and subscription updates need: no SDK, nothing to bundle. Price ids
@@ -21,16 +21,26 @@ export function priceEnvName(choice: { plan: PlanKey; interval: Interval } | { p
 }
 
 export function priceIdFor(choice: { plan: PlanKey; interval: Interval } | { pack: string }) {
-  return process.env[priceEnvName(choice)] || null;
+  const named = process.env[priceEnvName(choice)] || null;
+  if (named) return named;
+  // Premium price ids still sell Pro until the deployment is given PRO keys.
+  if ("plan" in choice && choice.plan === "pro") {
+    return process.env[`STRIPE_PRICE_PREMIUM_${choice.interval.toUpperCase()}`] || null;
+  }
+  return null;
 }
 
 // The plan a Stripe price id stands for, by matching it against the ids the
 // deployment was given. Null for a price that is not one of ours.
 export function planForPrice(priceId: string): { plan: PlanKey; interval: Interval } | null {
-  for (const plan of ["starter", "premium"] as const) {
+  for (const plan of PAID_PLAN_KEYS) {
     for (const interval of ["month", "year"] as const) {
       if (priceIdFor({ plan, interval }) === priceId) return { plan, interval };
     }
+  }
+  for (const interval of ["month", "year"] as const) {
+    const legacy = process.env[`STRIPE_PRICE_PREMIUM_${interval.toUpperCase()}`];
+    if (legacy && legacy === priceId) return { plan: "pro", interval };
   }
   return null;
 }
@@ -207,9 +217,9 @@ export const applyEvent = internalMutation({
       if (!userId || !(await ctx.db.get(userId))) return { handled: false, reason: "no user" };
       const customer = typeof object.customer === "string" ? object.customer : undefined;
       if (object.mode === "subscription" && typeof object.metadata?.plan === "string") {
-        const plan = object.metadata.plan;
-        if (!planFor(plan) || plan === "free") return { handled: false, reason: "unknown plan" };
-        await applyPlan(ctx, userId, plan as PlanKey, {
+        const plan = paidPlanKey(object.metadata.plan);
+        if (!plan) return { handled: false, reason: "unknown plan" };
+        await applyPlan(ctx, userId, plan, {
           now,
           stripeCustomerId: customer,
           stripeSubscriptionId: typeof object.subscription === "string" ? object.subscription : undefined,
@@ -240,11 +250,13 @@ export const applyEvent = internalMutation({
       const mapped = typeof priceId === "string" ? planForPrice(priceId) : null;
       const periodStart = seconds(object.current_period_start);
       const periodEnd = seconds(object.current_period_end);
-      if (mapped && mapped.plan !== sub.planKey && object.status === "active") {
+      const current = normalizePlanKey(sub.planKey);
+      if (mapped && mapped.plan !== current && object.status === "active") {
         await applyPlan(ctx, sub.userId, mapped.plan, { now, periodStart, periodEnd });
         return { handled: true, action: "plan", plan: mapped.plan };
       }
       await ctx.db.patch(sub._id, {
+        planKey: current,
         cancelAtPeriodEnd: Boolean(object.cancel_at_period_end),
         ...(periodStart && periodEnd ? { periodStart, periodEnd } : {}),
         updatedAt: now,
@@ -263,7 +275,7 @@ export const applyEvent = internalMutation({
       const periodEnd = seconds(line?.end) ?? addMonth(periodStart);
       // A renewal opens a fresh period on the same plan: the leftover expires
       // and the allowance is granted again.
-      await applyPlan(ctx, sub.userId, sub.planKey, { now, periodStart, periodEnd, renewal: true });
+      await applyPlan(ctx, sub.userId, normalizePlanKey(sub.planKey), { now, periodStart, periodEnd, renewal: true });
       return { handled: true, action: "renewed" };
     }
 

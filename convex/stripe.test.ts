@@ -27,7 +27,7 @@ async function createUser(
 
 const free = planFor("free");
 const starter = planFor("starter");
-const premium = planFor("premium");
+const pro = planFor("pro");
 const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits;
 const SECRET = "whsec_test_secret";
 const ENV = {
@@ -36,6 +36,10 @@ const ENV = {
   SITE_URL: "https://example.test/forge-nexxus/",
   STRIPE_PRICE_STARTER_MONTH: "price_starter_m",
   STRIPE_PRICE_STARTER_YEAR: "price_starter_y",
+  STRIPE_PRICE_PRO_MONTH: "price_pro_m",
+  STRIPE_PRICE_PRO_YEAR: "price_pro_y",
+  STRIPE_PRICE_ULTRA_MONTH: "price_ultra_m",
+  STRIPE_PRICE_ULTRA_YEAR: "price_ultra_y",
   STRIPE_PRICE_PREMIUM_MONTH: "price_premium_m",
   STRIPE_PRICE_PREMIUM_YEAR: "price_premium_y",
   STRIPE_PRICE_TOPUP_100: "price_topup_100",
@@ -83,8 +87,11 @@ async function signed(t: ReturnType<typeof fresh>, event: object, secret = SECRE
 describe("prices and signatures", () => {
   test("price ids come from the environment, one per plan and interval and one per pack", () => {
     expect(priceEnvName({ plan: "starter", interval: "year" })).toBe("STRIPE_PRICE_STARTER_YEAR");
+    expect(priceEnvName({ plan: "pro", interval: "year" })).toBe("STRIPE_PRICE_PRO_YEAR");
     expect(priceEnvName({ pack: "topup-100" })).toBe("STRIPE_PRICE_TOPUP_100");
-    expect(planForPrice("price_premium_y")).toEqual({ plan: "premium", interval: "year" });
+    expect(planForPrice("price_pro_y")).toEqual({ plan: "pro", interval: "year" });
+    expect(planForPrice("price_premium_y")).toEqual({ plan: "pro", interval: "year" });
+    expect(planForPrice("price_ultra_m")).toEqual({ plan: "ultra", interval: "month" });
     expect(planForPrice("price_nobody")).toBeNull();
   });
 
@@ -129,11 +136,11 @@ describe("checkout", () => {
     const member = await createUser(t, { email: "m@example.com" });
     const calls = stubStripe(() => json({ id: "cs_2", url: "https://checkout.stripe.com/c/cs_2" }));
     await expect(member.as.action(api.billing.checkout, { topUp: "topup-100" })).rejects.toThrow(
-      "Extra credits come with the Premium plan",
+      "Extra credits come with the Pro plan",
     );
     await t.mutation(internal.billing.grantPlan, {
       userId: member.userId,
-      plan: "premium",
+      plan: "pro",
       stripeCustomerId: "cus_42",
     });
     await member.as.action(api.billing.checkout, { topUp: "topup-100" });
@@ -153,16 +160,16 @@ describe("checkout", () => {
     await expect(member.as.action(api.billing.checkout, { plan: "starter" })).rejects.toThrow(
       "isn't available yet",
     );
-    await expect(member.as.action(api.billing.checkout, { plan: "premium" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { plan: "pro" })).rejects.toThrow(
       "Stripe answered 400: No such price",
     );
     delete process.env.STRIPE_SECRET_KEY;
-    await expect(member.as.action(api.billing.checkout, { plan: "premium" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { plan: "pro" })).rejects.toThrow(
       "Payments aren't open yet",
     );
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     process.env.STRIPE_SECRET_KEY = "sk_test_123";
-    await expect(member.as.action(api.billing.checkout, { plan: "premium" })).rejects.toThrow(
+    await expect(member.as.action(api.billing.checkout, { plan: "pro" })).rejects.toThrow(
       "already on that plan",
     );
   });
@@ -214,7 +221,7 @@ describe("webhook", () => {
   test("a paid pack is credited, and unknown users, plans, and packs are left alone", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const pack = await signed(t, {
       id: "evt_pack",
       type: "checkout.session.completed",
@@ -222,7 +229,7 @@ describe("webhook", () => {
     });
     expect(await pack.json()).toEqual({ handled: true, action: "topup", credits: 100 });
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
-      OPENING + premium.monthlyCredits! + 100,
+      OPENING + pro.monthlyCredits! + 100,
     );
     const bogus = await signed(t, {
       id: "evt_bogus",
@@ -243,8 +250,22 @@ describe("webhook", () => {
     });
     expect(await badPlan.json()).toEqual({ handled: false, reason: "unknown plan" });
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
-      OPENING + premium.monthlyCredits! + 100,
+      OPENING + pro.monthlyCredits! + 100,
     );
+    const legacy = await signed(t, {
+      id: "evt_premium",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          mode: "subscription",
+          customer: "cus_legacy",
+          subscription: "sub_legacy",
+          metadata: { userId: member.userId, plan: "premium" },
+        },
+      },
+    });
+    expect(await legacy.json()).toEqual({ handled: true, action: "plan", plan: "pro" });
+    expect((await member.as.query(api.billing.summary, {}))!.plan.key).toBe("pro");
   });
 
   test("subscription updates sync cancellation and the period; a deletion ends the plan", async () => {
@@ -292,8 +313,8 @@ describe("webhook", () => {
         },
       },
     });
-    expect(await upgraded.json()).toEqual({ handled: true, action: "plan", plan: "premium" });
-    expect((await member.as.query(api.billing.summary, {}))!.plan.key).toBe("premium");
+    expect(await upgraded.json()).toEqual({ handled: true, action: "plan", plan: "pro" });
+    expect((await member.as.query(api.billing.summary, {}))!.plan.key).toBe("pro");
     const unknown = await signed(t, {
       id: "evt_unknown",
       type: "customer.subscription.updated",

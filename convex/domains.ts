@@ -76,7 +76,7 @@ export const add = mutation({
     const site = await requireOwnedSite(ctx, siteId);
     const plan = await currentPlan(ctx, site.userId);
     if (!plan.customDomains) {
-      const needed = PLANS.find((candidate) => candidate.customDomains)?.name ?? "Premium";
+      const needed = PLANS.find((candidate) => candidate.customDomains)?.name ?? "Pro";
       throw new ConvexError(`Custom domains come with the ${needed} plan`);
     }
     const host = normalizeHostname(hostname);

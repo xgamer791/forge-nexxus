@@ -41,18 +41,18 @@ describe("domains", () => {
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     await expect(
       member.as.mutation(api.domains.add, { siteId, hostname: "shop.example" }),
-    ).rejects.toThrow("Custom domains come with the Premium plan");
+    ).rejects.toThrow("Custom domains come with the Pro plan");
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
     await expect(
       member.as.mutation(api.domains.add, { siteId, hostname: "shop.example" }),
-    ).rejects.toThrow("Custom domains come with the Premium plan");
+    ).rejects.toThrow("Custom domains come with the Pro plan");
     expect(await member.as.query(api.domains.list, {})).toEqual([]);
   });
 
   test("a pasted URL becomes a hostname; duplicates and nonsense are refused", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     const id = await member.as.mutation(api.domains.add, {
       siteId,
@@ -77,8 +77,8 @@ describe("domains", () => {
     const t = fresh();
     const alice = await createUser(t, { email: "a@example.com" });
     const bob = await createUser(t, { email: "b@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "premium" });
-    await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "pro" });
+    await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "pro" });
     const { siteId } = await alice.as.mutation(api.sites.create, { name: "Alice's" });
     const id = await alice.as.mutation(api.domains.add, { siteId, hostname: "alice.example" });
     expect(await bob.as.query(api.domains.list, {})).toEqual([]);
@@ -92,7 +92,7 @@ describe("domains", () => {
   test("a domain is pointed at the site's own address with one record", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "shop" });
     await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });
@@ -117,7 +117,7 @@ describe("domains", () => {
   test("our own hosting domain is not somebody's custom domain", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     await expect(
       member.as.mutation(api.domains.add, { siteId, hostname: "mine.sites.forgenexxus.com" }),
@@ -128,8 +128,8 @@ describe("domains", () => {
     const t = fresh();
     const alice = await createUser(t, { email: "a@example.com" });
     const bob = await createUser(t, { email: "b@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "premium" });
-    await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "pro" });
+    await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "pro" });
     const alices = await alice.as.mutation(api.sites.create, { name: "Alice's" });
     const bobs = await bob.as.mutation(api.sites.create, { name: "Bob's" });
     await alice.as.mutation(api.domains.add, { siteId: alices.siteId, hostname: "shop.example" });
@@ -141,7 +141,7 @@ describe("domains", () => {
   test("verification records what DNS actually says, and only the server writes it", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "premium" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "shop" });
     const id = await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });
