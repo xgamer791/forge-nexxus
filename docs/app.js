@@ -206,6 +206,33 @@ function showOverlay(element) {
   element.classList.add('is-open');
   element.querySelector('button')?.focus({preventScroll:true});
 }
+const SETTINGS_TABS = ['account', 'plan', 'sites'];
+const SETTINGS_TAB_FOR = {profile: 'account', plan: 'plan', usage: 'plan', domains: 'sites'};
+function showSettingsTab(name) {
+  if (!SETTINGS_TABS.includes(name)) name = 'account';
+  document.querySelectorAll('[data-settings-tab]').forEach(tab => {
+    const on = tab.dataset.settingsTab === name;
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+  });
+  document.querySelectorAll('[data-settings-panel]').forEach(panel => {
+    panel.hidden = panel.dataset.settingsPanel !== name;
+  });
+}
+document.querySelectorAll('[data-settings-tab]').forEach(tab => {
+  tab.addEventListener('click', () => showSettingsTab(tab.dataset.settingsTab));
+  tab.addEventListener('keydown', event => {
+    const tabs = [...document.querySelectorAll('[data-settings-tab]')];
+    const index = tabs.indexOf(tab);
+    const next = event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length]
+      : event.key === 'ArrowLeft' ? tabs[(index - 1 + tabs.length) % tabs.length]
+      : null;
+    if (!next) return;
+    event.preventDefault();
+    showSettingsTab(next.dataset.settingsTab);
+    next.focus();
+  });
+});
 function showSettings(show) {
   closeOverlays();
   closePopovers();
@@ -214,6 +241,8 @@ function showSettings(show) {
   navigation.setAttribute('aria-label', show ? 'Settings menu' : 'Navigation menu');
   navigation.classList.toggle('is-settings', show);
   document.querySelector('.settings').setAttribute('aria-expanded', String(show));
+  if (show) showSettingsTab(document.querySelector('[data-settings-tab][aria-selected=true]')?.dataset.settingsTab || 'account');
+  else showSettingsTab('account');
 }
 function showAppearance(show) {
   if (show) {
@@ -1337,6 +1366,7 @@ function showSettingsScreen(name, show = true) {
   const screen = settingsScreens[name];
   if (!screen?.element) return;
   if (show) {
+    showSettingsTab(SETTINGS_TAB_FOR[name] || 'account');
     showOverlay(screen.element);
     navigation.setAttribute('aria-label', screen.label);
   } else {

@@ -8,7 +8,7 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
-<meta name="app-version" content="41d40dfa1ddb41b458d5341bbee6a0ec18595449">
+<meta name="app-version" content="35f86e1c8ac56cefc78776998fdf05b0f8cc6576">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">
@@ -122,15 +122,23 @@ defined( 'ABSPATH' ) || exit;
 </div>
 <div class="settings-content" id="settings-content" hidden>
 <button class="settings-back" type="button"><svg aria-hidden="true"><use href="#arrow-left"/></svg><span>Back</span></button>
+<div class="settings-tabs" role="tablist" aria-label="Settings sections">
+<button type="button" role="tab" id="settings-tab-account" aria-controls="settings-panel-account" aria-selected="true" data-settings-tab="account">Account</button>
+<button type="button" role="tab" id="settings-tab-plan" aria-controls="settings-panel-plan" aria-selected="false" tabindex="-1" data-settings-tab="plan">Plan</button>
+<button type="button" role="tab" id="settings-tab-sites" aria-controls="settings-panel-sites" aria-selected="false" tabindex="-1" data-settings-tab="sites">Sites</button>
+</div>
 <div class="settings-list">
-<h3 class="settings-group">Account</h3>
-<button class="open-profile" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="4"/><path d="M5 22v-3a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v3"/></svg><span>Profile</span></button>
-<button class="open-appearance" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20h1a2 2 0 0 0 1-4 2 2 0 0 1 1-4h3a4 4 0 0 0 4-4 10 10 0 0 0-10-8Z"/><circle cx="7" cy="9" r=".7"/><circle cx="11" cy="6" r=".7"/><circle cx="16" cy="7" r=".7"/><circle cx="6" cy="14" r=".7"/></svg><span>Appearance</span></button>
-<h3 class="settings-group">Plan</h3>
-<button class="open-plan" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="15" rx="2"/><path d="M2 9h20M6 15h4"/></svg><span>Plan &amp; credits</span><span class="settings-value" data-settings-plan></span></button>
-<button class="open-usage" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V4M16 20v-7M2 20h20"/></svg><span>Usage</span></button>
-<h3 class="settings-group">Sites</h3>
-<button class="open-domains" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span>Domains</span><span class="settings-value" data-settings-domains hidden></span></button>
+<div class="settings-panel" id="settings-panel-account" role="tabpanel" aria-labelledby="settings-tab-account" data-settings-panel="account">
+<button class="open-profile" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="4"/><path d="M5 22v-3a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v3"/></svg><span>Profile</span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
+<button class="open-appearance" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20h1a2 2 0 0 0 1-4 2 2 0 0 1 1-4h3a4 4 0 0 0 4-4 10 10 0 0 0-10-8Z"/><circle cx="7" cy="9" r=".7"/><circle cx="11" cy="6" r=".7"/><circle cx="16" cy="7" r=".7"/><circle cx="6" cy="14" r=".7"/></svg><span>Appearance</span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
+</div>
+<div class="settings-panel" id="settings-panel-plan" role="tabpanel" aria-labelledby="settings-tab-plan" data-settings-panel="plan" hidden>
+<button class="open-plan" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="15" rx="2"/><path d="M2 9h20M6 15h4"/></svg><span>Plan &amp; credits</span><span class="settings-value" data-settings-plan></span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
+<button class="open-usage" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V4M16 20v-7M2 20h20"/></svg><span>Usage</span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
+</div>
+<div class="settings-panel" id="settings-panel-sites" role="tabpanel" aria-labelledby="settings-tab-sites" data-settings-panel="sites" hidden>
+<button class="open-domains" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span>Domains</span><span class="settings-value" data-settings-domains hidden></span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
+</div>
 </div>
 </div>
 <div class="credits-card" hidden>
