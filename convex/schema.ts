@@ -11,6 +11,15 @@ export default defineSchema({
     onboardingId: v.id("siteOnboarding"),
     storageId: v.id("_storage"),
   }).index("by_user", ["userId"]).index("by_onboarding", ["onboardingId"]).index("by_storage", ["storageId"]),
+  // Pictures the image model made for a site. The page points at the stored
+  // file; this row is what lets it go when the site or the account does.
+  siteImages: defineTable({
+    userId: v.id("users"),
+    siteId: v.id("sites"),
+    storageId: v.id("_storage"),
+    prompt: v.string(),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
   siteOnboarding: defineTable({
     userId: v.id("users"),
     siteId: v.optional(v.id("sites")),

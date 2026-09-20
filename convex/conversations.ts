@@ -64,6 +64,12 @@ export async function deleteConversation(ctx: MutationCtx, conversationId: Id<"c
       for (const upload of uploads) await ctx.db.delete(upload._id);
       await ctx.db.delete(brief._id);
     }
+    // The pictures made for the site go with it, files and all.
+    const images = await ctx.db.query("siteImages").withIndex("by_site", q => q.eq("siteId", site._id)).collect();
+    for (const image of images) {
+      await ctx.storage.delete(image.storageId);
+      await ctx.db.delete(image._id);
+    }
     const domains = await ctx.db
       .query("domains")
       .withIndex("by_site", (q) => q.eq("siteId", site._id))

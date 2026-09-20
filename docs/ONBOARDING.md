@@ -1,13 +1,30 @@
 # Website onboarding
 
-The full-screen setup route is parked. `ENABLED` in `docs/onboarding.js` is
-`false`, so members land on the dashboard. Flip that flag to restore this flow.
-Drafts already saved in Convex stay put.
+The full-screen setup route is live. `ENABLED` in `docs/onboarding.js` is the
+one switch for it; drafts saved in Convex survive it being turned off and on.
 
-Paid members cannot open the dashboard until a site has a saved generated
-version. An empty planning thread, draft row, cached browser flag or URL does
-not satisfy that gate. Free members keep dashboard access; preview and domain
-controls are disabled, and the preview HTML query enforces the same entitlement.
+The pipeline runs start to finish with no step that can strand a member:
+answers → private strategy → page written by DeepSeek Flash → pictures made by
+Gemini Nano Banana 2 Lite → version saved → address picked and published on the
+hand-off screen → custom domain from the globe.
+
+Paid members answer the questions before their first build. An empty planning
+thread, draft row, cached browser flag or URL does not satisfy that gate — but
+a failed build does not lock anyone in: the failed screen always offers Try
+building again, Edit my answers (or Manage billing when credits or the plan
+stopped it) and Back to dashboard, and New site brings the saved brief back.
+Free members keep dashboard access; only the preview waits for a plan. The
+globe stays open to them because it is where joining a plan is offered, and
+the preview HTML query enforces the entitlement on the server.
+
+The hand-off screen is where a finished site gets its place on the web. The
+member names `<slug>.sites.forgenexxus.com` in a field that answers as they
+type, and Publish my website saves the address and publishes in one press.
+Picking the first address there does not spend the site's one rename. Once
+published the screen shows the live link, Open my website, and Connect your
+own domain, which opens the globe on its custom-domain tab (the form on plans
+with custom domains, the plan offer on those without). Open it as a draft is
+always there, so publishing is never the only way on.
 
 Every new website uses the same ten questions in `convex/onboardingQuestions.ts`.
 Answers, current step, uploads and the build state belong to the signed-in user
@@ -29,15 +46,31 @@ Image and text uploads are saved in Convex storage and removed with their site
 or account. Reference URLs are inspiration, not a claim that they were crawled.
 
 Progress comes from committed backend events: answers submitted, brief saved
-and read, agent started, page received, and version saved. The interface displays
-an indeterminate activity indicator between events, never an estimated
-percentage or timed completion. The durable scheduled build continues if the
-tab closes. A five-minute watchdog marks an abandoned attempt failed, releases
-its hold, and allows retry; stale completions cannot overwrite a retry.
+and read, agent started, page written, pictures made, page received, and
+version saved. The interface displays an indeterminate activity indicator
+between events, never an estimated percentage or timed completion. The durable
+scheduled build continues if the tab closes. The build gives the words up to
+seven minutes and the pictures the rest of an action's ten; a watchdog at nine
+and a half marks an abandoned attempt failed, releases its hold, and allows
+retry; stale completions cannot overwrite a retry.
 
-The underlying generator still creates a single-file static website. Requested
-commerce, memberships and booking features guide the layout but must not be
-represented as working integrations until those services are implemented.
+The build is hard to stall. A provider that stumbles (a dropped connection, a
+rate limit, a 5xx) is asked once more; a provider whose output cap is lower than
+the request says so and is asked again inside it; a page cut off at the cap is
+continued where it stopped instead of failed; and a reply that talked instead
+of building is asked for once more while there is time. What stopped a build is
+written to the Convex log, and a member reads the reason only when it is theirs
+to act on — out of credits, or a plan that ended.
+
+Pictures never decide whether a site gets built. Each one is its own `image`
+request with its own hold, so a thin balance makes fewer pictures rather than
+no site, and one that cannot be made is replaced with a quiet placeholder.
+
+The underlying generator still creates a single-file static website: one page
+whose sections are the site's pages, with a nav that links to each. Separate
+URLs per page are not part of this build. Requested commerce, memberships and
+booking features guide the layout but must not be represented as working
+integrations until those services are implemented.
 
 ## Deployment
 

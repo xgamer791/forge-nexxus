@@ -71,6 +71,12 @@ export async function purgeUser(ctx: MutationCtx, userId: Id<"users">) {
     for (const asset of row.assets) await ctx.storage.delete(asset.storageId);
     await ctx.db.delete(row._id);
   }
+  // Pictures whose site had already gone: the file first, then the row.
+  const images = await ctx.db.query("siteImages").withIndex("by_user", q => q.eq("userId", userId)).collect();
+  for (const image of images) {
+    await ctx.storage.delete(image.storageId);
+    await ctx.db.delete(image._id);
+  }
   // Sites and domains went with their conversations; this sweeps up anything
   // that had lost its thread, plus the plan, the ledger, and preferences.
   const owned = [

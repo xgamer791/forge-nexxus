@@ -1,7 +1,8 @@
 // One full-screen route owns access to the app. The server decides whether a
 // paid member has a built website; local flags and URL parameters never do.
-// Flip ENABLED to true to restore the website-setup route.
-const ENABLED = false;
+// ENABLED is the one switch for the website-setup route. The server never
+// traps anyone in it: a failed build can always be left for the dashboard.
+const ENABLED = true;
 (() => {
   const data = window.ForgeData;
   const questions = data?.onboardingQuestions ?? [];
@@ -20,6 +21,12 @@ const ENABLED = false;
   let saveTimer;
   let saveQueue = Promise.resolve();
   let offline = !navigator.onLine;
+  // What the hand-off needs to put a finished site on the web: the member's
+  // sites and where this deployment hosts them. Both come from Convex.
+  let sitesList = [];
+  let hosting = null;
+  let slugTimer;
+  let slugTicket = 0;
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const mark = '<svg class="onboarding-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" stroke="none" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg>';
   const shell = content => `<header class="onboarding-header"><span class="onboarding-brand">${mark}Forge Nexxus</span><button type="button" class="onboarding-quiet" data-onboarding-action="signout">Sign out</button></header><div class="onboarding-body">${content}</div>`;
@@ -29,7 +36,7 @@ const ENABLED = false;
   }
   function setBusy(value) {
     busy = value;
-    screen.querySelectorAll('button:not([data-onboarding-action="signout"]),input,textarea').forEach(e => { e.disabled = value; });
+    screen.querySelectorAll('button:not([data-onboarding-action="signout"]),input,textarea').forEach(e => { e.disabled = value || e.hasAttribute('data-locked'); });
   }
   function revealDashboard(show) {
     const changed = dashboard.hidden === show;
@@ -42,12 +49,20 @@ const ENABLED = false;
     if (!ENABLED) return true;
     return Boolean(member && state?.userId === member._id && !state.isFree && !state.required);
   }
+  // Only the preview waits for a plan. The globe and the domain settings stay
+  // open to everyone: without a plan they are where joining one is offered,
+  // and a disabled button cannot sell anything.
   function controls() {
     const allowed = canPreview();
-    document.querySelectorAll('.globe-button,.website-preview-button,.site-bar-preview,.open-domains,.message-view').forEach(button => {
+    document.querySelectorAll('.website-preview-button,.site-bar-preview,.message-view').forEach(button => {
       button.disabled = !allowed || (button.matches('.site-bar-preview') && button.dataset.built !== 'true');
       button.setAttribute('aria-disabled', String(button.disabled));
       button.title = state?.isFree ? 'Available with a paid plan' : '';
+    });
+    document.querySelectorAll('.globe-button,.open-domains').forEach(button => {
+      button.disabled = false;
+      button.setAttribute('aria-disabled', 'false');
+      button.title = '';
     });
   }
   function showWaiting(title, detail, retry = false) {
@@ -115,23 +130,115 @@ const ENABLED = false;
     </form>`);
     renderAssets();
   }
+  // What the server would make of a name, so the field can suggest an address
+  // before one is taken. The server decides what is actually saved.
+  function suggestSlug(name) {
+    return (name ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      .slice(0, hosting?.maxLength ?? 40).replace(/-+$/, '');
+  }
+  function builtSite() {
+    const id = state?.draft?.siteId;
+    return id ? sitesList.find(site => site._id === id) ?? null : null;
+  }
+  // The finished site is handed over with its address: the member names it,
+  // publishes it, and leaves with a link. Publishing is never the only way on —
+  // the site is already saved, so opening it as a draft is always there too.
+  function handoff(site) {
+    if (site?.status === 'published' && site.publishedUrl) {
+      return `<a class="onboarding-live-link" href="${escape(site.publishedUrl)}" target="_blank" rel="noopener">${escape(site.publishedUrl.replace(/^https?:\/\//, ''))}</a>
+        <button type="button" class="onboarding-primary" data-onboarding-action="finish">Open my website</button>
+        <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="domain">Connect your own domain</button></div>`;
+    }
+    if (!site || state.isFree) return '<button type="button" class="onboarding-primary" data-onboarding-action="finish">Open my website</button>';
+    const locked = Boolean(site.slug) && site.addressChangeAvailable === false;
+    return `<form class="onboarding-address" data-address-form>
+        <div class="onboarding-field"><input data-address-input name="slug" value="${escape(site.slug ?? suggestSlug(site.name))}" placeholder="${escape(suggestSlug(site.name) || 'your-site')}" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="${hosting?.maxLength ?? 40}" aria-label="Site address" aria-describedby="onboarding-address-note" ${locked ? 'disabled data-locked' : ''}><span class="address-suffix">${hosting?.domain ? `.${escape(hosting.domain)}` : ''}</span></div>
+        <p class="address-note" id="onboarding-address-note" data-address-note role="status">This is where people will find your website.</p>
+        <button type="submit" class="onboarding-primary" data-address-publish>Publish my website</button>
+      </form>
+      <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="finish">Open it as a draft</button></div>`;
+  }
   function renderBuild() {
     const draft = state.draft;
     const done = draft.status === 'complete';
     const failed = draft.status === 'failed';
-    const key = `${draft.id}:${draft.status}:${draft.events.length}`;
+    const site = done ? builtSite() : null;
+    const live = site?.status === 'published' && Boolean(site.publishedUrl);
+    const key = `${draft.id}:${draft.status}:${draft.events.length}:${site?._id ?? ''}:${site?.slug ?? ''}:${site?.status ?? ''}:${hosting?.domain ?? ''}:${state.isFree}`;
     if (rendered === key) return;
     rendered = key;
-    const title = done ? 'Your website is ready.' : failed ? 'Let’s try that again.' : 'Your idea is taking shape.';
-    const detail = done ? 'Your first version is saved. Make it yours from your dashboard.' : failed ? draft.error : 'Forge is creating your website from your answers. You can return to this screen at any time.';
+    const has = label => draft.events.some(event => event.label === label);
+    const title = live ? 'Your website is published.' : done ? 'Your website is ready.' : failed ? 'Let’s try that again.' : 'Your idea is taking shape.';
+    const detail = live ? 'It is on the web at this address. Every change you publish lands here.'
+      : done ? (site && !state.isFree ? 'Pick its address and put it on the web.' : 'Your first version is saved. Make it yours from your dashboard.')
+      : failed ? draft.error : 'Forge is creating your website from your answers. You can return to this screen at any time.';
+    const progress = draft.status === 'queued' ? 'Waiting for the build to start…'
+      : draft.status === 'saving' ? 'Saving your website…'
+      : has('Pictures made for your site') ? 'Putting the page together…'
+      : has('Page written') ? 'Making pictures for your site…'
+      : has('Agent started building your website') ? 'Agent is building…' : 'Preparing the agent…';
+    // Billing is the way on when the build stopped for credits or a plan;
+    // otherwise the answers are, so that is what the failed screen offers.
+    const aboutBilling = failed && /credit|plan|limit/i.test(draft.error ?? '');
     screen.innerHTML = shell(`<div class="onboarding-content onboarding-loading ${done || failed ? 'is-settled' : ''}">
       <div class="build-emblem" aria-hidden="true">${mark}</div><h1 tabindex="-1">${title}</h1><p class="onboarding-hint">${escape(detail)}</p>
-      <div class="onboarding-build-log" role="log" aria-live="polite" aria-label="Website build progress">${draft.events.map(event => `<div class="onboarding-milestone"><svg aria-hidden="true"><use href="#check"/></svg><span>${escape(event.label)}</span></div>`).join('')}</div>
-      ${!done && !failed ? `<p class="onboarding-live" role="status"><span class="onboarding-spinner" aria-hidden="true"></span>${draft.status === 'queued' ? 'Waiting for the build to start…' : draft.status === 'saving' ? 'Saving your website…' : draft.events.some(e => e.label === 'Agent started building your website') ? 'Agent is building…' : 'Preparing the agent…'}</p>` : ''}
+      ${done ? '' : `<div class="onboarding-build-log" role="log" aria-live="polite" aria-label="Website build progress">${draft.events.map(event => `<div class="onboarding-milestone"><svg aria-hidden="true"><use href="#check"/></svg><span>${escape(event.label)}</span></div>`).join('')}</div>`}
+      ${!done && !failed ? `<p class="onboarding-live" role="status"><span class="onboarding-spinner" aria-hidden="true"></span>${progress}</p>` : ''}
       <p class="onboarding-connection" role="status" ${offline ? '' : 'hidden'}>Connection lost. Reconnecting to live progress…</p>
-      ${done ? '<button type="button" class="onboarding-primary" data-onboarding-action="finish">Open my website</button>' : failed ? '<button type="button" class="onboarding-primary" data-onboarding-action="retry">Try building again</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="billing">Manage billing</button>' : ''}
-      ${!state.required && (done || failed) ? '<button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="exit">Back to dashboard</button>' : ''}
+      ${done ? handoff(site) : failed ? `<button type="button" class="onboarding-primary" data-onboarding-action="retry">Try building again</button>
+        <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="${aboutBilling ? 'billing' : 'edit'}">${aboutBilling ? 'Manage billing' : 'Edit my answers'}</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="exit">Back to dashboard</button></div>` : ''}
       <p class="onboarding-error" role="alert" hidden></p></div>`);
+  }
+  // The address answers as it is typed, from the same rules that decide the
+  // save. Only the server ever grants one; this is the field saying what it
+  // already knows, so a name is not lost to a round trip to find out.
+  function checkSlug() {
+    const ticket = ++slugTicket;
+    const site = builtSite();
+    const input = screen.querySelector('[data-address-input]');
+    const note = screen.querySelector('[data-address-note]');
+    const publish = screen.querySelector('[data-address-publish]');
+    if (!site || !input || !note || !publish || input.disabled) return;
+    const wanted = input.value.trim();
+    const settle = (text, kind, blocked) => {
+      note.textContent = text;
+      note.classList.toggle('is-free', kind === 'free');
+      note.classList.toggle('is-taken', kind === 'taken');
+      publish.disabled = blocked;
+    };
+    if (!wanted || wanted === (site.slug ?? '')) return settle('This is where people will find your website.', null, false);
+    data.sites.slugAvailable(wanted, site._id).then(answer => {
+      if (ticket !== slugTicket || !answer || !input.isConnected) return;
+      if (answer.available) settle(`${answer.host ?? answer.slug} is free.`, 'free', false);
+      else settle(answer.problem ?? 'That address is taken. Try another one.', 'taken', true);
+    }).catch(() => { /* Publishing still asks the server properly. */ });
+  }
+  // The globe owns domains. Open it on its custom-domain tab, the way a tap
+  // would, once the dashboard is back and the finished site is selected.
+  function openDomains(tries = 0) {
+    if (dashboard.hidden && tries < 40) { setTimeout(() => openDomains(tries + 1), 75); return; }
+    document.querySelector('.globe-button')?.click();
+    document.querySelector('#address-tab-custom')?.click();
+  }
+  async function publishSite() {
+    const site = builtSite();
+    const input = screen.querySelector('[data-address-input]');
+    if (busy || !site) return;
+    const wanted = (input?.value.trim() || input?.placeholder || '').trim();
+    // Read before the screen goes busy, which disables every field on it.
+    const editable = Boolean(input) && !input.disabled;
+    clearTimeout(slugTimer);
+    error(''); setBusy(true);
+    const publish = screen.querySelector('[data-address-publish]');
+    if (publish) publish.textContent = 'Publishing…';
+    try {
+      if (editable && wanted && wanted !== site.slug) await data.sites.setSlug(site._id, wanted);
+      await data.sites.publish(site._id);
+    } catch (caught) {
+      error(caught?.data || 'Your website couldn’t be published. Check your connection and try again.');
+      if (publish?.isConnected) publish.textContent = 'Publish my website';
+    } finally { setBusy(false); render(); }
   }
   function render() {
     controls();
@@ -204,8 +311,13 @@ const ENABLED = false;
   }
   screen.addEventListener('input', event => {
     if (event.target.matches('[data-answer]')) scheduleSave();
+    if (event.target.matches('[data-address-input]')) { clearTimeout(slugTimer); slugTimer = setTimeout(checkSlug, 250); }
   });
-  screen.addEventListener('submit', event => { event.preventDefault(); void next(); });
+  screen.addEventListener('submit', event => {
+    event.preventDefault();
+    if (event.target.matches('[data-address-form]')) void publishSite();
+    else void next();
+  });
   screen.addEventListener('click', async event => {
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
@@ -216,6 +328,9 @@ const ENABLED = false;
       scheduleSave(); return;
     }
     const action = button.dataset.onboardingAction;
+    // A submit button belongs to its form; going busy here would disable it
+    // before the form ever heard the press.
+    if (!action && !button.dataset.removeAsset) return;
     if (action === 'skip') return void next(true);
     if (action === 'reload') return location.reload();
     if (busy && action !== 'signout') return;
@@ -236,12 +351,20 @@ const ENABLED = false;
       if (button.dataset.removeAsset) await data.onboarding.detach(state.draft.id, button.dataset.removeAsset);
       if (action === 'retry') await data.onboarding.submit(state.draft.id);
       if (action === 'billing') { const {url} = await data.billing.portal(); location.assign(url); }
-      if (action === 'finish' || action === 'exit') {
+      // Saving an answer is what reopens a brief whose build failed; the last
+      // question comes back with Back leading through the rest.
+      if (action === 'edit') {
+        step = questions.length - 1;
+        await queueSave(step, state.draft.answers[step] ?? '');
+        rendered = '';
+      }
+      if (action === 'finish' || action === 'exit' || action === 'domain') {
         clearTimeout(saveTimer);
         if (state.draft.status === 'questions') await queueSave(step, value());
         const siteId = state.draft.siteId;
         await data.onboarding.dismiss(state.draft.id);
         if (siteId) document.dispatchEvent(new CustomEvent('forge:onboarding-complete', {detail: {siteId}}));
+        if (action === 'domain') openDomains();
       }
     } catch (caught) { error(caught?.data || 'That change couldn’t be saved. Please try again.'); }
     finally { setBusy(false); render(); }
@@ -298,4 +421,14 @@ const ENABLED = false;
     if (nextState) { state = nextState; subscriptionError = false; }
     render();
   }, () => { subscriptionError = true; render(); });
+  // The hand-off redraws only when the site's address or status changes, so
+  // an update arriving mid-word never takes the field out from under a typist.
+  data?.sites?.subscribe?.(list => {
+    sitesList = Array.isArray(list) ? list : [];
+    if (state?.draft?.status === 'complete') render();
+  });
+  data?.sites?.hosting?.(next => {
+    hosting = next ?? null;
+    if (state?.draft?.status === 'complete') render();
+  });
 })();
