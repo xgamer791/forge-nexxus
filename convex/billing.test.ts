@@ -92,7 +92,7 @@ describe("billing", () => {
     expect(catalog.plans.map((plan) => plan.key)).toEqual(["free", "starter", "pro", "ultra"]);
     expect(catalog.plans.map((plan) => plan.monthlyPriceCents)).toEqual([0, 6000, 10000, 20000]);
     expect(catalog.plans.map((plan) => plan.yearlyPriceCents)).toEqual([0, 43200, 72000, 144000]);
-    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([10, 600, 2000, 5000]);
+    expect(catalog.plans.map((plan) => plan.monthlyCredits)).toEqual([10, 2500, 5000, 12000]);
     expect(planFor("premium")).toEqual(pro);
     expect(ultra.key).toBe("ultra");
     expect(catalog.plans[0].signupCredits).toBe(20);

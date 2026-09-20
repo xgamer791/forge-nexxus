@@ -81,7 +81,7 @@ export const PLANS: readonly Plan[] = [
     tagline: "Build and publish real sites every month.",
     monthlyPriceCents: 6000,
     yearlyPriceCents: 43200,
-    monthlyCredits: 600,
+    monthlyCredits: 2500,
     signupCredits: 0,
     maxSites: 15,
     visitorsPerMonth: 10000,
@@ -106,7 +106,7 @@ export const PLANS: readonly Plan[] = [
     // An allowance rather than `null`: unlimited credits mean unlimited
     // provider spend against a fixed monthly price, which the deployment pays
     // for. Sites and visitors stay uncapped; the model calls do not.
-    monthlyCredits: 2000,
+    monthlyCredits: 5000,
     signupCredits: 0,
     maxSites: null,
     visitorsPerMonth: null,
@@ -129,7 +129,7 @@ export const PLANS: readonly Plan[] = [
     tagline: "Every entitlement, and the largest monthly allowance.",
     monthlyPriceCents: 20000,
     yearlyPriceCents: 144000,
-    monthlyCredits: 5000,
+    monthlyCredits: 12000,
     signupCredits: 0,
     maxSites: null,
     visitorsPerMonth: null,
@@ -140,7 +140,7 @@ export const PLANS: readonly Plan[] = [
     topUps: true,
     features: [
       "Everything in Pro",
-      "5,000 credits every month",
+      "12,000 credits every month",
       "Unlimited pages and visitors",
       "Custom domains and SSL",
       "Google Analytics",
