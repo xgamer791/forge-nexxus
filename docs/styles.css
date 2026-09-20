@@ -6,11 +6,11 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .greeting h1{transform:scaleX(.965)}
 
 /* The icon row is a fixed instrument panel. Menus hang from its bottom edge
-   instead of covering it, and the stage can slide without taking the icons.
-   Height is the 40px controls plus the iOS status strip — no extra padding. */
+   instead of covering it. With status-bar-style=default the system bar sits
+   outside the web layer, so this is only the 40px controls plus a real inset. */
 :root{
   --chrome:40px;
-  --header:calc(var(--status-strip,env(safe-area-inset-top,0px)) + var(--chrome));
+  --header:calc(env(safe-area-inset-top,0px) + var(--chrome));
 }
 
 /* Everything docks to the layout viewport. The iOS 26 Home Screen strip is WebKit 301994:
@@ -18,7 +18,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
    Only status-bar-style=default (read when the icon is added) removes it; no CSS can reach it. */
 .stage{position:absolute;inset:0;z-index:1}
 .chrome{position:absolute;top:0;left:0;right:0;height:var(--header);z-index:6;background:var(--bg);pointer-events:none}
-.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:var(--status-strip,env(safe-area-inset-top,0px));pointer-events:auto;z-index:0}
+.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:env(safe-area-inset-top,0px);pointer-events:auto;z-index:0}
 .app.navigation-open .chrome,.app.sheet-open .chrome,.app:has(.overlay.preview:not([hidden])) .chrome{box-shadow:0 1px 0 var(--border)}
 .composer-area{position:absolute;bottom:20px;left:16px;right:16px}
 .app.reference .composer-area{left:16px;right:16px;bottom:var(--composer-bottom)}

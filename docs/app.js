@@ -48,18 +48,16 @@ const panels = [...document.querySelectorAll('[role="dialog"]')].filter(panel =>
 const navigation = document.querySelector('.navigation');
 const historyContent = document.querySelector('.nav-content');
 const settingsContent = document.querySelector('.settings-content');
-// iOS 26 standalone reports a zero top inset even though it reserves the strip,
-// so fall back to the gap the system withheld from the web layer.
+// status-bar-style=default keeps the system bar outside the web layer.
+// Only a real safe-area inset belongs in --status-strip; screen.height minus
+// innerHeight double-counts that bar and opened a tall empty band under it.
 function measureStatusStrip() {
   const probe = document.createElement('div');
   probe.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-top,0px)';
   document.body.append(probe);
   const inset = probe.getBoundingClientRect().height;
   probe.remove();
-  const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
-  const withheld = (window.screen?.height || 0) - window.innerHeight;
-  const strip = inset > 0 ? inset : (standalone && withheld > 0 && withheld <= 80 ? withheld : 0);
-  document.documentElement.style.setProperty('--status-strip', `${strip}px`);
+  document.documentElement.style.setProperty('--status-strip', `${inset}px`);
 }
 measureStatusStrip();
 window.addEventListener('resize', measureStatusStrip);
