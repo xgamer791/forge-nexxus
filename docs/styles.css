@@ -285,8 +285,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .dropdown .handle{margin:auto auto max(10px,var(--bottom));flex:none}
 .dropdown header{height:52px}
 @media(prefers-reduced-motion:no-preference){
-  .dropdown.is-open{animation:dropdown-in .96s cubic-bezier(.22,1,.36,1) both}
-  .dropdown.is-closing{animation:dropdown-out .96s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
+  .dropdown.is-open{animation:dropdown-in .8s cubic-bezier(.22,1,.36,1) both}
+  .dropdown.is-closing{animation:dropdown-out .8s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
   .app.navigation-open .dropdown{animation:none}
 }
 @keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
