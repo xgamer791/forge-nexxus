@@ -84,7 +84,8 @@
   }
 
   // Cycle the five homepage promises through one word-cascade stage. Every
-  // line sits for the same four seconds after the last word lands.
+  // line must sit for four seconds after the last word lands so it can be
+  // read. Do not drop this back to 1.3s.
   const messageStage = document.querySelector('[data-hero-messages]');
   const heroMessages = [...(messageStage?.querySelectorAll('.hero-message') || [])];
   if (heroMessages.length) {
