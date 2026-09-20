@@ -442,22 +442,25 @@ function hideOverlay(element) {
   const reduceMotion = prefersReducedMotion();
   const animatedDropdown = element.matches?.('.dropdown.is-open')
     && !reduceMotion;
-  if (!animatedDropdown) {
+  const animatedDimSheet = element.matches?.('.preview-unbuilt.is-open')
+    && !reduceMotion;
+  if (!animatedDropdown && !animatedDimSheet) {
     finishHide(element);
     return;
   }
+  const duration = animatedDropdown ? DROPDOWN_MS : DRAWER_MS;
   element.classList.remove('is-open');
   element.classList.add('is-closing');
-  fadeLayer(backdrop, currentOpacity(backdrop, 1), 0, DROPDOWN_MS);
+  fadeLayer(backdrop, currentOpacity(backdrop, 1), 0, duration);
   const finish = event => {
     if (event?.target && event.target !== element) return;
     finishHide(element);
     finishHide(backdrop);
     app.classList.remove('sheet-open');
   };
-  const timer = setTimeout(() => finish(), 840);
+  const timer = setTimeout(() => finish(), duration + 140);
   pendingPanelHides.set(element, {finish, timer});
-  element.addEventListener('animationend', finish);
+  if (animatedDropdown) element.addEventListener('animationend', finish);
 }
 function closeDrawer() {
   const drawer = document.querySelector('.navigation');
@@ -501,12 +504,13 @@ function closeMenu() {
   const drawerOpen = Boolean(drawer?.classList.contains('is-open') && !drawerClosing);
   panels.forEach(hideOverlay);
   const dropdownClosing = panels.some(panel => panel.classList.contains('dropdown') && panel.classList.contains('is-closing'));
+  const dimSheetClosing = panels.some(panel => panel.classList.contains('preview-unbuilt') && panel.classList.contains('is-closing'));
   if (drawerOpen) closeDrawer();
-  else if (!drawerClosing && !dropdownClosing) {
+  else if (!drawerClosing && !dropdownClosing && !dimSheetClosing) {
     finishHide(backdrop);
     app.classList.remove('navigation-open', 'sheet-open');
     parkStage();
-  } else if (dropdownClosing) {
+  } else if (dropdownClosing || dimSheetClosing) {
     app.classList.remove('navigation-open');
   }
   document.querySelectorAll('[data-open],.website-preview-button').forEach(button => button.setAttribute('aria-expanded', 'false'));
@@ -556,6 +560,7 @@ function openMenu(name, trigger) {
   backdrop.classList.add('is-open');
   app.classList.add('sheet-open');
   if (panel.classList.contains('dropdown')) showDim(DROPDOWN_MS);
+  else if (panel.classList.contains('preview-unbuilt')) showDim(DRAWER_MS);
   trigger?.setAttribute('aria-expanded', 'true');
   // Focus the dialog itself, not its close button. iOS draws a native ring
   // around a programmatically focused button even when the app removes its
