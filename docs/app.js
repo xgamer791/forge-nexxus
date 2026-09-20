@@ -1559,8 +1559,14 @@ if (forge?.sites && previewScreen) {
   }
   openPreview = () => {
     if (!window.ForgeOnboarding?.canPreview()) return;
+    if (!previewScreen.hidden) {
+      closeMenu();
+      return;
+    }
+    closeMenu();
     showNote(error, '');
     showOverlay(previewScreen);
+    document.querySelector('.website-preview-button')?.setAttribute('aria-expanded', 'true');
     navigation.setAttribute('aria-label', 'Site preview');
     watch();
     renderPreview();
@@ -1620,8 +1626,12 @@ const previewStartButton = document.querySelector('.preview-start');
 websitePreviewButton?.addEventListener('click', () => {
   if (!window.ForgeOnboarding?.canPreview()) return;
   if (activeSite?.currentVersionId) {
-    websitePreviewButton.setAttribute('aria-expanded', 'true');
     openPreview();
+    return;
+  }
+  const unbuilt = document.querySelector('.preview-unbuilt');
+  if (unbuilt && !unbuilt.hidden && !unbuilt.classList.contains('is-closing')) {
+    closeMenu();
     return;
   }
   openMenu('preview-unbuilt', websitePreviewButton);
