@@ -1,8 +1,8 @@
 /* Reference screens use a 430pt iPhone canvas. Native status bars remain native. */
-.auth-gate{--auth-bg:#121315;--hero-overlay:rgba(0,0,0,.1);--font:"Switzer",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;position:fixed;inset:0;width:100%;height:100%;height:100dvh;min-height:100svh;z-index:10;overflow-y:auto;overscroll-behavior:contain;background:var(--auth-bg);color:#e9ebee;color-scheme:dark;font-family:var(--font);font-size:16px;scrollbar-width:none;-webkit-text-size-adjust:100%}
+.auth-gate{--auth-bg:#121315;--hero-overlay:rgba(0,0,0,.1);--font:"Satoshi",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;position:fixed;inset:0;width:100%;height:100%;height:100dvh;min-height:100svh;z-index:10;overflow-y:auto;overscroll-behavior:contain;background:var(--auth-bg);color:#e9ebee;color-scheme:dark;font-family:var(--font);font-size:16px;scrollbar-width:none;-webkit-text-size-adjust:100%}
 .auth-gate button,.auth-gate input{font:inherit}
 .auth-gate button:focus-visible,.auth-gate input:focus-visible{outline:2px solid #b6b8ba;outline-offset:3px}
-.auth-button{width:100%;height:52px;border:1px solid #434548;border-radius:14px;display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;font-size:16px!important;font-weight:600!important;line-height:20px;padding:0 12px}
+.auth-button{width:100%;height:52px;border:1px solid #434548;border-radius:14px;display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;font-size:16px!important;font-weight:700!important;line-height:20px;padding:0 12px}
 .auth-button svg{width:20px;height:20px}
 .auth-primary{background:#e2e4e7;color:#121315;border-color:#e2e4e7}
 .auth-button:disabled{opacity:.5;cursor:default}
@@ -14,7 +14,7 @@
 .auth-hero{flex:1;position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:0;padding:max(60px,env(safe-area-inset-top)) 16px 20px;text-align:center}
 .auth-hero p:not(.hero-message){margin:0;max-width:320px;color:#fff;font-size:17px;line-height:23px}
 .auth-message-rotator{position:relative;width:100%;max-width:100%;height:clamp(210px,36svh,300px);overflow:hidden;color:#fff;pointer-events:none;margin-inline:auto;margin-bottom:18px}
-.hero-message{position:absolute;left:0;right:0;bottom:0;top:0;width:100%;max-width:100%;margin:0 auto;display:flex;flex-wrap:wrap;align-content:flex-end;justify-content:center;column-gap:.12em;row-gap:.08em;padding:0;font-family:var(--font);font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.06;text-align:center;text-wrap:balance;opacity:0;visibility:hidden}
+.hero-message{position:absolute;left:0;right:0;bottom:0;top:0;width:100%;max-width:100%;margin:0 auto;display:flex;flex-wrap:wrap;align-content:flex-end;justify-content:center;column-gap:.12em;row-gap:.08em;padding:0;font-family:var(--font);font-size:26px;font-weight:900;letter-spacing:-.02em;line-height:1.06;text-align:center;text-wrap:balance;opacity:0;visibility:hidden}
 .hero-message.is-active,.hero-message.is-leaving{opacity:1;visibility:visible}
 .hero-message-word{display:inline-block;opacity:0;filter:blur(7px);transform:translate3d(0,.9em,0);transition:opacity .449s ease-out,filter .528s ease-out,transform .766s cubic-bezier(.2,.8,.2,1);transition-delay:calc(var(--word-index) * 95ms);will-change:opacity,filter,transform}
 .hero-message.is-active .hero-message-word{opacity:1;filter:blur(0);transform:translate3d(0,0,0)}
@@ -25,7 +25,7 @@
 .auth-welcome .apple{background:#fff;color:#000}
 .auth-fineprint{margin:4px 0 0;text-align:center;color:#8a8c8f;font-size:13px;line-height:18px}
 /* The return leg of a provider sign-in, on the welcome sheet it started from. */
-.auth-signing{display:flex;align-items:center;justify-content:center;gap:10px;min-height:50px;margin:0;color:#e9ebee;font-size:16px;font-weight:600;line-height:20px}
+.auth-signing{display:flex;align-items:center;justify-content:center;gap:10px;min-height:50px;margin:0;color:#e9ebee;font-size:16px;font-weight:700;line-height:20px}
 .auth-spinner{width:18px;height:18px;flex:none;border-radius:50%;border:2px solid #4a4c4f;border-top-color:#e9ebee;animation:auth-spin .7s linear infinite}
 @keyframes auth-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){
@@ -43,17 +43,17 @@
 .auth-back svg *{pointer-events:none}
 .auth-login-content h1{font-size:27px;line-height:33px;letter-spacing:-1px;text-align:center;margin:23px -2px 10px;font-weight:700}
 .auth-intro{max-width:340px;margin:0 auto 34px;text-align:center;color:#9fa1a4;font-size:16px;line-height:20px}
-.auth-field{display:block;font-size:14px;font-weight:600;line-height:20px}
+.auth-field{display:block;font-size:14px;font-weight:700;line-height:20px}
 .auth-field>input{display:block;width:100%;height:48px;border:1px solid #434548;border-radius:10px;background:transparent;margin-top:10px}
 .auth-field input{min-width:0;padding:0 16px;color:#e9ebee;font-size:16px;font-weight:400;outline:none}
 .auth-field input::placeholder{color:#5e6063;opacity:1}
 .auth-email-form>.auth-button{margin-top:12px}
-.auth-or{text-align:center;color:#606264;font-size:12px;font-weight:600;letter-spacing:1.4px;line-height:16px;margin:22px 0}
+.auth-or{text-align:center;color:#606264;font-size:12px;font-weight:700;letter-spacing:1.4px;line-height:16px;margin:22px 0}
 .auth-social{display:grid;gap:12px}
 .auth-switch{text-align:center;color:#9fa1a4;font-size:14px;line-height:20px;margin:28px 0 0}
 /* Welcome docks the switch into a tight grid, so it drops the 28px login lead. */
 .auth-welcome .auth-switch{margin:10px 0 0;color:#8a8c8f}
-.auth-welcome .auth-switch button{position:relative;padding:0;border:0;background:none;color:#e9ebee;font-weight:600;cursor:pointer}
+.auth-welcome .auth-switch button{position:relative;padding:0;border:0;background:none;color:#e9ebee;font-weight:700;cursor:pointer}
 /* Same trick as .auth-back: a 44px target that does not move the text. */
 .auth-welcome .auth-switch button:before{content:"";position:absolute;left:-12px;right:-12px;top:-12px;bottom:-12px}
 .auth-message{font-size:14px;line-height:20px;color:#bfc2c5;text-align:center;margin:16px 0 0}

@@ -171,7 +171,7 @@ const SETTING_DEFAULTS = {
   codeWrap: false,
   themedDiff: true,
   reduceTransparency: true,
-  uiFont: 'Switzer',
+  uiFont: 'Satoshi',
   codeFont: 'System monospace',
 };
 function knownSettings(values) {

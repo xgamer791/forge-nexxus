@@ -38,7 +38,7 @@ define(
 
 require_once get_theme_file_path( 'inc/convex.php' );
 
-const FORGE_FONTS_URL = 'https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700,800&display=swap';
+const FORGE_FONTS_URL = 'https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap';
 
 add_action(
 	'after_setup_theme',

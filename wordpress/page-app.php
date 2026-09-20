@@ -172,8 +172,8 @@ defined( 'ABSPATH' ) || exit;
 <div class="appearance-stack">
 <div class="appearance-row"><div class="appearance-copy"><strong>Type size</strong><p>Fixed at 16px on phone — same scale as Claude and ChatGPT</p></div><span class="type-size">16</span></div>
 <div class="appearance-row font-row"><div class="appearance-copy"><strong>UI Font Family</strong><p>Override the Forge Nexxus user interface typeface</p></div>
-<button class="font-select" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="ui-font-menu" data-font-menu="ui-font-menu" data-setting="uiFont"><span>Switzer</span><svg><use href="#chevron-down"/></svg></button>
-<div class="font-menu" id="ui-font-menu" role="listbox" aria-label="UI Font Family" hidden><button type="button" role="option" aria-selected="true">Switzer</button></div></div>
+<button class="font-select" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="ui-font-menu" data-font-menu="ui-font-menu" data-setting="uiFont"><span>Satoshi</span><svg><use href="#chevron-down"/></svg></button>
+<div class="font-menu" id="ui-font-menu" role="listbox" aria-label="UI Font Family" hidden><button type="button" role="option" aria-selected="true">Satoshi</button></div></div>
 <div class="appearance-row font-row"><div class="appearance-copy"><strong>Code Font Family</strong><p>Override the font for code editors and diffs</p></div>
 <button class="font-select" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="code-font-menu" data-font-menu="code-font-menu" data-setting="codeFont"><span>System monospace</span><svg><use href="#chevron-down"/></svg></button>
 <div class="font-menu" id="code-font-menu" role="listbox" aria-label="Code Font Family" hidden><button type="button" role="option" aria-selected="true">System monospace</button></div></div>
