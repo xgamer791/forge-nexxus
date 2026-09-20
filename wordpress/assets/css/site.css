@@ -76,6 +76,7 @@ html.is-member [data-member-hide]{display:none}
 .hero-background-video.is-active{opacity:1}
 .hero::after{content:"";position:absolute;z-index:1;inset:0;background:rgba(0,0,0,.3);pointer-events:none}
 .hero-stage{position:relative;z-index:2;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:25px}
+.hero-message{font-size:28px}
 .is-home .site-header:not(.is-scrolled):not(.nav-open) .brand,
 .is-home .site-header:not(.is-scrolled):not(.nav-open) .brand-mark,
 .is-home .site-header:not(.is-scrolled):not(.nav-open) .nav-list a{color:#fff}
@@ -285,6 +286,7 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
 }
 @media (min-width:900px){
   .hero-composer{max-width:860px;height:104px;padding:16px 20px 12px}
+  .hero-message{font-size:28px}
 }
 @media (prefers-reduced-motion:reduce){
   .button,.site-header,.nav-toggle span{transition:none}
