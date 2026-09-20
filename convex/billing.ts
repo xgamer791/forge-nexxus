@@ -72,7 +72,15 @@ function opening(key: PlanKey, now: number): Balance {
 export function projected(sub: Omit<Balance, "planKey"> & { planKey: string }, now: number): Balance {
   const stored = normalizePlanKey(sub.planKey);
   if (now < sub.periodEnd) {
-    return stored === sub.planKey ? sub : { ...sub, planKey: stored };
+    return {
+      planKey: stored,
+      periodStart: sub.periodStart,
+      periodEnd: sub.periodEnd,
+      credits: sub.credits,
+      reserved: sub.reserved,
+      granted: sub.granted,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+    };
   }
   let periodStart = sub.periodEnd;
   let periodEnd = addMonth(periodStart);
