@@ -325,7 +325,7 @@ let menuLockUntil = 0;
 const pendingPanelHides = new WeakMap();
 const DRAWER_MS = 100;
 const DROPDOWN_MS = 160;
-const MENU_LOCK_MS = DROPDOWN_MS;
+const MENU_LOCK_MS = 220;
 const DRAWER_EASE = 'cubic-bezier(.45,0,.55,1)';
 const DRAWER_OFF = 'translate3d(-100%,0,0)';
 const DRAWER_ON = 'translate3d(0,0,0)';
@@ -519,7 +519,8 @@ function hideOverlay(element, {keepDim = false} = {}) {
   }
   const reduceMotion = prefersReducedMotion();
   const pulled = element.classList.contains('is-dragging') || element.classList.contains('is-dismissing');
-  if (isPhoneMenu() && element.classList.contains('sheet') && !reduceMotion && pulled) {
+  const phoneDropdown = isPhoneMenu() && element.classList.contains('dropdown') && !reduceMotion;
+  if (phoneDropdown || (isPhoneMenu() && element.classList.contains('sheet') && !reduceMotion && pulled)) {
     dismissSheet(element, {keepDim});
     return;
   }
