@@ -34,10 +34,10 @@ get_header();
 ?>
 
 <section class="hero">
-	<video class="hero-background-video is-active" autoplay muted loop playsinline preload="auto" poster="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-poster.jpg' ) ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
+	<video class="hero-background-video is-active" autoplay muted playsinline preload="auto" poster="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-poster.jpg' ) ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
 		<source src="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) ); ?>" type="video/mp4">
 	</video>
-	<video class="hero-background-video" muted loop playsinline preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
+	<video class="hero-background-video" muted playsinline preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
 		<source src="<?php echo esc_url( get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) ); ?>" type="video/mp4">
 	</video>
 	<div class="wrap hero-stage">

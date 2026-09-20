@@ -26,44 +26,43 @@
     document.querySelectorAll('[data-member-text]').forEach(el => { el.textContent = el.dataset.memberText; });
   }
 
-  // The generated clip settles at both matching endpoint frames. Two primed
-  // layers skip those holds and crossfade before the file ends, so iOS never
-  // has to stop, seek and decode before the next visible frame.
+  // The file is one forward pass that already fades into its first frame.
+  // Two layers hand off during that fade so the browser never seeks a
+  // playing element, which is what used to hitch the loop.
   const heroLoops = [...document.querySelectorAll('[data-hero-loop]')];
   if (heroLoops.length === 2 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const loopStart = 0.5;
-    const loopEndPadding = 0.5;
-    const crossfadeMs = 140;
+    const lead = 0.16;
+    const fadeMs = 140;
     let active = heroLoops[0];
     let standby = heroLoops[1];
     let switching = false;
 
-    const prime = video => {
-      const seek = () => {
-        video.currentTime = Math.min(loopStart, Math.max(0, video.duration - loopEndPadding));
-      };
-      if (video.readyState >= 1) seek();
-      else video.addEventListener('loadedmetadata', seek, { once: true });
+    const rewind = video => {
+      try { video.currentTime = 0; } catch { /* seek before metadata */ }
     };
-    prime(active);
-    prime(standby);
+    heroLoops.forEach(video => {
+      video.loop = false;
+      video.muted = true;
+      if (video.readyState >= 1) rewind(video);
+      else video.addEventListener('loadedmetadata', () => rewind(video), { once: true });
+    });
 
     const swap = async () => {
       if (switching) return;
       switching = true;
-      const previous = active;
-      const next = standby;
+      rewind(standby);
       try {
-        await next.play();
-        next.classList.add('is-active');
-        previous.classList.remove('is-active');
-        active = next;
+        await standby.play();
+        standby.classList.add('is-active');
+        active.classList.remove('is-active');
+        const previous = active;
+        active = standby;
         standby = previous;
         setTimeout(() => {
-          standby.pause();
-          prime(standby);
+          previous.pause();
+          rewind(previous);
           switching = false;
-        }, crossfadeMs);
+        }, fadeMs);
       } catch {
         switching = false;
       }
@@ -73,11 +72,15 @@
       if (
         !switching &&
         Number.isFinite(active.duration) &&
-        active.currentTime >= active.duration - loopEndPadding
+        active.duration > lead &&
+        active.currentTime >= active.duration - lead
       ) swap();
       requestAnimationFrame(follow);
     };
     requestAnimationFrame(follow);
+    active.addEventListener('ended', () => { if (!switching) swap(); });
+  } else if (heroLoops[0] && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    heroLoops[0].loop = true;
   }
 
   // Cycle the five homepage promises through one word-cascade stage. The
