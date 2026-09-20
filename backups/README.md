@@ -1,5 +1,24 @@
 # Backups
 
+## forge-app-2026-09-20
+
+Snapshot of the **GitHub Pages app** (`docs/` + `src/`) at `main` `2adc584`.
+
+- Live app: https://xgamer791.github.io/forge-nexxus/
+- Archive: `forge-app-2026-09-20.tgz`
+- Unpacked: `forge-app-2026-09-20/docs/` and `forge-app-2026-09-20/src/`
+
+This is not the Cloudways website. Do not restore it onto `wordpress/` or the Cloudways theme, and do not copy the website over `docs/`.
+
+To restore the app:
+
+```bash
+tar -xzf forge-app-2026-09-20.tgz
+# copy docs/ over the repo docs/ folder
+# copy src/ over the repo src/ folder
+# npm run build, then push main so Pages publishes docs/
+```
+
 ## wordpress-2026-09-20-pre-app-sync
 
 Live Cloudways WordPress theme snapshot taken **before** copying the GitHub Forge Nexxus app onto https://forgenexxus.com.
