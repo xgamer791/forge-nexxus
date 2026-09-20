@@ -25,7 +25,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .navigation{position:fixed;z-index:4;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:var(--drawer);background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;transform:translate3d(-100%,0,0)}
 .app.navigation-open .navigation:not(.is-closing){transform:translate3d(0,0,0)}
 .navigation.is-closing{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:none}
-.backdrop.is-nav{background:var(--nav-backdrop)}
+.backdrop.is-dim{background:var(--nav-backdrop)}
 /* iOS tints the standalone status bar from whatever paints beneath it. Keep the
    dimmer out of that strip so the tint never caches the darkened page color. */
 .backdrop{top:var(--status-strip,env(safe-area-inset-top,0px))}
@@ -141,7 +141,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 html[data-theme=light] .appearance-card,html[data-theme=light] .appearance-stack,html[data-theme=light] .theme-menu,html[data-theme=light] .font-menu{border:1px solid var(--border)}
 .app.reference .appearance,.app.reference .overlay{position:absolute;left:0;width:430px}
 .appearance.opaque-surfaces ~ .backdrop{background:var(--bg);opacity:.82}
-.app.opaque-surfaces .backdrop.is-nav{background:var(--nav-backdrop)}
+.app.opaque-surfaces .backdrop.is-dim{background:var(--nav-backdrop)}
 
 /* Shared pieces of the settings screens. */
 .overlay-note{margin:10px 12px 0;font-size:15px;line-height:20px;color:var(--subdued)}

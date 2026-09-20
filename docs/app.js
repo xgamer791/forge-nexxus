@@ -330,6 +330,7 @@ window.ForgeData?.settings?.subscribe(stored => {
 let opener;
 const pendingPanelHides = new WeakMap();
 const DRAWER_MS = 250;
+const DROPDOWN_MS = 700;
 const DRAWER_EASE = 'cubic-bezier(.45,0,.55,1)';
 const DRAWER_OFF = 'translate3d(-100%,0,0)';
 const DRAWER_ON = 'translate3d(0,0,0)';
@@ -381,7 +382,7 @@ function currentOpacity(element, fallback) {
   const value = Number(getComputedStyle(element).opacity);
   return Number.isFinite(value) ? value : fallback;
 }
-function fadeLayer(element, from, to) {
+function fadeLayer(element, from, to, duration = DRAWER_MS) {
   if (!element) return Promise.resolve();
   element.getAnimations().forEach(animation => animation.cancel());
   element.style.opacity = String(from);
@@ -393,12 +394,23 @@ function fadeLayer(element, from, to) {
   }
   const animation = element.animate(
     [{opacity: from, transform: 'none'}, {opacity: to, transform: 'none'}],
-    {duration: DRAWER_MS, easing: DRAWER_EASE, fill: 'forwards'},
+    {duration, easing: DRAWER_EASE, fill: 'forwards'},
   );
   return animation.finished.catch(() => {}).then(() => {
     element.style.opacity = String(to);
     element.style.transform = 'none';
   });
+}
+function dimFrom() {
+  return backdrop.classList.contains('is-dim') ? currentOpacity(backdrop, 0) : 0;
+}
+function showDim(duration = DRAWER_MS) {
+  const from = dimFrom();
+  backdrop.hidden = false;
+  backdrop.classList.add('is-open', 'is-dim');
+  backdrop.style.transform = 'none';
+  backdrop.style.opacity = String(from);
+  return fadeLayer(backdrop, from, 1, duration);
 }
 function finishHide(element) {
   const pending = pendingPanelHides.get(element);
@@ -417,7 +429,7 @@ function finishHide(element) {
     element.style.opacity = '0';
     element.style.transform = 'none';
     element.getAnimations().forEach(animation => animation.cancel());
-    element.classList.remove('is-nav');
+    element.classList.remove('is-nav', 'is-dim');
   }
   element.hidden = true;
   element.classList.remove('is-open', 'is-closing');
@@ -436,10 +448,14 @@ function hideOverlay(element) {
   }
   element.classList.remove('is-open');
   element.classList.add('is-closing');
+  fadeLayer(backdrop, currentOpacity(backdrop, 1), 0, DROPDOWN_MS);
   const finish = event => {
-    if (event.target === element) finishHide(element);
+    if (event?.target && event.target !== element) return;
+    finishHide(element);
+    finishHide(backdrop);
+    app.classList.remove('sheet-open');
   };
-  const timer = setTimeout(() => finishHide(element), 840);
+  const timer = setTimeout(() => finish(), 840);
   pendingPanelHides.set(element, {finish, timer});
   element.addEventListener('animationend', finish);
 }
@@ -484,11 +500,14 @@ function closeMenu() {
   const drawerClosing = Boolean(drawer?.classList.contains('is-closing'));
   const drawerOpen = Boolean(drawer?.classList.contains('is-open') && !drawerClosing);
   panels.forEach(hideOverlay);
+  const dropdownClosing = panels.some(panel => panel.classList.contains('dropdown') && panel.classList.contains('is-closing'));
   if (drawerOpen) closeDrawer();
-  else if (!drawerClosing) {
+  else if (!drawerClosing && !dropdownClosing) {
     finishHide(backdrop);
     app.classList.remove('navigation-open', 'sheet-open');
     parkStage();
+  } else if (dropdownClosing) {
+    app.classList.remove('navigation-open');
   }
   document.querySelectorAll('[data-open]').forEach(button => button.setAttribute('aria-expanded', 'false'));
   if (!drawerOpen) resetViewport();
@@ -518,17 +537,10 @@ function openMenu(name, trigger) {
     if (stage) stage.style.transform = stageFrom;
     panel.classList.remove('is-closing');
     panel.classList.add('is-open');
-    const overlayFrom = backdrop.classList.contains('is-nav')
-      ? currentOpacity(backdrop, 0)
-      : 0;
-    backdrop.hidden = false;
-    backdrop.classList.add('is-open', 'is-nav');
-    backdrop.style.transform = 'none';
-    backdrop.style.opacity = String(overlayFrom);
     app.classList.add('sheet-open', 'navigation-open');
     slideLayer(panel, from, DRAWER_ON);
     slideLayer(stage, stageFrom, stageOn());
-    fadeLayer(backdrop, overlayFrom, 1);
+    showDim(DRAWER_MS);
     trigger?.setAttribute('aria-expanded', 'true');
     panel.querySelector('button')?.focus({preventScroll:true});
     resetViewport();
@@ -542,6 +554,7 @@ function openMenu(name, trigger) {
   backdrop.hidden = false;
   backdrop.classList.add('is-open');
   app.classList.add('sheet-open');
+  if (panel.classList.contains('dropdown')) showDim(DROPDOWN_MS);
   trigger?.setAttribute('aria-expanded', 'true');
   panel.querySelector('button')?.focus({preventScroll:true});
   resetViewport();
