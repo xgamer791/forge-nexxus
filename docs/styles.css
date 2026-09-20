@@ -373,7 +373,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 @media(min-width:900px){
   /* A wider column for the thread and the composer. Everything that docks to
      the shell — composer, sheets, drawer, overlays — follows it. */
-  :root{--shell:860px;--drawer:360px}
+  :root,html[data-theme=dark],html[data-theme=light]{--shell:860px;--drawer:360px}
   .thread{left:32px;right:32px}
   .message p{max-width:72%}
   .composer{height:104px;padding:16px 20px 12px}
