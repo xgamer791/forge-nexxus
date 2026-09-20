@@ -311,6 +311,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .website-preview-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
 .website-preview-button svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2}
 .app.reference .globe-button,.app.reference .website-preview-button{top:61px}
+.dismiss{background:none;border-radius:0}
 
 /* Preview empty state: the same sheet, type scale and primary action used by
    account flows. It appears only when the top preview control has no build. */
@@ -428,4 +429,5 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
   .chip-button:hover:not([disabled]),.plan-cta:hover:not([disabled]),.account-button:hover:not(:disabled),.credits-cta:hover,.new-site:hover,.site-bar-preview:hover:not([disabled]){filter:brightness(1.08)}
   .credits-summary:hover{opacity:.9}
   .address-remove:hover{text-decoration:underline}
+  .dismiss:hover{background:none;border-radius:0;color:var(--muted)}
 }
