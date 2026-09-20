@@ -1447,8 +1447,14 @@ if (forge?.sites && addressSheet) {
     if (upsell) upsell.hidden = addressable;
     if (addressBody) addressBody.hidden = !addressable;
     if (!addressable) {
-      setText('[data-address-upsell-domain]', hosting?.domain ? ` on ${hosting.domain}` : '');
+      const domainPlan = catalog?.plans.find(plan => plan.customDomains);
       setText('[data-address-upsell-plan]', paid?.name ?? '');
+      setText('[data-address-upsell-example]', hosting?.domain
+        ? `your-site.${hosting.domain}`
+        : 'A name you pick, live the moment you publish.');
+      setText('[data-address-upsell-domain]', domainPlan
+        ? `One DNS record points it at your site, on the ${domainPlan.name} plan.`
+        : 'One DNS record points it at your site.');
       return;
     }
     if (!activeSite) return;
@@ -1470,11 +1476,11 @@ if (forge?.sites && addressSheet) {
         ? activeSite.address.replace(/^https?:\/\//, '')
         : activeSite.slug ?? '');
     }
-    note.textContent = !activeSite.slug
-      ? 'Pick an address. It is saved now and used the moment you publish.'
-      : activeSite.status === 'published'
-        ? 'Live at this address.'
-        : 'Reserved for this site. Publish to put the latest build on it.';
+    // Leave the line alone while it is answering what is being typed.
+    if (document.activeElement !== slugField) {
+      restingNote();
+      saveButton.disabled = false;
+    }
     const allowed = Boolean(summary?.plan.customDomains);
     const cheapest = catalog?.plans.find(plan => plan.customDomains);
     setText('[data-address-plan]', cheapest?.name ?? '');
@@ -1482,10 +1488,60 @@ if (forge?.sites && addressSheet) {
     gate.hidden = allowed || !cheapest;
     renderDomainRows();
   }
-  function recordLine(domain) {
-    return domain.record?.value
-      ? `${domain.record.type} · ${domain.record.name} → ${domain.record.value}`
-      : 'Give the site an address first.';
+  function restingNote(text = null, kind = null) {
+    note.textContent = text ?? (!activeSite?.slug
+      ? 'Pick an address. It is saved now and used the moment you publish.'
+      : activeSite.status === 'published'
+        ? 'Live at this address.'
+        : 'Reserved for this site. Publish to put the latest build on it.');
+    note.classList.toggle('is-free', kind === 'free');
+    note.classList.toggle('is-taken', kind === 'taken');
+  }
+  // The address field answers as it is typed, from the same rules that decide
+  // the save: length, shape, the reserved list and whether it is already
+  // someone's. Only the server ever grants one -- this is the field saying
+  // what it already knows, so a name is not lost to a round trip to find out.
+  let slugTicket = 0;
+  let slugTimer = null;
+  async function checkSlug() {
+    const ticket = ++slugTicket;
+    if (!activeSite) return;
+    const wanted = slugField.value.trim();
+    if (!wanted || wanted === (activeSite.slug ?? '')) {
+      saveButton.disabled = false;
+      restingNote();
+      return;
+    }
+    let answer = null;
+    try {
+      answer = await forge.sites.slugAvailable(wanted, activeSite._id);
+    } catch {
+      /* The save still asks the server properly; this line is a convenience. */
+    }
+    if (ticket !== slugTicket || !answer) return;
+    saveButton.disabled = !answer.available;
+    if (answer.available) restingNote(`${answer.host ?? answer.slug} is free.`, 'free');
+    else restingNote(answer.problem ?? 'That address is taken. Try another one.', 'taken');
+  }
+  // One record, laid out the way a registrar asks for it.
+  function recordNode(domain) {
+    const record = domain.record;
+    if (!record?.value) {
+      const waiting = document.createElement('small');
+      waiting.className = 'address-said';
+      waiting.textContent = 'Give the site an address first, then point this domain at it.';
+      return waiting;
+    }
+    const list = document.createElement('dl');
+    list.className = 'address-record';
+    for (const [label, value] of [['Type', record.type], ['Name', record.name], ['Value', record.value]]) {
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const detail = document.createElement('dd');
+      detail.textContent = value;
+      list.append(term, detail);
+    }
+    return list;
   }
   function renderDomainRows() {
     const rows = siteDomains();
@@ -1502,10 +1558,7 @@ if (forge?.sites && addressSheet) {
       status.className = `status-chip is-${domain.status}`;
       status.textContent = STATUS_LABELS[domain.status] ?? domain.status;
       head.append(host, status);
-      const record = document.createElement('code');
-      record.className = 'address-record';
-      record.textContent = recordLine(domain);
-      row.append(head, record);
+      row.append(head, recordNode(domain));
       if (domain.note) {
         const said = document.createElement('small');
         said.className = 'address-said';
@@ -1546,6 +1599,15 @@ if (forge?.sites && addressSheet) {
       return row;
     }));
   }
+  slugField.addEventListener('input', () => {
+    clearTimeout(slugTimer);
+    slugTimer = setTimeout(checkSlug, 250);
+  });
+  // Only drop the pending check. Re-rendering here would put the saved slug
+  // back in the field -- and pressing Save blurs it first, so the submit below
+  // would read the old name instead of the typed one. The next subscription
+  // tick settles the field, as it always did.
+  slugField.addEventListener('blur', () => { clearTimeout(slugTimer); });
   slugForm.addEventListener('submit', async event => {
     event.preventDefault();
     if (!activeSite || saveButton.disabled) return;

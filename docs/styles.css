@@ -295,7 +295,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 /* The globe: the site's address, opposite the drawer button. It appears only
    once there is a site to have an address. */
 .globe-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
-.globe-button svg{width:32px;height:32px;fill:none;stroke:currentColor}
+.globe-button svg{width:28px;height:28px;fill:none;stroke:currentColor}
 .app.reference .globe-button{top:61px}
 
 /* Address sheet: the forge address, then a domain of their own. */
@@ -309,15 +309,24 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .address-suffix{flex-shrink:0;padding:0 12px 0 1px;font-size:14px;line-height:19px;color:var(--subdued);white-space:nowrap}
 .address-form .chip-button,.address-domain-form .chip-button{height:44px;border-radius:22px}
 .address-note{margin:10px 10px 0;font-size:15px;line-height:20px;color:var(--subdued)}
+.address-note.is-free{color:var(--ok)}
+.address-note.is-taken{color:var(--danger)}
 .address-warning span{color:var(--text)}
-.address-upsell .sheet-copy{margin-bottom:20px}
+.address-upsell .sheet-copy{margin-bottom:16px}
+.address-perk{padding:14px 16px;display:grid;gap:3px}
+.address-perk+.address-perk{border-top:1px solid var(--divider)}
+.address-perk strong{font-size:17px;line-height:22px;font-weight:600}
+.address-perk span{font-size:15px;line-height:20px;color:var(--subdued);overflow-wrap:anywhere}
+.address-upsell .account-button{margin-top:18px}
 .address-live{display:inline-block;margin:8px 10px 0;font-size:15px;line-height:20px;color:var(--text);text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:calc(100% - 20px)}
 .address-domains{margin-top:4px;border-radius:22px}
 .address-domain{padding:14px 16px;display:grid;gap:8px}
 .address-domain+.address-domain{border-top:1px solid var(--divider)}
 .address-domain-head{display:flex;align-items:center;gap:10px}
 .address-domain-head strong{min-width:0;flex:1;font-size:17px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.address-record{display:block;padding:9px 12px;border-radius:14px;background:var(--chip);color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:18px;overflow-wrap:anywhere}
+.address-record{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 12px;margin:0;padding:11px 12px;border-radius:14px;background:var(--chip);font-size:13px;line-height:18px}
+.address-record dt{color:var(--subdued);font-weight:600}
+.address-record dd{margin:0;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
 .address-said{display:block;font-size:14px;line-height:19px;color:var(--subdued)}
 .address-domain-actions{display:flex;align-items:center;gap:14px}
 .address-domain-actions .chip-button{height:36px;border-radius:18px;font-size:15px}
