@@ -333,6 +333,8 @@ const DRAWER_MS = 250;
 const DRAWER_EASE = 'cubic-bezier(.45,0,.55,1)';
 const DRAWER_OFF = 'translate3d(-100%,0,0)';
 const DRAWER_ON = 'translate3d(0,0,0)';
+const STAGE_OFF = 'translate3d(0,0,0)';
+const stage = document.querySelector('.stage');
 function resetViewport() {
   window.scrollTo(0, 0);
   document.documentElement.scrollTop = 0;
@@ -341,25 +343,39 @@ function resetViewport() {
 function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
-function drawerTransform(drawer, fallback) {
-  const value = getComputedStyle(drawer).transform;
+function currentTransform(element, fallback) {
+  const value = getComputedStyle(element).transform;
   return !value || value === 'none' ? fallback : value;
 }
-function slideDrawer(drawer, from, to) {
-  drawer.getAnimations().forEach(animation => animation.cancel());
-  drawer.style.transform = from;
-  void drawer.offsetWidth;
+function drawerWidth() {
+  const drawer = document.querySelector('.navigation');
+  const width = drawer?.getBoundingClientRect().width ?? 0;
+  return width > 0 ? width : 320;
+}
+function stageOn() {
+  return `translate3d(${drawerWidth()}px,0,0)`;
+}
+function slideLayer(element, from, to) {
+  if (!element) return Promise.resolve();
+  element.getAnimations().forEach(animation => animation.cancel());
+  element.style.transform = from;
+  void element.offsetWidth;
   if (prefersReducedMotion()) {
-    drawer.style.transform = to;
+    element.style.transform = to;
     return Promise.resolve();
   }
-  const animation = drawer.animate(
+  const animation = element.animate(
     [{transform: from}, {transform: to}],
     {duration: DRAWER_MS, easing: DRAWER_EASE, fill: 'forwards'},
   );
   return animation.finished.catch(() => {}).then(() => {
-    drawer.style.transform = to;
+    element.style.transform = to;
   });
+}
+function parkStage() {
+  if (!stage) return;
+  stage.style.transform = STAGE_OFF;
+  stage.getAnimations().forEach(animation => animation.cancel());
 }
 function finishHide(element) {
   const pending = pendingPanelHides.get(element);
@@ -372,6 +388,7 @@ function finishHide(element) {
   if (element.classList.contains('navigation')) {
     element.style.transform = DRAWER_OFF;
     element.getAnimations().forEach(animation => animation.cancel());
+    parkStage();
   }
   element.hidden = true;
   element.classList.remove('is-open', 'is-closing');
@@ -402,6 +419,7 @@ function closeDrawer() {
   if (!drawer || drawer.hidden && !drawer.classList.contains('is-open')) {
     finishHide(backdrop);
     app.classList.remove('navigation-open', 'sheet-open');
+    parkStage();
     return;
   }
   if (pendingPanelHides.has(drawer)) return;
@@ -417,11 +435,15 @@ function closeDrawer() {
     });
   };
   drawer.classList.add('is-closing');
-  drawer.style.transform = drawerTransform(drawer, DRAWER_ON);
+  drawer.style.transform = currentTransform(drawer, DRAWER_ON);
+  if (stage) stage.style.transform = currentTransform(stage, stageOn());
   void drawer.offsetWidth;
   pendingPanelHides.set(drawer, {timer: setTimeout(done, DRAWER_MS + 80)});
   app.classList.remove('navigation-open');
-  slideDrawer(drawer, drawerTransform(drawer, DRAWER_ON), DRAWER_OFF).then(done);
+  Promise.all([
+    slideLayer(drawer, currentTransform(drawer, DRAWER_ON), DRAWER_OFF),
+    slideLayer(stage, currentTransform(stage, stageOn()), STAGE_OFF),
+  ]).then(done);
 }
 function closeMenu() {
   closePopovers();
@@ -436,6 +458,7 @@ function closeMenu() {
   else if (!drawerClosing) {
     finishHide(backdrop);
     app.classList.remove('navigation-open', 'sheet-open');
+    parkStage();
   }
   document.querySelectorAll('[data-open]').forEach(button => button.setAttribute('aria-expanded', 'false'));
   if (!drawerOpen) resetViewport();
@@ -450,8 +473,11 @@ function openMenu(name, trigger) {
     panels.forEach(item => { if (item !== panel) hideOverlay(item); });
     showSettings(false);
     const from = panel.classList.contains('is-closing')
-      ? drawerTransform(panel, DRAWER_OFF)
+      ? currentTransform(panel, DRAWER_OFF)
       : DRAWER_OFF;
+    const stageFrom = panel.classList.contains('is-closing')
+      ? currentTransform(stage, STAGE_OFF)
+      : STAGE_OFF;
     if (pendingPanelHides.has(panel)) {
       const pending = pendingPanelHides.get(panel);
       clearTimeout(pending.timer);
@@ -459,12 +485,14 @@ function openMenu(name, trigger) {
     }
     panel.hidden = false;
     panel.style.transform = from;
+    if (stage) stage.style.transform = stageFrom;
     panel.classList.remove('is-closing');
     panel.classList.add('is-open');
     backdrop.hidden = false;
     backdrop.classList.add('is-open');
     app.classList.add('sheet-open', 'navigation-open');
-    slideDrawer(panel, from, DRAWER_ON);
+    slideLayer(panel, from, DRAWER_ON);
+    slideLayer(stage, stageFrom, stageOn());
     trigger?.setAttribute('aria-expanded', 'true');
     panel.querySelector('button')?.focus({preventScroll:true});
     resetViewport();
