@@ -71,11 +71,16 @@ html.is-member [data-member-hide]{display:none}
 /* Hero: the composer is the product — the same pill as the mobile app,
    docked 25px from the section floor. It lives in the hero and scrolls away
    with the page; it is not sticky. */
-.hero{position:relative;min-height:100vh;min-height:100svh;overflow:hidden;isolation:isolate;background:#11151b}
-.hero-background-video{position:absolute;z-index:0;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center;opacity:0;transition:opacity .14s linear}
-.hero-background-video.is-active{opacity:1}
-.hero::after{content:"";position:absolute;z-index:1;inset:0;background:rgba(0,0,0,.3);pointer-events:none}
-.hero-stage{position:relative;z-index:2;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:25px}
+.hero{position:relative;height:100vh;height:100svh;min-height:100svh;max-height:100svh;overflow:hidden;isolation:isolate;background:#0b0c10}
+.hero-background-video{position:absolute;z-index:0;left:50%;top:50%;width:100%;height:100vh;height:100lvh;min-width:100%;min-height:100%;max-width:none;object-fit:cover;object-position:center;transform:translate(-50%,-50%)}
+.hero::after{content:"";position:absolute;z-index:1;inset:0;background:rgba(0,0,0,.4);pointer-events:none}
+.hero-stage{--hero-composer-height:97px;--hero-floor:25px;position:relative;z-index:2;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:var(--hero-floor)}
+.hero-message-rotator{position:absolute;left:50%;bottom:calc(var(--hero-floor) + var(--hero-composer-height) + clamp(34px,5svh,52px));width:min(calc(100% - (var(--gutter) * 2)),760px);height:clamp(150px,25svh,235px);transform:translateX(-50%);overflow:hidden;color:#fff;pointer-events:none}
+.hero-message{position:absolute;inset:0;margin:0;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;column-gap:.26em;row-gap:.06em;padding:0 4px;font-family:var(--font-display);font-size:clamp(30px,7vw,44px);font-weight:800;letter-spacing:-.035em;line-height:1.02;text-align:center;text-wrap:balance;opacity:0;visibility:hidden}
+.hero-message.is-active,.hero-message.is-leaving{opacity:1;visibility:visible}
+.hero-message-word{display:inline-block;opacity:0;filter:blur(7px);transform:translate3d(0,.9em,0);transition:opacity .34s ease-out,filter .4s ease-out,transform .58s cubic-bezier(.2,.8,.2,1);transition-delay:calc(var(--word-index) * 72ms);will-change:opacity,filter,transform}
+.hero-message.is-active .hero-message-word{opacity:1;filter:blur(0);transform:translate3d(0,0,0)}
+.hero-message.is-leaving .hero-message-word{opacity:0;filter:blur(4px);transform:translate3d(0,-.42em,0);transition-duration:.28s;transition-delay:0ms}
 .is-home .site-header:not(.is-scrolled):not(.nav-open) .brand,
 .is-home .site-header:not(.is-scrolled):not(.nav-open) .brand-mark,
 .is-home .site-header:not(.is-scrolled):not(.nav-open) .nav-list a{color:#fff}
@@ -94,11 +99,14 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
 .hero-composer .microphone{margin-left:auto;width:21px;height:24px}
 .hero-composer .microphone svg{width:18px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .hero-composer .microphone[aria-pressed=true]{color:#1c1c1e}
-.hero-visual{margin:0;background:var(--plate)}
-.hero-visual img{width:100%}
+.hero-visual{display:block;margin:0;background:var(--plate)}
+.hero-visual img{width:100%;height:auto}
 @media(prefers-reduced-motion:reduce){
-  .hero{background:#11151b url("../video/forge-viking-poster.jpg") center/cover no-repeat}
+  .hero{background:#0b0c10 url("../video/forge-hero-poster.jpg") center/cover no-repeat}
   .hero-background-video{display:none}
+  .hero-message{display:none}
+  .hero-message:first-child{display:flex;opacity:1;visibility:visible}
+  .hero-message:first-child .hero-message-word{opacity:1;filter:none;transform:none;transition:none}
 }
 
 /* Sections: rhythm from spacing and rules, not boxes. */
@@ -284,6 +292,9 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
   .cost-num{grid-column:2;grid-row:1}
 }
 @media (min-width:900px){
+  .hero-stage{--hero-composer-height:104px}
+  .hero-message-rotator{width:min(calc(100% - (var(--gutter) * 2)),1040px);height:clamp(190px,28svh,320px)}
+  .hero-message{font-size:clamp(42px,4.4vw,72px)}
   .hero-composer{max-width:860px;height:104px;padding:16px 20px 12px}
 }
 @media (prefers-reduced-motion:reduce){
