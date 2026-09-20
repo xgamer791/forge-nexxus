@@ -1,0 +1,17 @@
+/*
+Theme Name: Forge Nexxus
+Theme URI: https://forgenexxus.com
+Author: Forge Nexxus
+Author URI: https://forgenexxus.com
+Description: The website client of Forge Nexxus. Signed-out visitors see the product, plans and showcase; members open the same builder they use in the mobile app, on the same account, sites, credits and settings (Convex).
+Version: 1.0.0
+Requires at least: 6.4
+Tested up to: 7.1
+Requires PHP: 8.1
+License: Proprietary
+License URI: https://forgenexxus.com/terms/
+Text Domain: forge-nexxus
+Tags: one-column, full-width-template, custom-menu, dark
+*/
+
+/* Styles live in assets/css/ and are enqueued from functions.php. */
