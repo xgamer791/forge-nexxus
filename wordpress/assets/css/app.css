@@ -12,6 +12,8 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
   --chrome:55px;
   --status-strip:0px;
   --header:var(--chrome);
+  --back-size:44px;
+  --back-icon:24px;
 }
 
 /* Everything docks to the layout viewport. The iOS 26 Home Screen strip is WebKit 301994:
@@ -90,8 +92,8 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 
 /* Settings list, grouped. */
 .settings-content{flex:1;min-height:0;overflow:auto;padding:20px 12px 16px;color:var(--muted)}
-.settings-back{height:26px;margin:0 10px 11px;display:flex;align-items:center;gap:10px;font-size:17px;line-height:22px}
-.settings-back svg{width:14px;height:18px;color:var(--icon)}
+.settings-back{min-height:var(--back-size);margin:0 4px 12px;padding:0 8px;display:flex;align-items:center;gap:12px;font-size:17px;line-height:22px;color:var(--text)}
+.settings-back svg{width:var(--back-icon);height:var(--back-icon);stroke-width:2;color:var(--text)}
 .settings-list{margin-top:7px}
 .settings-group{margin:16px 10px 6px;font-size:13px;line-height:16px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--subdued)}
 .settings-list .settings-group:first-child{margin-top:6px}
@@ -115,13 +117,11 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .overlay.preview .appearance-header{margin-top:0}
 .appearance.is-open,.overlay.is-open{animation:overlay-in .7s cubic-bezier(.22,1,.36,1) both}
 @keyframes overlay-in{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
-.appearance-header{flex-shrink:0;height:52px;margin-top:max(0px,env(safe-area-inset-top));display:flex;align-items:center;justify-content:center;position:relative}
-.appearance-header h2{margin:0;font-size:17px;line-height:22px;font-weight:600}
+.appearance-header{flex-shrink:0;height:56px;margin-top:max(0px,env(safe-area-inset-top));display:grid;grid-template-columns:56px 1fr 56px;align-items:center;padding:0 8px}
+.appearance-header h2{margin:0;grid-column:2;text-align:center;font-size:17px;line-height:22px;font-weight:600}
 .appearance-header h2:focus{outline:none}
-.appearance-back{position:absolute;left:4px;top:0;height:52px;width:40px;display:grid;place-items:center;color:var(--text)}
-.appearance-back svg{width:12px;height:22px;stroke-width:2.2}
-.appearance-back:focus{outline:none}
-.appearance-back:focus-visible{outline:none}
+.appearance-back{width:var(--back-size);height:var(--back-size);display:grid;place-items:center;color:var(--text)}
+.appearance-back svg{width:var(--back-icon);height:var(--back-icon);stroke-width:2}
 .appearance-scroll{flex:1;min-height:0;overflow:auto;padding:6px 16px max(28px,env(safe-area-inset-bottom));scrollbar-width:none}
 .appearance-card{position:relative;background:var(--elevated);border-radius:18px;overflow:visible}
 .appearance-stack{background:var(--elevated);border-radius:18px}
@@ -516,7 +516,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
   .onboarding-primary:hover:not(:disabled){filter:brightness(.92)}
   .onboarding-quiet:hover:not(:disabled){text-decoration:underline;text-underline-offset:4px}
   .group button:hover,.row-button:hover:not([disabled]),.settings-list button:hover,.add-list button:hover:not([aria-disabled=true]),.theme-menu button:hover,.font-menu button:hover,.topup-row:hover{background:var(--chip)}
-  .icon-button:hover,.dismiss:hover,.hamburger:hover,.globe-button:hover,.website-preview-button:hover,.settings:hover,.site-options:hover{background:var(--chip);border-radius:50%}
+  .icon-button:hover,.dismiss:hover,.hamburger:hover,.globe-button:hover,.website-preview-button:hover,.settings:hover,.site-options:hover,.appearance-back:hover{background:var(--chip);border-radius:50%}
   .site:hover{color:var(--text)}
   .address-tab:hover:not([aria-selected=true]){color:var(--text);background:var(--surface)}
   .chip-button:hover:not([disabled]),.plan-cta:hover:not([disabled]),.account-button:hover:not(:disabled),.credits-cta:hover,.new-site:hover,.site-bar-preview:hover:not([disabled]){filter:brightness(1.08)}
