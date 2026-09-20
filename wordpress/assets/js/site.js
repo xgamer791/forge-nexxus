@@ -44,7 +44,6 @@
       return Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop));
     };
     const holdHero = () => {
-      if (window.scrollY !== 0) window.scrollTo(0, 0);
       root.style.setProperty('--keyboard', `${keyboardInset()}px`);
     };
     const startTyping = () => {
@@ -52,8 +51,6 @@
       root.classList.add('hero-is-typing');
       try { if (navigator.virtualKeyboard) navigator.virtualKeyboard.overlaysContent = true; } catch { /* older Chrome */ }
       holdHero();
-      requestAnimationFrame(holdHero);
-      [50, 150, 300].forEach(ms => setTimeout(holdHero, ms));
     };
     const stopTyping = () => {
       root.classList.remove('hero-is-typing');
@@ -61,9 +58,7 @@
     };
     field.addEventListener('focus', startTyping);
     field.addEventListener('blur', stopTyping);
-    window.addEventListener('scroll', () => { if (root.classList.contains('hero-is-typing')) holdHero(); }, { passive: true });
     window.visualViewport?.addEventListener('resize', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
-    window.visualViewport?.addEventListener('scroll', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
     navigator.virtualKeyboard?.addEventListener('geometrychange', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
     field.addEventListener('keydown', event => {
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); composer.requestSubmit(); }
