@@ -9,7 +9,28 @@ import type { Id } from "./_generated/dataModel";
 import { action, internalMutation, type MutationCtx } from "./_generated/server";
 import { settingsFor } from "./settings";
 
+// Where a provider is allowed to send someone back to. Convex Auth resolves
+// this inside its OAuth callback *before* that handler's try/catch, so a throw
+// here is a 500 on the way home instead of a trip back to the app — and its
+// own default throws on anything it does not recognise. Nothing unrecognised
+// is followed; it falls back to SITE_URL, which is also the safe answer for an
+// address someone else supplied.
+export function resolveRedirect(redirectTo: unknown): string {
+  const base = (process.env.SITE_URL ?? "").replace(/\/+$/, "");
+  if (typeof redirectTo !== "string" || redirectTo === "") return base;
+  if (redirectTo.startsWith("/") || redirectTo.startsWith("?")) return `${base}${redirectTo}`;
+  if (!base) return base;
+  // A prefix match alone would accept `https://site.example.evil.com`.
+  if (redirectTo === base || redirectTo.startsWith(`${base}/`) || redirectTo.startsWith(`${base}?`)) {
+    return redirectTo;
+  }
+  return base;
+}
+
 const convex = convexAuth({
+  callbacks: {
+    redirect: async ({ redirectTo }) => resolveRedirect(redirectTo),
+  },
   providers: [
     Anonymous,
     Resend({
@@ -48,10 +69,30 @@ export const signIn = action({
     const guestId = await getAuthUserId(ctx);
     const result: SignInResult = await ctx.runAction(api.auth.signInWithConvexAuth, args);
     const userId = result.tokens?.token ? userIdFromToken(result.tokens.token) : null;
+    // Convex Auth has already minted the session by the line above. Everything
+    // below is our own bookkeeping, and none of it is worth the sign-in it
+    // would take down with it: a throw here discarded the tokens and left
+    // someone who had just authenticated back at the front door, with no way
+    // past it and nothing said about why. Both of these run on the member path
+    // only — a guest has no email and `billing.ensure` returns early for an
+    // anonymous row — so a fault in either was invisible until the moment
+    // someone signed in for real. Record it and hand the session over; every
+    // path that touches a subscription calls `ensureCurrent` anyway, so the
+    // plan lands on the next request regardless.
     if (guestId && userId && userId !== guestId) {
-      await ctx.runMutation(internal.auth.adoptGuest, { guestId, userId });
+      try {
+        await ctx.runMutation(internal.auth.adoptGuest, { guestId, userId });
+      } catch (error) {
+        console.error("Sign-in: could not move guest data to the account", error);
+      }
     }
-    if (userId) await ctx.runMutation(internal.billing.ensure, { userId });
+    if (userId) {
+      try {
+        await ctx.runMutation(internal.billing.ensure, { userId });
+      } catch (error) {
+        console.error("Sign-in: could not open a subscription for the account", error);
+      }
+    }
     return result;
   },
 });

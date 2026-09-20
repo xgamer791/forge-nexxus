@@ -27,6 +27,19 @@ function failure(provider, error) {
     : `${lead}. It may have expired or already been used — please try again.`;
 }
 
+// Coming back from a provider with no code in the URL at all is a different
+// failure from a code that would not exchange, and it is the one that looks
+// like nothing happened. Convex Auth's OAuth callback redirects home
+// empty-handed whenever its own exchange throws — bad client credentials, a
+// redirect URI the provider will not accept, a check that did not line up —
+// and the reason only ever reaches the Convex logs. Say which half it is, so
+// the next attempt is evidence instead of another round.
+function returnedWithoutCode(provider) {
+  const label = PROVIDER_LABELS[provider] ?? "That sign-in";
+  const who = provider === "link" ? "The sign-in link" : label;
+  return `${who} sent you back without a sign-in code. Either it was cancelled, or this deployment could not complete the exchange — the Convex logs name the reason.`;
+}
+
 // Convex Auth's client library is React-only, so the session lifecycle is
 // handled here: guests are signed in anonymously, sign-in codes (magic link or
 // OAuth) are exchanged while still holding the guest token so the server can
@@ -64,6 +77,14 @@ export function createForgeData({
   // while it works.
   let handoffPending = authCode === null ? null : (read(PENDING_KEY) ?? "link");
   let handoffError = null;
+  if (authCode === null) {
+    const abandoned = read(PENDING_KEY);
+    if (abandoned !== null) {
+      write(PENDING_KEY, null);
+      write(VERIFIER_KEY, null);
+      handoffError = returnedWithoutCode(abandoned);
+    }
+  }
 
   function read(key) {
     try {

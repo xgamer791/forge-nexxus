@@ -35,8 +35,12 @@
     });
   }
   // Landing back from a provider is not a fresh visit: the exchange is already
-  // running, so show that rather than the buttons that started it.
-  render(data?.auth.handoff().pending ? 'handoff' : 'welcome');
+  // running, so show that rather than the buttons that started it. A provider
+  // that sent us home with nothing has already been worked out by then, and
+  // says so here -- no listener is subscribed yet when that is decided.
+  const arrival = data?.auth.handoff() ?? { pending: null, error: null };
+  render(arrival.pending ? 'handoff' : 'welcome');
+  if (arrival.error) status(arrival.error, true);
   gate.addEventListener('click', async event => {
     const target = event.composedPath().find(node => node instanceof HTMLButtonElement);
     if (!target) return;
