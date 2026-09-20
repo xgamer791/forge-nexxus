@@ -377,6 +377,29 @@ function parkStage() {
   stage.style.transform = STAGE_OFF;
   stage.getAnimations().forEach(animation => animation.cancel());
 }
+function currentOpacity(element, fallback) {
+  const value = Number(getComputedStyle(element).opacity);
+  return Number.isFinite(value) ? value : fallback;
+}
+function fadeLayer(element, from, to) {
+  if (!element) return Promise.resolve();
+  element.getAnimations().forEach(animation => animation.cancel());
+  element.style.opacity = String(from);
+  element.style.transform = 'none';
+  void element.offsetWidth;
+  if (prefersReducedMotion()) {
+    element.style.opacity = String(to);
+    return Promise.resolve();
+  }
+  const animation = element.animate(
+    [{opacity: from, transform: 'none'}, {opacity: to, transform: 'none'}],
+    {duration: DRAWER_MS, easing: DRAWER_EASE, fill: 'forwards'},
+  );
+  return animation.finished.catch(() => {}).then(() => {
+    element.style.opacity = String(to);
+    element.style.transform = 'none';
+  });
+}
 function finishHide(element) {
   const pending = pendingPanelHides.get(element);
   if (pending) {
@@ -389,6 +412,12 @@ function finishHide(element) {
     element.style.transform = DRAWER_OFF;
     element.getAnimations().forEach(animation => animation.cancel());
     parkStage();
+  }
+  if (element === backdrop) {
+    element.style.opacity = '0';
+    element.style.transform = 'none';
+    element.getAnimations().forEach(animation => animation.cancel());
+    element.classList.remove('is-nav');
   }
   element.hidden = true;
   element.classList.remove('is-open', 'is-closing');
@@ -443,6 +472,7 @@ function closeDrawer() {
   Promise.all([
     slideLayer(drawer, currentTransform(drawer, DRAWER_ON), DRAWER_OFF),
     slideLayer(stage, currentTransform(stage, stageOn()), STAGE_OFF),
+    fadeLayer(backdrop, currentOpacity(backdrop, 1), 0),
   ]).then(done);
 }
 function closeMenu() {
@@ -488,11 +518,17 @@ function openMenu(name, trigger) {
     if (stage) stage.style.transform = stageFrom;
     panel.classList.remove('is-closing');
     panel.classList.add('is-open');
+    const overlayFrom = backdrop.classList.contains('is-nav')
+      ? currentOpacity(backdrop, 0)
+      : 0;
     backdrop.hidden = false;
-    backdrop.classList.add('is-open');
+    backdrop.classList.add('is-open', 'is-nav');
+    backdrop.style.transform = 'none';
+    backdrop.style.opacity = String(overlayFrom);
     app.classList.add('sheet-open', 'navigation-open');
     slideLayer(panel, from, DRAWER_ON);
     slideLayer(stage, stageFrom, stageOn());
+    fadeLayer(backdrop, overlayFrom, 1);
     trigger?.setAttribute('aria-expanded', 'true');
     panel.querySelector('button')?.focus({preventScroll:true});
     resetViewport();
