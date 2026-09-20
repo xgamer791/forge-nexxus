@@ -296,8 +296,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .dropdown .handle{margin:auto auto max(10px,var(--bottom));flex:none}
 .dropdown header{height:52px}
 @media(prefers-reduced-motion:no-preference){
-  .dropdown.is-open{animation:dropdown-in .7s cubic-bezier(.22,1,.36,1) both}
-  .dropdown.is-closing{animation:dropdown-out .7s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
+  .dropdown.is-open{animation:dropdown-in .2s cubic-bezier(.22,1,.36,1) both}
+  .dropdown.is-closing{animation:dropdown-out .2s cubic-bezier(.4,0,.2,1) both;pointer-events:none}
   .app.navigation-open .dropdown{animation:none}
 }
 @keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
@@ -323,7 +323,8 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .preview-unbuilt-content h3{margin:0;font-size:19px;line-height:24px;font-weight:600}
 .preview-unbuilt-content p{max-width:360px;margin:7px auto 20px;color:var(--muted);font-size:17px;line-height:22px}
 @media(prefers-reduced-motion:no-preference){
-  .preview-unbuilt.is-closing{animation:preview-sheet-out .25s cubic-bezier(.45,0,.55,1) both;pointer-events:none}
+  .sheet:not(.dropdown).preview-unbuilt.is-open{animation:sheet-up .1s cubic-bezier(.22,1,.36,1) both}
+  .preview-unbuilt.is-closing{animation:preview-sheet-out .1s cubic-bezier(.45,0,.55,1) both;pointer-events:none}
 }
 @keyframes preview-sheet-out{from{transform:translateY(0)}to{transform:translateY(100%)}}
 
@@ -411,7 +412,8 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
   .dropdown{top:64px;left:auto;right:max(16px,calc((100vw - var(--shell))/2));width:min(480px,calc(100vw - 48px));border-radius:24px;padding:4px 18px 0;min-height:0;max-height:calc(100% - 96px)}
   .dropdown .handle{display:none}
   .dropdown header{height:56px}
-  .preview-unbuilt.is-closing{animation:preview-dialog-out .25s cubic-bezier(.45,0,.55,1) both}
+  .sheet:not(.dropdown).preview-unbuilt.is-open{animation:dialog-in .1s cubic-bezier(.22,1,.36,1) both}
+  .preview-unbuilt.is-closing{animation:preview-dialog-out .1s cubic-bezier(.45,0,.55,1) both}
   /* The drawer has room to breathe, and the settings screens read as panels
      rather than as a phone screen stretched. */
   /* The drawer stays on the shell's left edge so a push keeps it flush

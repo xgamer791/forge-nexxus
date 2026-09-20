@@ -329,8 +329,8 @@ window.ForgeData?.settings?.subscribe(stored => {
 });
 let opener;
 const pendingPanelHides = new WeakMap();
-const DRAWER_MS = 250;
-const DROPDOWN_MS = 700;
+const DRAWER_MS = 100;
+const DROPDOWN_MS = 200;
 const DRAWER_EASE = 'cubic-bezier(.45,0,.55,1)';
 const DRAWER_OFF = 'translate3d(-100%,0,0)';
 const DRAWER_ON = 'translate3d(0,0,0)';
