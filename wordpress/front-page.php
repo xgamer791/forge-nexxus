@@ -22,6 +22,13 @@ $showcase = [
 	[ 'show-nonprofit', 'An ocean conservation nonprofit with a donate button', 'Nonprofit' ],
 	[ 'show-agency', 'A loud, colourful site for my design agency with case studies', 'Design agency' ],
 ];
+$hero_messages = [
+	'World class website designs in minutes',
+	'Not just a beautiful design, we aim to scale your business',
+	'Fully customized tools with your needs in mind',
+	'Legendary customer support that exceeds expectations',
+	'Don’t fall behind ai, let it work for you with Forge Nexxus',
+];
 
 get_header();
 ?>
@@ -35,6 +42,16 @@ get_header();
 	</video>
 	<div class="wrap hero-stage">
 		<h1 class="visually-hidden">Forge Nexxus</h1>
+		<div class="hero-message-rotator" data-hero-messages aria-hidden="true">
+			<?php foreach ( $hero_messages as $index => $message ) : ?>
+				<p class="hero-message<?php echo 0 === $index ? ' is-active' : ''; ?>"><?php echo esc_html( $message ); ?></p>
+			<?php endforeach; ?>
+		</div>
+		<ul class="visually-hidden">
+			<?php foreach ( $hero_messages as $message ) : ?>
+				<li><?php echo esc_html( $message ); ?></li>
+			<?php endforeach; ?>
+		</ul>
 		<form class="hero-composer" action="<?php echo esc_url( home_url( '/app/' ) ); ?>" method="get" data-hero-composer>
 			<label class="visually-hidden" for="hero-prompt">Describe the site you want</label>
 			<textarea id="hero-prompt" name="prompt" rows="1" placeholder="Describe the site you want…" aria-label="Describe your site" autocapitalize="sentences" autocomplete="off" spellcheck="true" maxlength="600"></textarea>

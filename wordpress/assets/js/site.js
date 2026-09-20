@@ -80,6 +80,71 @@
     requestAnimationFrame(follow);
   }
 
+  // Cycle the five homepage promises through one word-cascade stage. The
+  // first message gets a longer hold after a complete pass so the loop has a
+  // clear resting point instead of feeling continuously busy.
+  const messageStage = document.querySelector('[data-hero-messages]');
+  const heroMessages = [...(messageStage?.querySelectorAll('.hero-message') || [])];
+  if (heroMessages.length) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const wordDelayMs = 72;
+    const wordEnterMs = 580;
+    const exitMs = 320;
+    const regularHoldMs = 1300;
+    const returningFirstHoldMs = 3600;
+    let stopped = false;
+
+    heroMessages.forEach(message => {
+      const words = message.textContent.trim().split(/\s+/);
+      const fragment = document.createDocumentFragment();
+      words.forEach((word, index) => {
+        const span = document.createElement('span');
+        span.className = 'hero-message-word';
+        span.style.setProperty('--word-index', String(index));
+        span.textContent = word;
+        fragment.append(span);
+      });
+      message.replaceChildren(fragment);
+      message.classList.remove('is-active', 'is-leaving');
+      message.dataset.wordCount = String(words.length);
+    });
+
+    if (reducedMotion) {
+      heroMessages[0].classList.add('is-active');
+    } else {
+      const wait = duration => new Promise(resolve => setTimeout(resolve, duration));
+      const playMessages = async () => {
+        let index = 0;
+        let completedPass = false;
+        while (!stopped) {
+          const message = heroMessages[index];
+          message.classList.remove('is-leaving');
+          await wait(40);
+          if (stopped) break;
+          message.classList.add('is-active');
+
+          const wordCount = Number(message.dataset.wordCount) || 1;
+          await wait(wordEnterMs + ((wordCount - 1) * wordDelayMs));
+          await wait(index === 0 && completedPass ? returningFirstHoldMs : regularHoldMs);
+          if (stopped) break;
+
+          message.classList.remove('is-active');
+          message.classList.add('is-leaving');
+          await wait(exitMs);
+          message.classList.remove('is-leaving');
+
+          index += 1;
+          if (index === heroMessages.length) {
+            index = 0;
+            completedPass = true;
+          }
+        }
+      };
+      void playMessages();
+      window.addEventListener('pagehide', () => { stopped = true; }, { once: true });
+    }
+  }
+
   // The hero composer is the mobile app's pill. Enter and a typed prompt go
   // to the builder; plus opens the builder (attachments live there); the mic
   // is the same voice input as the app.
