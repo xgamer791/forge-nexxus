@@ -361,13 +361,13 @@ function hideOverlay(element) {
         {transform: 'translate3d(-100%,0,0)'},
       ],
       {
-        duration: 450,
+        duration: 700,
         easing: 'cubic-bezier(.45,0,.55,1)',
         fill: 'both',
       },
     );
     animation.onfinish = () => finishHide(element);
-    const timer = setTimeout(() => finishHide(element), 590);
+    const timer = setTimeout(() => finishHide(element), 840);
     pendingPanelHides.set(element, {animation, timer});
     return;
   }
@@ -430,7 +430,7 @@ function openMenu(name, trigger) {
         {transform: 'translate3d(0,0,0)'},
       ],
       {
-        duration: 450,
+        duration: 700,
         easing: 'cubic-bezier(.45,0,.55,1)',
         fill: 'both',
       },
