@@ -338,7 +338,11 @@ function finishHide(element) {
   const pending = pendingPanelHides.get(element);
   if (pending) {
     clearTimeout(pending.timer);
-    element.removeEventListener('animationend', pending.finish);
+    if (pending.finish) element.removeEventListener('animationend', pending.finish);
+    if (pending.animation) {
+      pending.animation.onfinish = null;
+      pending.animation.cancel();
+    }
     pendingPanelHides.delete(element);
   }
   element.hidden = true;
@@ -347,8 +351,28 @@ function finishHide(element) {
 }
 function hideOverlay(element) {
   if (!element) return;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const animatedNavigation = element.matches?.('.navigation.is-open') && !reduceMotion;
+  if (animatedNavigation) {
+    element.classList.remove('is-open');
+    const animation = element.animate(
+      [
+        {transform: 'translate3d(0,0,0)'},
+        {transform: 'translate3d(-100%,0,0)'},
+      ],
+      {
+        duration: 450,
+        easing: 'cubic-bezier(.45,0,.55,1)',
+        fill: 'both',
+      },
+    );
+    animation.onfinish = () => finishHide(element);
+    const timer = setTimeout(() => finishHide(element), 590);
+    pendingPanelHides.set(element, {animation, timer});
+    return;
+  }
   const animatedDropdown = element.matches?.('.dropdown.is-open')
-    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    && !reduceMotion;
   if (!animatedDropdown) {
     finishHide(element);
     return;
@@ -406,7 +430,7 @@ function openMenu(name, trigger) {
         {transform: 'translate3d(0,0,0)'},
       ],
       {
-        duration: 300,
+        duration: 450,
         easing: 'cubic-bezier(.45,0,.55,1)',
         fill: 'both',
       },
