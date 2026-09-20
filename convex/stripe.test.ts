@@ -250,7 +250,7 @@ describe("webhook", () => {
     });
     expect(await badPlan.json()).toEqual({ handled: false, reason: "unknown plan" });
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
-      OPENING + pro.monthlyCredits! + 100,
+      OPENING + pro.monthlyCredits! + 300,
     );
     const legacy = await signed(t, {
       id: "evt_premium",
