@@ -255,7 +255,7 @@ describe("publishing", () => {
     expect(siteHostFor("bakery")).toBe("bakery.sites.forgenexxus.com");
   });
 
-  test("a member chooses the address, and it is theirs until they change it", async () => {
+  test("a member chooses the address and can change it once", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     const other = await createUser(t, { email: "o@example.com" });
@@ -301,6 +301,19 @@ describe("publishing", () => {
     await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "bakery-on-main" });
     expect((await t.fetch("/", { headers: { host: "bakery-on-main.sites.forgenexxus.com" } })).status).toBe(200);
     expect((await t.fetch("/", { headers: { host: "the-bakery.sites.forgenexxus.com" } })).status).toBe(404);
+    await expect(
+      member.as.mutation(api.sites.setSlug, { id: siteId, slug: "bakery-third-address" }),
+    ).rejects.toThrow("already been changed");
+    expect(await member.as.query(api.sites.slugAvailable, {
+      slug: "bakery-third-address",
+      siteId,
+    })).toMatchObject({
+      available: false,
+      problem: "This site's address has already been changed",
+    });
+    expect(await member.as.query(api.sites.list, {})).toEqual([
+      expect.objectContaining({ addressChangeAvailable: false, slug: "bakery-on-main" }),
+    ]);
   });
 
   test("a site answers on its own host, and on a domain pointed at it", async () => {

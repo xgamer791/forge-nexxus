@@ -21,6 +21,9 @@ export default defineSchema({
     currentVersionId: v.optional(v.id("siteVersions")),
     publishedVersionId: v.optional(v.id("siteVersions")),
     slug: v.optional(v.string()),
+    // Picking the first address does not spend the rename. Once an existing
+    // address moves, this records that the site's one rename has been used.
+    slugChangedAt: v.optional(v.number()),
     publishedAt: v.optional(v.number()),
   })
     .index("by_user_updated", ["userId", "updatedAt"])

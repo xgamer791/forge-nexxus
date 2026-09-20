@@ -84,9 +84,10 @@ export function slugProblem(slug: string) {
 }
 
 function present(site: Doc<"sites">) {
-  const { userId: _owner, ...rest } = site;
+  const { userId: _owner, slugChangedAt, ...rest } = site;
   return {
     ...rest,
+    addressChangeAvailable: slugChangedAt === undefined,
     // The address the site would answer on, chosen or assigned, whether or not
     // it is published; `publishedUrl` is only there once it is live.
     address: site.slug ? publishedUrlFor(site.slug) : null,
@@ -217,12 +218,20 @@ export const setSlug = mutation({
     const problem = slugProblem(wanted);
     if (problem) throw new ConvexError(problem);
     if (wanted !== site.slug) {
+      if (site.slug && site.slugChangedAt !== undefined) {
+        throw new ConvexError("This site's address has already been changed");
+      }
       const taken = await ctx.db
         .query("sites")
         .withIndex("by_slug", (q) => q.eq("slug", wanted))
         .first();
       if (taken) throw new ConvexError("That address is taken. Try another one.");
-      await ctx.db.patch(id, { slug: wanted, updatedAt: Date.now() });
+      const now = Date.now();
+      await ctx.db.patch(id, {
+        slug: wanted,
+        updatedAt: now,
+        slugChangedAt: site.slug ? now : undefined,
+      });
     }
     return { slug: wanted, host: siteHostFor(wanted), url: publishedUrlFor(wanted) };
   },
@@ -237,6 +246,20 @@ export const slugAvailable = query({
     const wanted = slugify(slug);
     const problem = slugProblem(wanted);
     if (problem) return { slug: wanted, available: false, problem };
+    const site = siteId === undefined ? null : await ctx.db.get(siteId);
+    const ownedSite = site?.userId === userId ? site : null;
+    if (
+      ownedSite?.slug &&
+      ownedSite.slug !== wanted &&
+      ownedSite.slugChangedAt !== undefined
+    ) {
+      return {
+        slug: wanted,
+        available: false,
+        problem: "This site's address has already been changed",
+        host: siteHostFor(wanted),
+      };
+    }
     const taken = await ctx.db
       .query("sites")
       .withIndex("by_slug", (q) => q.eq("slug", wanted))
