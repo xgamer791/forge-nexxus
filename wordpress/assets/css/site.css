@@ -72,7 +72,7 @@ html.is-member [data-member-hide]{display:none}
    docked 25px from the section floor. It lives in the hero and scrolls away
    with the page; it is not sticky. */
 .hero{position:relative;min-height:100vh;min-height:100svh;overflow:hidden;isolation:isolate;background:#11151b}
-.hero-background-video{position:absolute;z-index:0;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center;opacity:0;transition:opacity .14s linear}
+.hero-background-video{position:absolute;z-index:0;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center;opacity:0;transform:translateZ(0);backface-visibility:hidden;transition:opacity .12s linear}
 .hero-background-video.is-active{opacity:1}
 .hero::after{content:"";position:absolute;z-index:1;inset:0;background:rgba(0,0,0,.3);pointer-events:none}
 .hero-stage{--hero-composer-height:97px;--hero-floor:25px;position:relative;z-index:2;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:var(--hero-floor)}

@@ -26,59 +26,111 @@
     document.querySelectorAll('[data-member-text]').forEach(el => { el.textContent = el.dataset.memberText; });
   }
 
-  // The file is one forward pass that already fades into its first frame.
-  // Two layers hand off during that fade so the browser never seeks a
-  // playing element, which is what used to hitch the loop.
+  // Two copies of the same forward clip. The hidden one sits decoded at
+  // t=0; we start it, wait for a painted frame, then crossfade. Seeking
+  // happens only on the hidden layer, after the fade, which is what used
+  // to hitch when it ran at the handoff.
   const heroLoops = [...document.querySelectorAll('[data-hero-loop]')];
   if (heroLoops.length === 2 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const lead = 0.16;
-    const fadeMs = 140;
+    const lead = 0.14;
+    const fadeMs = 120;
     let active = heroLoops[0];
     let standby = heroLoops[1];
     let switching = false;
+    let primed = false;
 
-    const rewind = video => {
-      try { video.currentTime = 0; } catch { /* seek before metadata */ }
-    };
-    heroLoops.forEach(video => {
-      video.loop = false;
-      video.muted = true;
-      if (video.readyState >= 1) rewind(video);
-      else video.addEventListener('loadedmetadata', () => rewind(video), { once: true });
+    const waitEvent = (element, name, ms = 600) => new Promise(resolve => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        element.removeEventListener(name, finish);
+        resolve();
+      };
+      element.addEventListener(name, finish, { once: true });
+      window.setTimeout(finish, ms);
     });
-
+    const waitPaintedFrame = video => new Promise(resolve => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(() => finish());
+      } else {
+        requestAnimationFrame(() => requestAnimationFrame(finish));
+      }
+      window.setTimeout(finish, 80);
+    });
+    const armFollow = video => {
+      const tick = (_now, meta) => {
+        if (switching || video !== active) return;
+        const time = meta && Number.isFinite(meta.mediaTime) ? meta.mediaTime : video.currentTime;
+        if (Number.isFinite(video.duration) && video.duration > lead && time >= video.duration - lead) {
+          void swap();
+          return;
+        }
+        if (typeof video.requestVideoFrameCallback === 'function') video.requestVideoFrameCallback(tick);
+        else requestAnimationFrame(() => tick());
+      };
+      if (typeof video.requestVideoFrameCallback === 'function') video.requestVideoFrameCallback(tick);
+      else requestAnimationFrame(() => tick());
+    };
+    const prime = async video => {
+      video.pause();
+      if (video.readyState < 1) await waitEvent(video, 'loadedmetadata', 1200);
+      try {
+        if (video.currentTime > 0.001 || video.seeking) {
+          video.currentTime = 0;
+          await waitEvent(video, 'seeked', 600);
+        }
+      } catch { /* seek before metadata */ }
+      if (video.readyState < 2) await waitEvent(video, 'loadeddata', 1200);
+    };
     const swap = async () => {
       if (switching) return;
       switching = true;
-      rewind(standby);
       try {
+        if (!primed) await prime(standby);
         await standby.play();
+        await waitPaintedFrame(standby);
         standby.classList.add('is-active');
         active.classList.remove('is-active');
-        const previous = active;
+        const outgoing = active;
         active = standby;
-        standby = previous;
-        setTimeout(() => {
-          previous.pause();
-          rewind(previous);
-          switching = false;
+        standby = outgoing;
+        armFollow(active);
+        window.setTimeout(() => {
+          outgoing.pause();
+          primed = false;
+          void prime(outgoing).then(() => { primed = true; }).finally(() => { switching = false; });
         }, fadeMs);
       } catch {
         switching = false;
       }
     };
 
-    const follow = () => {
-      if (
-        !switching &&
-        Number.isFinite(active.duration) &&
-        active.duration > lead &&
-        active.currentTime >= active.duration - lead
-      ) swap();
-      requestAnimationFrame(follow);
-    };
-    requestAnimationFrame(follow);
-    active.addEventListener('ended', () => { if (!switching) swap(); });
+    heroLoops.forEach(video => {
+      video.loop = false;
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      video.preload = 'auto';
+    });
+    void prime(standby).then(() => { primed = true; });
+    if (active.paused) void active.play();
+    armFollow(active);
+    heroLoops.forEach(video => {
+      video.addEventListener('ended', () => {
+        if (video === active && !switching) void swap();
+      });
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      if (active.paused) void active.play();
+    });
   } else if (heroLoops[0] && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     heroLoops[0].loop = true;
   }
