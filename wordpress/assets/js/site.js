@@ -93,8 +93,8 @@
     const wordDelayMs = 95;
     const wordEnterMs = 766;
     const exitMs = 422;
-    const regularHoldMs = 1716;
-    const returningFirstHoldMs = 4752;
+    const regularHoldMs = 4200;
+    const returningFirstHoldMs = 6500;
     let stopped = false;
 
     heroMessages.forEach(message => {
