@@ -1460,17 +1460,19 @@ if (forge?.sites && addressSheet) {
     if (!known) return;
     if (!addressable) {
       const domainPlan = catalog?.plans.find(plan => plan.customDomains);
-      // The catalog names the plan when it has answered. When it has not, the
-      // sentence still has to read as a sentence, and still has to send them
-      // to the plans -- an upsell with a blank where the plan goes sells
-      // nothing, and that blank was one unanswered query away.
-      setText('[data-address-upsell-plan]', paid?.name ? `the ${paid.name} plan` : 'a paid plan');
+      // Everything named here comes from the catalog and the deployment's own
+      // hosting, so this page carries no plan, price or domain of its own --
+      // and reads as a whole sentence on each of them when they have not
+      // answered yet, rather than leaving a blank where the sell was.
       setText('[data-address-upsell-example]', hosting?.domain
         ? `your-site.${hosting.domain}`
-        : 'A name you pick, live the moment you publish.');
+        : 'your-site');
       setText('[data-address-upsell-domain]', domainPlan
-        ? `One DNS record points it at your site, on the ${domainPlan.name} plan.`
-        : 'One DNS record points it at your site.');
+        ? `A domain you already own, on ${domainPlan.name}`
+        : 'A domain you already own');
+      setText('[data-address-upsell-price]', paid?.monthlyPriceCents
+        ? ` from ${money(paid.monthlyPriceCents)}/mo`
+        : '');
       return;
     }
     const hasSite = Boolean(activeSite);

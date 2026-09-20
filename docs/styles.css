@@ -312,12 +312,18 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .address-note.is-free{color:var(--ok)}
 .address-note.is-taken{color:var(--danger)}
 .address-warning span{color:var(--text)}
-.address-upsell .sheet-copy{margin-bottom:16px}
-.address-perk{padding:14px 16px;display:grid;gap:3px}
-.address-perk+.address-perk{border-top:1px solid var(--divider)}
-.address-perk strong{font-size:17px;line-height:22px;font-weight:600}
-.address-perk span{font-size:15px;line-height:20px;color:var(--subdued);overflow-wrap:anywhere}
-.address-upsell .account-button{margin-top:18px}
+/* What the globe opens on a plan without an address: the plan cards' own
+   language -- their type scale, their ticked feature list, their price -- so
+   the way through to picking one reads as the same product, not a dead end. */
+.address-upsell{padding:2px 4px 6px;text-align:center}
+.address-hero{display:block;width:54px;height:54px;margin:8px auto 0;color:var(--text)}
+.address-upsell h3{margin:16px 0 0;font-size:24px;line-height:29px;letter-spacing:-.4px;font-weight:700}
+.address-upsell .sheet-copy{margin:9px 2px 18px;text-align:center}
+.address-preview{display:flex;align-items:center;justify-content:center;gap:9px;height:44px;margin:0;padding:0 15px;border:1px solid var(--border);border-radius:22px;background:var(--surface)}
+.address-preview svg{width:16px;height:16px;color:var(--subdued)}
+.address-preview span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:19px}
+.address-upsell-features{margin:20px 6px;text-align:left}
+.address-cta-price{margin-left:8px;font-weight:400;opacity:.65}
 .address-live{display:inline-block;margin:8px 10px 0;font-size:15px;line-height:20px;color:var(--text);text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:calc(100% - 20px)}
 .address-domains{margin-top:4px;border-radius:22px}
 .address-domain{padding:14px 16px;display:grid;gap:8px}

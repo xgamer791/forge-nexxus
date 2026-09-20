@@ -36,12 +36,16 @@
 <section class="sheet dropdown address" role="dialog" aria-modal="true" aria-labelledby="address-title" hidden><header><button class="dismiss" aria-label="Close domains"><svg><use href="#close"/></svg></button><h2 id="address-title">Domain</h2></header>
 <p class="sheet-copy address-loading" hidden>Checking your plan…</p>
 <div class="address-upsell" hidden>
-<p class="sheet-copy">Free is for planning and building your site. To put it on the web — at an address of its own, or at a domain you already own — pick <span data-address-upsell-plan></span>.</p>
-<div class="group address-perks">
-<div class="address-perk"><strong>An address of your own</strong><span data-address-upsell-example></span></div>
-<div class="address-perk"><strong>A domain you already own</strong><span data-address-upsell-domain></span></div>
-</div>
-<button type="button" class="account-button open-plan-from-address">See plans</button>
+<svg class="address-hero" aria-hidden="true"><use href="#globe"/></svg>
+<h3>Put your site on the web</h3>
+<p class="sheet-copy">Free builds and plans your site. Giving it an address of its own, and pointing a domain you already own at it, come with a plan.</p>
+<p class="address-preview"><svg aria-hidden="true"><use href="#globe"/></svg><span data-address-upsell-example></span></p>
+<ul class="plan-features address-upsell-features">
+<li><svg aria-hidden="true"><use href="#check"/></svg><span>An address of your own</span></li>
+<li><svg aria-hidden="true"><use href="#check"/></svg><span data-address-upsell-domain></span></li>
+<li><svg aria-hidden="true"><use href="#check"/></svg><span>No Forge badge on your site</span></li>
+</ul>
+<button type="button" class="account-button open-plan-from-address">See plans<span class="address-cta-price" data-address-upsell-price></span></button>
 </div>
 <div class="address-body">
 <p class="sheet-copy" data-address-lead>Your site's address on the web. Pick the name, then point your own domain at it.</p>
