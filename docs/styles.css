@@ -295,7 +295,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 /* The globe: the site's address, opposite the drawer button. It appears only
    once there is a site to have an address. */
 .globe-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
-.globe-button svg{width:28px;height:28px;fill:none;stroke:currentColor}
+.globe-button svg{width:32px;height:32px;fill:none;stroke:currentColor}
 .app.reference .globe-button{top:61px}
 
 /* Address sheet: the forge address, then a domain of their own. */
