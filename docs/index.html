@@ -33,7 +33,7 @@
 </div>
 </section>
 
-<section class="sheet dropdown address" role="dialog" aria-modal="true" aria-labelledby="address-title" hidden><header><button class="dismiss" aria-label="Close domains"><svg><use href="#close"/></svg></button><h2 id="address-title">Domain</h2></header>
+<section class="sheet dropdown address" role="dialog" aria-modal="true" aria-labelledby="address-title" hidden><header><button class="dismiss" aria-label="Close domains"><svg><use href="#close"/></svg></button><h2 id="address-title">Address</h2></header>
 <p class="sheet-copy address-loading" hidden>Checking your plan…</p>
 <div class="address-upsell" hidden>
 <svg class="address-hero" aria-hidden="true"><use href="#globe"/></svg>
@@ -48,18 +48,22 @@
 <button type="button" class="account-button open-plan-from-address">See plans<span class="address-cta-price" data-address-upsell-price></span></button>
 </div>
 <div class="address-body">
-<p class="sheet-copy" data-address-lead>Your site's address on the web. Pick the name, then point your own domain at it.</p>
+<p class="sheet-copy" data-address-lead>Choose where this site lives on the web.</p>
 <p class="sheet-copy address-no-site" hidden>No site yet. Describe the site you want in the composer — once Forge has built it, its address is picked here.</p>
 <div class="address-site">
-<h3 class="address-heading">Forge address</h3>
+<section class="address-card address-forge-card">
+<div class="address-card-head"><h3>Forge address</h3><span class="status-chip address-state" data-address-state></span></div>
+<a class="address-live" data-address-live href="#" target="_blank" rel="noopener" hidden></a>
 <form class="address-form">
 <div class="address-field"><input class="address-slug" name="slug" placeholder="your-site" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="40" aria-label="Site address" required><span class="address-suffix" data-address-domain></span></div>
-<button class="chip-button address-save" type="submit">Save</button>
+<button class="chip-button address-save" type="submit">Save address</button>
 </form>
 <p class="address-note" data-address-note></p>
-<p class="address-note address-warning" hidden>Changing this breaks the old address: <span data-address-old></span> stops answering, and any domain pointed at it needs the new one.</p>
-<a class="address-live" data-address-live href="#" target="_blank" rel="noopener" hidden></a>
-<h3 class="address-heading">Custom domain</h3>
+<p class="address-note address-warning" hidden>You can change this address once. The old address will stop working.</p>
+</section>
+<section class="address-card address-custom-card">
+<div class="address-card-head"><h3>Your domain</h3></div>
+<p class="address-empty" hidden><strong>No custom domain yet</strong><span>Add a domain you own. Forge will show the one DNS record to copy.</span></p>
 <form class="address-domain-form" hidden>
 <div class="address-field"><input class="address-host" name="hostname" placeholder="www.example.com" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url" aria-label="Your domain" required></div>
 <button class="chip-button address-add" type="submit">Add</button>
@@ -67,7 +71,7 @@
 <p class="sheet-copy address-gate" hidden>Pointing a domain you already own at this site comes with <span data-address-plan></span><span data-address-current-plan></span>. <button class="link-button open-plan-from-address" type="button">See plans</button></p>
 <p class="sheet-copy address-needs-slug" hidden>Save a Forge address above first — a domain of your own is pointed at it.</p>
 <div class="group address-domains" data-address-domains></div>
-<p class="sheet-copy address-empty" hidden>No custom domain yet. Adding one shows the single DNS record to copy.</p>
+</section>
 </div>
 </div>
 <p class="address-error" role="alert" hidden></p>

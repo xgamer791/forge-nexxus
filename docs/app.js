@@ -1410,6 +1410,7 @@ if (forge?.sites && addressSheet) {
   const saveButton = addressSheet.querySelector('.address-save');
   const suffix = addressSheet.querySelector('[data-address-domain]');
   const note = addressSheet.querySelector('[data-address-note]');
+  const state = addressSheet.querySelector('[data-address-state]');
   const live = addressSheet.querySelector('[data-address-live]');
   const domainForm = addressSheet.querySelector('.address-domain-form');
   const gate = addressSheet.querySelector('.address-gate');
@@ -1486,22 +1487,34 @@ if (forge?.sites && addressSheet) {
       slugField.placeholder = suggestSlug(activeSite.name) || 'your-site';
     }
     const address = activeSite.address;
+    const canChangeAddress = activeSite.addressChangeAvailable !== false;
+    const addressLocked = Boolean(activeSite.slug) && !canChangeAddress;
     live.hidden = !address;
     if (address) {
       live.href = address;
       live.textContent = address.replace(/^https?:\/\//, '');
     }
-    // Moving a site takes its old address down, so the form says so first.
+    if (state) {
+      state.textContent = activeSite.slug
+        ? activeSite.status === 'published' ? 'Live' : 'Reserved'
+        : '';
+      state.classList.toggle('is-active', activeSite.status === 'published');
+    }
+    slugField.disabled = addressLocked;
+    slugForm.classList.toggle('is-locked', addressLocked);
+    saveButton.textContent = activeSite.slug ? 'Change address' : 'Save address';
+    // A site gets one move. Explain the consequence before it is spent, then
+    // make the saved address visibly read-only once the server records it.
     if (warning) {
       warning.hidden = !activeSite.slug;
-      setText('[data-address-old]', activeSite.address
-        ? activeSite.address.replace(/^https?:\/\//, '')
-        : activeSite.slug ?? '');
+      warning.textContent = addressLocked
+        ? 'This address has already been changed and cannot be changed again.'
+        : 'You can change this address once. The old address will stop working.';
     }
     // Leave the line alone while it is answering what is being typed.
     if (document.activeElement !== slugField) {
       restingNote();
-      saveButton.disabled = false;
+      saveButton.disabled = addressLocked;
     }
     // This section is one of three things and never none of them. It used to
     // wait on the catalog to name the plan it was selling, and a plan without
@@ -1536,7 +1549,7 @@ if (forge?.sites && addressSheet) {
   let slugTimer = null;
   async function checkSlug() {
     const ticket = ++slugTicket;
-    if (!activeSite) return;
+    if (!activeSite || slugField.disabled) return;
     const wanted = slugField.value.trim();
     if (!wanted || wanted === (activeSite.slug ?? '')) {
       saveButton.disabled = false;
@@ -1642,7 +1655,7 @@ if (forge?.sites && addressSheet) {
   slugField.addEventListener('blur', () => { clearTimeout(slugTimer); });
   slugForm.addEventListener('submit', async event => {
     event.preventDefault();
-    if (!activeSite || saveButton.disabled) return;
+    if (!activeSite || slugField.disabled || saveButton.disabled) return;
     const wanted = slugField.value.trim() || slugField.placeholder;
     showNote(error, '');
     saveButton.disabled = true;
@@ -1653,7 +1666,7 @@ if (forge?.sites && addressSheet) {
       reportError(caught);
       showNote(error, messageOf(caught));
     } finally {
-      saveButton.disabled = false;
+      saveButton.disabled = slugField.disabled;
     }
   });
   domainForm.addEventListener('submit', async event => {
