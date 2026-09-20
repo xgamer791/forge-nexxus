@@ -395,6 +395,23 @@ function openMenu(name, trigger) {
   backdrop.classList.add('is-open');
   app.classList.add('sheet-open');
   app.classList.toggle('navigation-open', name === 'navigation');
+  if (
+    name === 'navigation'
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  ) {
+    panel.getAnimations().forEach(animation => animation.cancel());
+    panel.animate(
+      [
+        {transform: 'translate3d(-100%,0,0)'},
+        {transform: 'translate3d(0,0,0)'},
+      ],
+      {
+        duration: 1200,
+        easing: 'cubic-bezier(.45,0,.55,1)',
+        fill: 'both',
+      },
+    );
+  }
   trigger?.setAttribute('aria-expanded', 'true');
   panel.querySelector('button')?.focus({preventScroll:true});
   resetViewport();
