@@ -291,7 +291,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
    the way the globe is reached, rather than up from the thumb. It keeps every
    sheet part — header, dismiss, copy, groups — and turns the geometry over:
    square at the top edge, rounded below, handle at the bottom. */
-.dropdown{top:0;bottom:auto;border-radius:0 0 28px 28px;padding:max(10px,env(safe-area-inset-top)) 16px 0;min-height:50%;max-height:calc(100% - 28px);display:flex;flex-direction:column;box-shadow:0 18px 44px rgba(0,0,0,.34)}
+.dropdown{top:0;bottom:auto;border-radius:0 0 28px 28px;padding:max(10px,env(safe-area-inset-top)) 16px 0;min-height:0;max-height:calc(100% - 28px);display:flex;flex-direction:column;box-shadow:0 18px 44px rgba(0,0,0,.34)}
 .dropdown .handle{margin:auto auto max(10px,var(--bottom));flex:none}
 .dropdown header{height:52px}
 @media(prefers-reduced-motion:no-preference){
@@ -310,17 +310,20 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .globe-button svg{width:28px;height:28px;fill:none;stroke:currentColor}
 .app.reference .globe-button{top:61px}
 
-/* Address sheet: two distinct objects rather than one long form. Both cards
-   inherit the active theme and the account's chosen UI font. */
-.address{padding-bottom:max(24px,var(--bottom))}
-.address-site{display:grid;gap:12px;padding:2px 0 14px}
-.address-card{padding:16px;border:1px solid var(--border);border-radius:18px;background:var(--surface)}
-.address-card-head{display:flex;align-items:center;gap:12px;margin-bottom:13px}
-.address-card-head h3{min-width:0;flex:1;margin:0;font-size:17px;line-height:22px;font-weight:600;color:var(--text)}
+/* Address sheet: one tab at a time so the globe menu stays short. The
+   segmented control and the panels inherit the active theme and UI font. */
+.address{padding-bottom:max(16px,var(--bottom))}
+.address-site{display:grid;gap:12px;padding:2px 0 10px}
+.address-tabs{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border-radius:12px;background:var(--chip)}
+.address-tab{height:36px;border-radius:9px;display:grid;place-items:center;font-size:15px;line-height:20px;font-weight:600;color:var(--subdued)}
+.address-tab[aria-selected=true]{background:var(--surface);color:var(--text)}
+.address-panel{min-width:0}
+.address-panel-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.address-panel-head:has(.address-live[hidden]):has(.address-state:empty){display:none}
 .address-state{background:var(--chip);color:var(--muted)}
 .address-state:empty{display:none}
 .address-form,.address-domain-form{display:grid;gap:10px}
-.address-field{min-width:0;display:flex;align-items:center;height:44px;padding:0 4px 0 14px;border:1px solid var(--border);border-radius:12px;background:var(--sheet)}
+.address-field{min-width:0;display:flex;align-items:center;height:44px;padding:0 4px 0 14px;border:1px solid var(--border);border-radius:12px;background:var(--chip)}
 .address-field input{min-width:4ch;width:100%;height:100%;padding:0;border:0;background:none;font-size:17px;line-height:22px;outline:none}
 .address-field input::placeholder{color:var(--subdued);opacity:1}
 .address-field:focus-within{outline:2px solid var(--focus);outline-offset:2px}
@@ -345,12 +348,12 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .address-preview span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:19px}
 .address-upsell-features{margin:20px 6px;text-align:left}
 .address-cta-price{margin-left:8px;font-weight:400;opacity:.65}
-.address-live{display:block;margin:0 0 13px;font-size:19px;line-height:24px;font-weight:600;color:var(--text);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.address-live{min-width:0;flex:1;display:block;margin:0;font-size:17px;line-height:22px;font-weight:600;color:var(--text);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .address-live:hover{text-decoration:underline;text-underline-offset:3px}
 .address-empty{margin:0 0 13px;padding:14px;border:1px dashed var(--border);border-radius:12px;display:grid;gap:3px;color:var(--muted)}
 .address-empty strong{font-size:15px;line-height:20px;font-weight:600;color:var(--text)}
 .address-empty span{font-size:14px;line-height:19px}
-.address-domains{margin-top:0;border:1px solid var(--border);border-radius:12px;background:var(--sheet)}
+.address-domains{margin-top:0;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
 .address-domain{padding:14px;display:grid;gap:9px}
 .address-domain+.address-domain{border-top:1px solid var(--divider)}
 .address-domain-head{display:flex;align-items:center;gap:10px}
@@ -365,7 +368,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .address-remove{color:var(--danger);text-decoration:none;font-size:15px}
 .address-error{margin:2px 0 14px;color:var(--danger);font-size:15px;line-height:20px}
 .address .sheet-copy{margin:4px 4px 14px}
-.address-card .sheet-copy{margin:10px 0 0}
+.address-panel .sheet-copy{margin:10px 0 0}
 
 /* ── Desktop ──────────────────────────────────────────────────────────────
    The same app, sized for a pointer and a wide window. Nothing here is a
@@ -411,6 +414,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
   .group button:hover,.row-button:hover:not([disabled]),.settings-list button:hover,.add-list button:hover:not([aria-disabled=true]),.theme-menu button:hover,.font-menu button:hover,.topup-row:hover{background:var(--chip)}
   .icon-button:hover,.dismiss:hover,.hamburger:hover,.globe-button:hover,.settings:hover,.site-options:hover{background:var(--chip);border-radius:50%}
   .site:hover{color:var(--text)}
+  .address-tab:hover:not([aria-selected=true]){color:var(--text)}
   .chip-button:hover:not([disabled]),.plan-cta:hover:not([disabled]),.account-button:hover:not(:disabled),.credits-cta:hover,.new-site:hover,.site-bar-preview:hover:not([disabled]){filter:brightness(1.08)}
   .credits-summary:hover{opacity:.9}
   .address-remove:hover{text-decoration:underline}

@@ -548,6 +548,7 @@ function openMenu(name, trigger) {
   }
   closeMenu();
   if (pendingPanelHides.has(panel)) finishHide(panel);
+  if (panel.classList.contains('address')) showAddressTab('address');
   panel.hidden = false;
   panel.classList.remove('is-closing');
   panel.classList.add('is-open');
@@ -598,7 +599,7 @@ document.addEventListener('keydown', event => {
 const query = new URLSearchParams(location.search);
 if (query.has('reference')) app.classList.add('reference');
 if (query.get('theme') === 'light' || query.get('theme') === 'dark') applyTheme(query.get('theme'));
-if (['attachments','account','navigation'].includes(query.get('screen'))) openMenu(query.get('screen'));
+if (['attachments','account','navigation','address'].includes(query.get('screen'))) openMenu(query.get('screen'));
 if (query.get('screen') === 'settings') { openMenu('navigation'); showSettings(true); }
 if (query.get('screen') === 'appearance') { openMenu('navigation'); showAppearance(true); }
 if (query.get('menu') === 'theme') {
@@ -1590,6 +1591,34 @@ if (forge?.sites && previewScreen) {
 // Convex — the sheet carries no domain, price or example of its own.
 const addressSheet = document.querySelector('.sheet.address');
 const globeButton = document.querySelector('.globe-button');
+const addressTablist = addressSheet?.querySelector('.address-tabs');
+const addressTabs = addressSheet ? [...addressSheet.querySelectorAll('[role="tab"]')] : [];
+function showAddressTab(name) {
+  if (!addressSheet) return;
+  const wanted = name === 'custom' ? 'custom' : 'address';
+  addressTabs.forEach(tab => {
+    const on = tab.dataset.tab === wanted;
+    tab.setAttribute('aria-selected', on ? 'true' : 'false');
+    tab.tabIndex = on ? 0 : -1;
+  });
+  addressSheet.querySelectorAll('[role="tabpanel"]').forEach(panel => {
+    panel.hidden = panel.dataset.panel !== wanted;
+  });
+}
+addressTablist?.addEventListener('click', event => {
+  const tab = event.target.closest('[role="tab"]');
+  if (tab) showAddressTab(tab.dataset.tab);
+});
+addressTablist?.addEventListener('keydown', event => {
+  if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+  event.preventDefault();
+  const current = addressTabs.findIndex(tab => tab.getAttribute('aria-selected') === 'true');
+  const step = event.key === 'ArrowRight' ? 1 : -1;
+  const next = addressTabs[(current + step + addressTabs.length) % addressTabs.length];
+  if (!next) return;
+  showAddressTab(next.dataset.tab);
+  next.focus();
+});
 if (forge?.sites && addressSheet) {
   const slugForm = addressSheet.querySelector('.address-form');
   const slugField = slugForm.elements.slug;
@@ -1603,7 +1632,7 @@ if (forge?.sites && addressSheet) {
   const needsSlug = addressSheet.querySelector('.address-needs-slug');
   const siteBlock = addressSheet.querySelector('.address-site');
   const noSite = addressSheet.querySelector('.address-no-site');
-  const lead = addressSheet.querySelector('[data-address-lead]');
+  const tablist = addressTablist;
   const loading = addressSheet.querySelector('.address-loading');
   const domainList = addressSheet.querySelector('[data-address-domains]');
   const domainEmpty = addressSheet.querySelector('.address-empty');
@@ -1665,7 +1694,7 @@ if (forge?.sites && addressSheet) {
     const hasSite = Boolean(activeSite);
     if (siteBlock) siteBlock.hidden = !hasSite;
     if (noSite) noSite.hidden = hasSite;
-    if (lead) lead.hidden = !hasSite;
+    if (tablist) tablist.hidden = !hasSite;
     if (!hasSite) return;
     if (suffix) suffix.textContent = hosting?.domain ? `.${hosting.domain}` : '';
     if (document.activeElement !== slugField) {
