@@ -196,6 +196,28 @@ export const fail = internalMutation({
   },
 });
 
+// The deployment names the model. When asked who is answering, say that —
+// never a different provider the weights were trained to claim.
+function chatIdentityMessage(): ChatMessage {
+  const model = process.env.AI_MODEL?.trim() || "unset";
+  const baseUrl = process.env.AI_BASE_URL?.replace(/\/+$/, "") ?? "";
+  let host = "unset";
+  if (baseUrl) {
+    try {
+      host = new URL(baseUrl).hostname;
+    } catch {
+      host = "unset";
+    }
+  }
+  return {
+    role: "system",
+    content:
+      `The configured chat model id is ${model} and the provider host is ${host}. ` +
+      "If the user asks what model, agent, LLM, or AI you are, answer plainly with that model id and provider host. " +
+      "Do not invent a different provider. For all other questions stay Forge the designer and follow the existing BUILD/TALK rules.",
+  };
+}
+
 function buildMessages(
   siteName: string,
   currentHtml: string | null,
@@ -204,7 +226,7 @@ function buildMessages(
   // Set when the balance cannot cover a build, which makes this turn TALK.
   talkOnly: { needed: number; available: number } | null,
 ): ChatMessage[] {
-  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }];
+  const messages: ChatMessage[] = [{ role: "system", content: SYSTEM_PROMPT }, chatIdentityMessage()];
   if (currentHtml) {
     messages.push({
       role: "system",
