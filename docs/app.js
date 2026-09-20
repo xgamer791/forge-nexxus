@@ -329,11 +329,37 @@ window.ForgeData?.settings?.subscribe(stored => {
 });
 let opener;
 const pendingPanelHides = new WeakMap();
-const DRAWER_MS = 350;
+const DRAWER_MS = 250;
+const DRAWER_EASE = 'cubic-bezier(.45,0,.55,1)';
+const DRAWER_OFF = 'translate3d(-100%,0,0)';
+const DRAWER_ON = 'translate3d(0,0,0)';
 function resetViewport() {
   window.scrollTo(0, 0);
   document.documentElement.scrollTop = 0;
   document.body.scrollTop = 0;
+}
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+function drawerTransform(drawer, fallback) {
+  const value = getComputedStyle(drawer).transform;
+  return !value || value === 'none' ? fallback : value;
+}
+function slideDrawer(drawer, from, to) {
+  drawer.getAnimations().forEach(animation => animation.cancel());
+  drawer.style.transform = from;
+  void drawer.offsetWidth;
+  if (prefersReducedMotion()) {
+    drawer.style.transform = to;
+    return Promise.resolve();
+  }
+  const animation = drawer.animate(
+    [{transform: from}, {transform: to}],
+    {duration: DRAWER_MS, easing: DRAWER_EASE, fill: 'forwards'},
+  );
+  return animation.finished.catch(() => {}).then(() => {
+    drawer.style.transform = to;
+  });
 }
 function finishHide(element) {
   const pending = pendingPanelHides.get(element);
@@ -343,6 +369,10 @@ function finishHide(element) {
     if (pending.transition) element.removeEventListener('transitionend', pending.transition);
     pendingPanelHides.delete(element);
   }
+  if (element.classList.contains('navigation')) {
+    element.style.transform = DRAWER_OFF;
+    element.getAnimations().forEach(animation => animation.cancel());
+  }
   element.hidden = true;
   element.classList.remove('is-open', 'is-closing');
   element.scrollTop = 0;
@@ -351,7 +381,7 @@ function hideOverlay(element) {
   if (!element) return;
   if (element.classList.contains('navigation')) return;
   if (pendingPanelHides.has(element)) return;
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = prefersReducedMotion();
   const animatedDropdown = element.matches?.('.dropdown.is-open')
     && !reduceMotion;
   if (!animatedDropdown) {
@@ -375,7 +405,6 @@ function closeDrawer() {
     return;
   }
   if (pendingPanelHides.has(drawer)) return;
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const done = () => {
     if (!pendingPanelHides.has(drawer)) return;
     finishHide(drawer);
@@ -387,40 +416,61 @@ function closeDrawer() {
       opener?.focus({preventScroll:true});
     });
   };
-  if (reduceMotion) {
-    pendingPanelHides.set(drawer, {timer: 0});
-    done();
-    return;
-  }
   drawer.classList.add('is-closing');
-  const onEnd = event => {
-    if (event.target === drawer && event.propertyName === 'transform') done();
-  };
-  pendingPanelHides.set(drawer, {transition: onEnd, timer: setTimeout(done, DRAWER_MS + 40)});
-  drawer.addEventListener('transitionend', onEnd);
+  drawer.style.transform = drawerTransform(drawer, DRAWER_ON);
+  void drawer.offsetWidth;
+  pendingPanelHides.set(drawer, {timer: setTimeout(done, DRAWER_MS + 80)});
   app.classList.remove('navigation-open');
+  slideDrawer(drawer, drawerTransform(drawer, DRAWER_ON), DRAWER_OFF).then(done);
 }
 function closeMenu() {
   closePopovers();
   const active = document.activeElement;
   if (active && app.contains(active) && active !== document.body) active.blur();
   closeOverlays();
-  const drawerOpen = Boolean(document.querySelector('.navigation.is-open'));
+  const drawer = document.querySelector('.navigation');
+  const drawerClosing = Boolean(drawer?.classList.contains('is-closing'));
+  const drawerOpen = Boolean(drawer?.classList.contains('is-open') && !drawerClosing);
   panels.forEach(hideOverlay);
   if (drawerOpen) closeDrawer();
-  else {
+  else if (!drawerClosing) {
     finishHide(backdrop);
     app.classList.remove('navigation-open', 'sheet-open');
   }
   document.querySelectorAll('[data-open]').forEach(button => button.setAttribute('aria-expanded', 'false'));
-  resetViewport();
+  if (!drawerOpen) resetViewport();
 }
 function openMenu(name, trigger) {
-  closeMenu();
   const panel = document.querySelector(`.${name}`);
   if (!panels.includes(panel)) return;
   opener = trigger;
-  if (name === 'navigation') showSettings(false);
+  if (name === 'navigation') {
+    closePopovers();
+    closeOverlays();
+    panels.forEach(item => { if (item !== panel) hideOverlay(item); });
+    showSettings(false);
+    const from = panel.classList.contains('is-closing')
+      ? drawerTransform(panel, DRAWER_OFF)
+      : DRAWER_OFF;
+    if (pendingPanelHides.has(panel)) {
+      const pending = pendingPanelHides.get(panel);
+      clearTimeout(pending.timer);
+      pendingPanelHides.delete(panel);
+    }
+    panel.hidden = false;
+    panel.style.transform = from;
+    panel.classList.remove('is-closing');
+    panel.classList.add('is-open');
+    backdrop.hidden = false;
+    backdrop.classList.add('is-open');
+    app.classList.add('sheet-open', 'navigation-open');
+    slideDrawer(panel, from, DRAWER_ON);
+    trigger?.setAttribute('aria-expanded', 'true');
+    panel.querySelector('button')?.focus({preventScroll:true});
+    resetViewport();
+    return;
+  }
+  closeMenu();
   if (pendingPanelHides.has(panel)) finishHide(panel);
   panel.hidden = false;
   panel.classList.remove('is-closing');
@@ -428,10 +478,6 @@ function openMenu(name, trigger) {
   backdrop.hidden = false;
   backdrop.classList.add('is-open');
   app.classList.add('sheet-open');
-  if (name === 'navigation') {
-    void panel.offsetWidth;
-    app.classList.add('navigation-open');
-  }
   trigger?.setAttribute('aria-expanded', 'true');
   panel.querySelector('button')?.focus({preventScroll:true});
   resetViewport();
@@ -440,7 +486,8 @@ document.querySelectorAll('[data-open]').forEach(button => {
   button.setAttribute('aria-expanded', 'false');
   button.addEventListener('click', () => {
     const panel = document.querySelector(`.${button.dataset.open}`);
-    if (!panel.hidden) closeMenu(); else openMenu(button.dataset.open, button);
+    if (!panel.hidden && !panel.classList.contains('is-closing')) closeMenu();
+    else openMenu(button.dataset.open, button);
   });
 });
 document.querySelectorAll('.dismiss').forEach(button => button.addEventListener('click', closeMenu));
