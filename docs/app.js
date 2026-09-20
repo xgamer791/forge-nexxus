@@ -517,6 +517,7 @@ function closeMenu() {
   if (!drawerOpen) resetViewport();
 }
 function openMenu(name, trigger) {
+  if (['address', 'preview-unbuilt'].includes(name) && !window.ForgeOnboarding?.canPreview()) return;
   const panel = document.querySelector(`.${name}`);
   if (!panels.includes(panel)) return;
   opener = trigger;
@@ -871,6 +872,7 @@ if (forge?.sites && siteList && thread) {
         view.type = 'button';
         view.className = 'message-view';
         view.textContent = 'View the site';
+        view.disabled = !window.ForgeOnboarding?.canPreview();
         view.addEventListener('click', () => openPreview());
         row.append(view);
       }
@@ -889,7 +891,10 @@ if (forge?.sites && siteList && thread) {
       document.querySelectorAll('[data-site-status]').forEach(element => {
         element.textContent = activeSite.status === 'published' ? 'Published' : activeSite.currentVersionId ? 'Draft' : 'Not built yet';
       });
-      if (siteBarPreview) siteBarPreview.disabled = !activeSite.currentVersionId;
+      if (siteBarPreview) {
+        siteBarPreview.dataset.built = String(Boolean(activeSite.currentVersionId));
+        siteBarPreview.disabled = !activeSite.currentVersionId || !window.ForgeOnboarding?.canPreview();
+      }
     }
     if (promptInput) {
       promptInput.placeholder = activeSite?.currentVersionId ? 'Describe a change…' : 'Describe the site you want…';
@@ -924,13 +929,17 @@ if (forge?.sites && siteList && thread) {
   }
   newSite?.addEventListener('click', () => {
     showNote(sitesError, '');
-    createSite().then(() => {
+    window.ForgeOnboarding?.start().then(() => {
       closeMenu();
-      promptInput?.focus({preventScroll:true});
     }).catch(error => {
       reportError(error);
       showNote(sitesError, messageOf(error));
     });
+  });
+  document.addEventListener('forge:onboarding-complete', event => {
+    const site = sites.find(site => site._id === event.detail.siteId);
+    if (site) selectConversation(site.conversationId);
+    closeMenu();
   });
 
   // The first prompt names the site. Building needs an account, so a guest
@@ -939,6 +948,10 @@ if (forge?.sites && siteList && thread) {
     const body = promptInput.value.trim();
     if (!body) return;
     if (forge.auth.state().kind !== 'member') { openMenu('account', promptInput); return; }
+    if (summary?.plan.key !== 'free' && !activeSite?.currentVersionId) {
+      await window.ForgeOnboarding?.start();
+      return;
+    }
     promptInput.value = '';
     showNote(composerError, '');
     try {
@@ -1056,6 +1069,7 @@ const settingsScreens = {
   domains: {element: document.querySelector('.overlay.domains'), opener: '.open-domains', label: 'Domains'},
 };
 function showSettingsScreen(name, show = true) {
+  if (name === 'domains' && !window.ForgeOnboarding?.canPreview()) return;
   const screen = settingsScreens[name];
   if (!screen?.element) return;
   if (show) {
@@ -1278,6 +1292,7 @@ if (forge?.billing && planScreen) {
   // Back from Stripe: say what happened, then drop the marker from the URL.
   const checkoutResult = query.get('checkout');
   if (checkoutResult === 'success' || checkoutResult === 'cancel') {
+    window.forgePaymentPending = checkoutResult === 'success';
     const cleaned = new URL(location.href);
     cleaned.searchParams.delete('checkout');
     history.replaceState(history.state, '', cleaned);
@@ -1543,6 +1558,7 @@ if (forge?.sites && previewScreen) {
     });
   }
   openPreview = () => {
+    if (!window.ForgeOnboarding?.canPreview()) return;
     showNote(error, '');
     showOverlay(previewScreen);
     navigation.setAttribute('aria-label', 'Site preview');
@@ -1591,15 +1607,18 @@ if (forge?.sites && previewScreen) {
     watch();
     renderPreview();
   });
-  document.addEventListener('forge:billing', () => { if (!previewScreen.hidden) renderPreview(); });
+  document.addEventListener('forge:billing', () => {
+    if (summary?.plan.key === 'free') { frame.removeAttribute('srcdoc'); current = null; if (!previewScreen.hidden) closeMenu(); }
+    else if (!previewScreen.hidden) renderPreview();
+  });
 }
 
-// The Lucide eye beside the globe is always available. A built site opens the
-// existing sandboxed browser preview; an empty thread gets a small, actionable
-// sheet instead of a disabled control.
+// Free members keep the dashboard, with the eye and globe visibly disabled.
+// Paid members can preview their built site or start another site's questions.
 const websitePreviewButton = document.querySelector('.website-preview-button');
 const previewStartButton = document.querySelector('.preview-start');
 websitePreviewButton?.addEventListener('click', () => {
+  if (!window.ForgeOnboarding?.canPreview()) return;
   if (activeSite?.currentVersionId) {
     websitePreviewButton.setAttribute('aria-expanded', 'true');
     openPreview();
@@ -1609,7 +1628,7 @@ websitePreviewButton?.addEventListener('click', () => {
 });
 previewStartButton?.addEventListener('click', () => {
   closeMenu();
-  promptInput?.focus({preventScroll: true});
+  window.ForgeOnboarding?.start().catch(error => showNote(composerError, messageOf(error)));
 });
 
 // The globe by the composer: where this site lives. The address under the
@@ -1954,3 +1973,8 @@ if (['profile', 'plan', 'usage', 'domains'].includes(query.get('screen'))) {
   showSettingsScreen(query.get('screen'));
 }
 if (query.get('screen') === 'preview') openPreview();
+document.addEventListener('forge:choose-plan', () => {
+  openMenu('navigation');
+  showSettings(true);
+  showSettingsScreen('plan');
+});

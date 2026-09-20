@@ -74,6 +74,7 @@
   let confirmed = false;
   function lock() {
     confirmed = false;
+    window.ForgeOnboarding?.setMember(null);
     dashboard.hidden = true;
     dashboard.inert = true;
     gate.hidden = false;
@@ -86,8 +87,10 @@
     if (user === null && confirmed && data.auth.state().kind === 'member') return;
     const member = Boolean(user && !user.isAnonymous);
     confirmed = member;
-    dashboard.hidden = !member;
-    dashboard.inert = !member;
+    // A confirmed account still waits for the authoritative website/plan
+    // gate. Do not briefly flash the dashboard during sign-in or a reload.
+    window.ForgeOnboarding?.setMember(member ? user : null);
+    if (!window.ForgeOnboarding) { dashboard.hidden = true; dashboard.inert = true; }
     gate.hidden = member;
     if (member) window.dispatchEvent(new Event('resize'));
   });

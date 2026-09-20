@@ -23,6 +23,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install deployment tools
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      # Deploy the new API before exposing a frontend that requires it. This
+      # prevents a Pages-only release from locking every member at the gate.
+      # Typechecking and tests are deliberately omitted for this release.
+      - name: Deploy Convex
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
+            echo '::error::Add the production CONVEX_DEPLOY_KEY repository secret before deploying this release. The existing live frontend has been preserved.'
+            exit 1
+          fi
+          npx convex deploy --yes --typecheck disable --codegen disable
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Stamp release and asset versions

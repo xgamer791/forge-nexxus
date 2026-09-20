@@ -17,6 +17,7 @@ import type * as domains from "../domains.js";
 import type * as generate from "../generate.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
+import type * as onboarding from "../onboarding.js";
 import type * as plans from "../plans.js";
 import type * as settings from "../settings.js";
 import type * as sites from "../sites.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   generate: typeof generate;
   http: typeof http;
   messages: typeof messages;
+  onboarding: typeof onboarding;
   plans: typeof plans;
   settings: typeof settings;
   sites: typeof sites;

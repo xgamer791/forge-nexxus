@@ -412,6 +412,16 @@ export function createForgeData({
       slugAvailable: (slug, siteId) =>
         client.query(api.sites.slugAvailable, siteId ? { slug, siteId } : { slug }),
     },
+    onboarding: {
+      subscribe: (callback, onError) => client.onUpdate(api.onboarding.state, {}, callback, onError),
+      start: () => client.mutation(api.onboarding.start, {}),
+      save: (id, index, answer, advance = false) => client.mutation(api.onboarding.save, { id, index, answer, advance }),
+      submit: (id) => client.mutation(api.onboarding.submit, { id }),
+      dismiss: (id) => client.mutation(api.onboarding.dismiss, { id }),
+      uploadUrl: (id) => client.mutation(api.onboarding.uploadUrl, { id }),
+      attach: (id, storageId, name) => client.mutation(api.onboarding.attach, { id, storageId, name }),
+      detach: (id, storageId) => client.mutation(api.onboarding.detach, { id, storageId }),
+    },
     messages: {
       subscribe: (conversationId, callback) =>
         client.onUpdate(api.messages.list, { conversationId }, callback),

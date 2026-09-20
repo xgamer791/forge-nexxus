@@ -130,6 +130,7 @@ export const currentHtml = query({
     const userId = await getAuthUserId(ctx);
     const site = await ctx.db.get(siteId);
     if (!userId || !site || site.userId !== userId || !site.currentVersionId) return null;
+    if ((await currentPlan(ctx, userId)).key === "free") return null;
     const version = await ctx.db.get(site.currentVersionId);
     if (!version) return null;
     return {

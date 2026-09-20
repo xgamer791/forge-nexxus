@@ -128,6 +128,10 @@ export async function adoptGuestData(
     .withIndex("by_user", (q) => q.eq("userId", guestId))
     .collect();
   await Promise.all(domains.map((domain) => ctx.db.patch(domain._id, { userId })));
+  const onboarding = await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", guestId)).collect();
+  await Promise.all(onboarding.map(row => ctx.db.patch(row._id, { userId })));
+  const uploads = await ctx.db.query("siteUploads").withIndex("by_user", q => q.eq("userId", guestId)).collect();
+  await Promise.all(uploads.map(row => ctx.db.patch(row._id, { userId })));
   // Appearance choices made as a guest carry over only when the account has
   // none of its own; an existing account keeps what it already saved.
   const guestSettings = await settingsFor(ctx, guestId);

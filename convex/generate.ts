@@ -3,7 +3,8 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation } from "./_generated/server";
-import { creditCheck, holdCredits, releaseHold, settleHold } from "./billing";
+import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
+import { briefFile } from "./onboardingQuestions";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 
 // How much of the thread the model sees, and how long a page it may write.
@@ -31,7 +32,7 @@ Reply with one sentence saying what you built or changed, then the complete HTML
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
 
-If both readings are open, talk and ask which they meant.`;
+Never ask the user questions or append a follow-up question. For an ambiguous request, use the saved website brief and sensible design defaults. Never invent missing business facts. Keep strategy private. If the request is clearly about creating or changing a website, build it.`;
 
 // What the thread shows while the request runs. The server picks it, because
 // the server is what knows whether this turn can build: promising to build a
@@ -92,6 +93,10 @@ export const begin = internalMutation({
       .first();
     if (!site) throw new ConvexError("This thread has no site");
     const current = site.currentVersionId ? await ctx.db.get(site.currentVersionId) : null;
+    const plan = await currentPlan(ctx, userId);
+    if (!current && plan.key !== "free") {
+      throw new ConvexError("Complete the website questions before your first build");
+    }
     const now = Date.now();
     const buildKind: RequestKind = current ? "edit" : "generate";
     // A balance too thin for a build can still afford to talk. Rather than
@@ -99,8 +104,9 @@ export const begin = internalMutation({
     // told it may not build, and the hold is taken at the chat rate. Someone
     // out of credits can still ask what Forge would do and what it costs.
     const check = await creditCheck(ctx, userId, buildKind, now);
-    const kind: RequestKind = check.affordable ? buildKind : "chat";
-    const talkOnly = check.affordable
+    const mayBuild = check.affordable && plan.key !== "free";
+    const kind: RequestKind = mayBuild ? buildKind : "chat";
+    const talkOnly = mayBuild
       ? null
       : { needed: check.needed, available: check.available ?? 0 };
     const { holdId } = await holdCredits(ctx, userId, kind, now);
@@ -118,6 +124,9 @@ export const begin = internalMutation({
     });
     await ctx.db.patch(conversationId, { updatedAt: now });
     await ctx.db.patch(site._id, { updatedAt: now });
+    const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
+    const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly);
+    if (setup) messages.splice(1, 0, { role: "system", content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
     return {
       siteId: site._id,
       holdId,
@@ -128,7 +137,27 @@ export const begin = internalMutation({
         ? `Building this costs ${talkOnly.needed} credits and you have ${talkOnly.available}. ` +
           "Top up or upgrade and I'll build it — until then I can help you plan it here."
         : undefined,
-      messages: buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly),
+      messages,
+    };
+  },
+});
+
+// Only the scheduled onboarding worker can open a first paid build. Its
+// attempt and hold are recorded atomically, so retries cannot double-charge.
+export const beginOnboarding = internalMutation({
+  args: { id: v.id("siteOnboarding"), attempt: v.number() },
+  handler: async (ctx, { id, attempt }) => {
+    const row = await ctx.db.get(id);
+    if (!row?.siteId || row.attempt !== attempt || row.status !== "building" || row.holdId) throw new ConvexError("This build is no longer active");
+    const site = await ctx.db.get(row.siteId);
+    if (!site || site.userId !== row.userId) throw new ConvexError("Site not found");
+    if ((await currentPlan(ctx, row.userId)).key === "free") throw new ConvexError("Choose a paid plan to build");
+    const { holdId } = await holdCredits(ctx, row.userId, "generate");
+    const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
+    await ctx.db.patch(id, { holdId, assistantId, events: [...row.events, { label: "Agent started building your website", at: Date.now() }] });
+    return {
+      messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null),
+      result: { siteId: site._id, holdId, assistantId, requestKind: "generate" as const },
     };
   },
 });
@@ -144,9 +173,16 @@ export const finish = internalMutation({
     summary: v.string(),
     // Set when the turn was talk-only because a build was out of reach.
     blockedNote: v.optional(v.string()),
+    onboardingId: v.optional(v.id("siteOnboarding")),
+    attempt: v.optional(v.number()),
   },
-  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary, blockedNote }) => {
+  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary, blockedNote, onboardingId, attempt }) => {
     const now = Date.now();
+    const setup = onboardingId ? await ctx.db.get(onboardingId) : null;
+    if (onboardingId && (!setup || setup.attempt !== attempt || setup.status !== "saving")) {
+      await releaseHold(ctx, holdId);
+      return;
+    }
     // Nothing to store: either no page came back, or the turn was held at the
     // chat rate because a build was unaffordable, in which case a page that
     // came back anyway is dropped rather than handed over for a credit. Either
@@ -175,6 +211,8 @@ export const finish = internalMutation({
       createdAt: now,
     });
     await ctx.db.patch(siteId, { currentVersionId: versionId, updatedAt: now });
+    if (setup) await ctx.db.patch(setup._id, { status: "complete", updatedAt: now,
+      events: [...setup.events, { label: "Website saved and ready", at: now }] });
     if (await ctx.db.get(assistantId)) {
       await ctx.db.patch(assistantId, {
         body: summary || (kind === "generate" ? "Here's a first version of your site." : "Updated your site."),
@@ -231,16 +269,17 @@ function buildMessages(
 
 // Any OpenAI-compatible chat completions endpoint: the deployment names the
 // base URL, the key and the model, and nothing about them reaches a client.
-async function callProvider(messages: ChatMessage[]) {
+export async function callProvider(messages: ChatMessage[], tokenLimit?: number) {
   const baseUrl = process.env.AI_BASE_URL?.replace(/\/+$/, "");
   const apiKey = process.env.AI_API_KEY;
   const model = process.env.AI_MODEL;
   if (!baseUrl || !apiKey || !model) {
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
-  const maxTokens = Number(process.env.AI_MAX_TOKENS) || DEFAULT_MAX_TOKENS;
+  const maxTokens = tokenLimit ?? (Number(process.env.AI_MAX_TOKENS) || DEFAULT_MAX_TOKENS);
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal: AbortSignal.timeout(150000),
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: maxTokens }),
   });

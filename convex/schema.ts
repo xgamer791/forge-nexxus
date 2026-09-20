@@ -6,6 +6,32 @@ import { storedPlanKey } from "./plans";
 
 export default defineSchema({
   ...authTables,
+  siteUploads: defineTable({
+    userId: v.id("users"),
+    onboardingId: v.id("siteOnboarding"),
+    storageId: v.id("_storage"),
+  }).index("by_user", ["userId"]).index("by_onboarding", ["onboardingId"]).index("by_storage", ["storageId"]),
+  siteOnboarding: defineTable({
+    userId: v.id("users"),
+    siteId: v.optional(v.id("sites")),
+    answers: v.array(v.string()),
+    step: v.number(),
+    revision: v.number(),
+    strategyAnswers: v.optional(v.array(v.union(v.string(), v.null()))),
+    strategy: v.optional(v.string()),
+    strategyRevision: v.optional(v.number()),
+    briefStorageId: v.optional(v.id("_storage")),
+    assets: v.array(v.object({ storageId: v.id("_storage"), name: v.string(), type: v.string() })),
+    status: v.union(v.literal("questions"), v.literal("queued"), v.literal("building"), v.literal("saving"), v.literal("complete"), v.literal("failed")),
+    attempt: v.number(),
+    dismissed: v.boolean(),
+    error: v.optional(v.string()),
+    holdId: v.optional(v.id("creditHolds")),
+    assistantId: v.optional(v.id("messages")),
+    events: v.array(v.object({ label: v.string(), at: v.number() })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
   // A site is the thing a user builds. Its conversation is the build thread —
   // every prompt about the site lives there — so deleting the site deletes the
   // thread with it. Nothing is seeded: the drawer is empty until one is made.

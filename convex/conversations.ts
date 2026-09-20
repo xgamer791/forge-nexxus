@@ -56,6 +56,14 @@ export async function deleteConversation(ctx: MutationCtx, conversationId: Id<"c
     .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
     .first();
   if (site) {
+    const briefs = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).collect();
+    for (const brief of briefs) {
+      if (brief.briefStorageId) await ctx.storage.delete(brief.briefStorageId);
+      for (const asset of brief.assets) await ctx.storage.delete(asset.storageId);
+      const uploads = await ctx.db.query("siteUploads").withIndex("by_onboarding", q => q.eq("onboardingId", brief._id)).collect();
+      for (const upload of uploads) await ctx.db.delete(upload._id);
+      await ctx.db.delete(brief._id);
+    }
     const domains = await ctx.db
       .query("domains")
       .withIndex("by_site", (q) => q.eq("siteId", site._id))

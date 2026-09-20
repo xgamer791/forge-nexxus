@@ -65,9 +65,16 @@ export async function purgeUser(ctx: MutationCtx, userId: Id<"users">) {
     .withIndex("by_user_updated", (q) => q.eq("userId", userId))
     .collect();
   for (const conversation of conversations) await deleteConversation(ctx, conversation._id);
+  const onboarding = await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", userId)).collect();
+  for (const row of onboarding) {
+    if (row.briefStorageId) await ctx.storage.delete(row.briefStorageId);
+    for (const asset of row.assets) await ctx.storage.delete(asset.storageId);
+    await ctx.db.delete(row._id);
+  }
   // Sites and domains went with their conversations; this sweeps up anything
   // that had lost its thread, plus the plan, the ledger, and preferences.
   const owned = [
+    ...(await ctx.db.query("siteUploads").withIndex("by_user", q => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("sites").withIndex("by_user_updated", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("siteVersions").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("domains").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),

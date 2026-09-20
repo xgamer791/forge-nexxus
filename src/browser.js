@@ -59,4 +59,5 @@ window.addEventListener("online", resumeSession);
 window.addEventListener("pageshow", resumeSession);
 document.addEventListener("visibilitychange", resumeSession);
 
-export const { ready, auth, account, sites, messages, domains, billing, settings } = data;
+export const { ready, auth, account, sites, messages, domains, billing, settings, onboarding } = data;
+export { QUESTIONS as onboardingQuestions } from "../convex/onboardingQuestions.js";
