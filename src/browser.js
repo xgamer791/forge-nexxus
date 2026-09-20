@@ -12,19 +12,28 @@ if (authCode !== null) {
   history.replaceState(history.state, "", pageUrl);
 }
 
+// An OAuth sign-in navigates out to the provider and back, so whatever holds
+// the verifier has to survive a page load. Memory does not: falling straight to
+// it meant Google could never complete where localStorage is blocked (private
+// windows, blocked site data, storage partitioning). sessionStorage survives
+// that round trip and is usually still there, so it goes in between.
 function pickStorage() {
-  try {
-    localStorage.setItem("forge-storage-probe", "1");
-    localStorage.removeItem("forge-storage-probe");
-    return localStorage;
-  } catch {
-    const memory = new Map();
-    return {
-      getItem: (key) => memory.get(key) ?? null,
-      setItem: (key, value) => memory.set(key, String(value)),
-      removeItem: (key) => memory.delete(key),
-    };
+  for (const open of [() => localStorage, () => sessionStorage]) {
+    try {
+      const store = open();
+      store.setItem("forge-storage-probe", "1");
+      store.removeItem("forge-storage-probe");
+      return store;
+    } catch {
+      /* Blocked or absent; try the next one. */
+    }
   }
+  const memory = new Map();
+  return {
+    getItem: (key) => memory.get(key) ?? null,
+    setItem: (key, value) => memory.set(key, String(value)),
+    removeItem: (key) => memory.delete(key),
+  };
 }
 
 const data = createForgeData({
@@ -34,6 +43,9 @@ const data = createForgeData({
   api,
   authCode,
   navigate: (target) => location.assign(target),
+  // This page, without whatever query or fragment it happens to be holding --
+  // the sign-in code is appended to it on the way back in.
+  redirectTo: `${location.origin}${location.pathname}`,
 });
 data.ready.catch((error) => console.error("Forge Nexxus could not start a session", error));
 

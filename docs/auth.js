@@ -17,8 +17,10 @@
     element.classList.toggle('error', error);
   }
   function render(next) {
-    gate.className = `auth-gate auth-${next}`;
+    // The handoff wears the welcome layout: it is the same front door, mid-step.
+    gate.className = next === 'handoff' ? 'auth-gate auth-welcome auth-handoff' : `auth-gate auth-${next}`;
     const message = '<p class="auth-message" role="status" aria-live="polite" hidden></p>';
+    if (next === 'handoff') gate.innerHTML = `<div class="auth-hero">${mark}<h1>Forge Nexxus</h1><p>Signing you in…</p></div><div class="auth-welcome-sheet"><p class="auth-signing" role="status" aria-live="polite"><span class="auth-spinner" aria-hidden="true"></span>Finishing sign-in…</p><p class="auth-fineprint">Keep this page open — this only takes a moment.</p>${message}</div>`;
     if (next === 'welcome') gate.innerHTML = `<div class="auth-hero">${mark}<h1>Forge Nexxus</h1><p>Describe the website you want. Forge designs it, builds it and publishes it.</p></div><div class="auth-welcome-sheet">${provider('apple')}${provider('google')}<button class="auth-button" type="button" data-auth-screen="email">Continue with email</button><p class="auth-fineprint">Free to start. Every plan comes with monthly credits.</p>${message}</div>`;
     if (next === 'email') gate.innerHTML = `<div class="auth-login-content">${back('welcome')}<h1>Sign in to build</h1><p class="auth-intro">Enter your email and we'll send you a sign-in link. New here? The link creates your account — there's no password to remember.</p><form class="auth-email-form">${field('email', 'Email address', 'you@example.com', 'email')}<button class="auth-button auth-primary">Send sign-in link</button></form><div class="auth-or">OR</div><div class="auth-social">${provider('google')}${provider('apple')}</div>${message}<p class="auth-switch">Your sites, credits and settings follow your account on every device.</p></div>`;
     gate.scrollTop = 0;
@@ -32,7 +34,9 @@
       });
     });
   }
-  render('welcome');
+  // Landing back from a provider is not a fresh visit: the exchange is already
+  // running, so show that rather than the buttons that started it.
+  render(data?.auth.handoff().pending ? 'handoff' : 'welcome');
   gate.addEventListener('click', async event => {
     const target = event.composedPath().find(node => node instanceof HTMLButtonElement);
     if (!target) return;
@@ -59,19 +63,35 @@
     } catch (error) { status(error.message || 'Unable to send your sign-in link.', true); }
     finally { button.disabled = false; }
   });
-  // Never trust a cached token/kind or a URL parameter to reveal the app.
-  // Only the server's account subscription can unlock it for a real member.
+  // Never trust a cached token/kind or a URL parameter to reveal the app. Only
+  // the server's answer about this session can unlock it for a real member --
+  // the live subscription, or the confirmation the client asks for directly
+  // with a freshly minted token when a sign-in lands.
+  let confirmed = false;
   function lock() {
+    confirmed = false;
     dashboard.hidden = true;
     dashboard.inert = true;
     gate.hidden = false;
   }
   data?.account.subscribe(user => {
+    // `null` is not the server saying "guest": the live query re-runs
+    // unauthenticated while its socket re-authenticates, and treating that as
+    // an answer shut a member who had just signed in back out. An anonymous
+    // row is a real answer, and still locks.
+    if (user === null && confirmed && data.auth.state().kind === 'member') return;
     const member = Boolean(user && !user.isAnonymous);
+    confirmed = member;
     dashboard.hidden = !member;
     dashboard.inert = !member;
     gate.hidden = member;
     if (member) window.dispatchEvent(new Event('resize'));
   });
   data?.auth.onChange(state => { if (!state.signedIn || state.kind !== 'member') lock(); });
+  // A handoff that fails says so here. It used to fail into the welcome screen
+  // with nothing written on it, which reads as "nothing happened".
+  data?.auth.onHandoff(({ pending, error }) => {
+    if (pending) { if (!gate.classList.contains('auth-handoff')) render('handoff'); return; }
+    if (error) { render('welcome'); status(error, true); }
+  });
 })();

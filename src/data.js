@@ -2,9 +2,30 @@ const TOKEN_KEY = "forge-auth-token";
 const REFRESH_KEY = "forge-auth-refresh";
 const KIND_KEY = "forge-auth-kind";
 const VERIFIER_KEY = "forge-auth-verifier";
+const PENDING_KEY = "forge-auth-pending";
 const GUEST_RETRY_MS = [1000, 2000, 4000, 8000, 16000];
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const PROVIDER_LABELS = { google: "Google", apple: "Apple", link: "That sign-in link" };
+
+// A sign-in that comes back without a session has to say why. "It didn't work"
+// sends someone round the same loop again, and the loop is the bug: the front
+// door looks untouched, so the only thing left to try is the button that just
+// failed.
+function failure(provider, error) {
+  const label = PROVIDER_LABELS[provider] ?? "That sign-in";
+  const lead =
+    provider === "link" ? `${label} could not be used` : `${label} sign-in could not be completed`;
+  const detail = String(error?.message ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .pop();
+  return detail
+    ? `${lead}: ${detail.slice(0, 160)}`
+    : `${lead}. It may have expired or already been used — please try again.`;
+}
 
 // Convex Auth's client library is React-only, so the session lifecycle is
 // handled here: guests are signed in anonymously, sign-in codes (magic link or
@@ -19,6 +40,12 @@ export function createForgeData({
   authCode = null,
   wait = delay,
   navigate = () => {},
+  // Where a provider or a magic link should come back to. "/" leaves the app's
+  // path to be derived from the deployment's SITE_URL, which is a dependency
+  // the app does not need: it knows its own address. A SITE_URL that names the
+  // origin without the app's path sent everyone back to a page that is not the
+  // app, which no amount of client-side recovery can reach.
+  redirectTo = "/",
 }) {
   let token = read(TOKEN_KEY);
   let refreshToken = read(REFRESH_KEY);
@@ -29,6 +56,14 @@ export function createForgeData({
   let sessionVersion = 0;
   let signingOut = false;
   const listeners = new Set();
+  const accountListeners = new Set();
+  const handoffListeners = new Set();
+  // A sign-in that leaves the page — an OAuth provider, or a magic link opened
+  // later — only finishes on the way back in. Arriving with a code means one is
+  // in flight, so the app can say so rather than showing the front door again
+  // while it works.
+  let handoffPending = authCode === null ? null : (read(PENDING_KEY) ?? "link");
+  let handoffError = null;
 
   function read(key) {
     try {
@@ -62,6 +97,47 @@ export function createForgeData({
   function emit() {
     const snapshot = state();
     for (const listener of listeners) listener(snapshot);
+  }
+
+  function emitHandoff() {
+    const snapshot = { pending: handoffPending, error: handoffError };
+    for (const listener of handoffListeners) listener(snapshot);
+  }
+  function setHandoff(next, error = null) {
+    handoffPending = next;
+    handoffError = error;
+    emitHandoff();
+  }
+  function onHandoff(listener) {
+    handoffListeners.add(listener);
+    return () => handoffListeners.delete(listener);
+  }
+
+  // The server's answer about this session, delivered outside the live query.
+  function pushAccount(user) {
+    for (const listener of accountListeners) listener(user);
+  }
+
+  // Who the deployment says we are, asked over HTTP with the token in hand.
+  // The live client has to re-authenticate its socket before its own users.me
+  // can answer, and the app opens on that answer — so a slow, refused or
+  // still-reconnecting handshake used to strand a member who had just signed
+  // in behind the sign-in screen, holding valid tokens, with the single-use
+  // code already stripped from the URL and no way back but signing in again.
+  async function confirmMember(attempts = 3) {
+    if (typeof httpClient.query !== "function") return null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (token === null) return null;
+      httpClient.setAuth(token);
+      try {
+        const user = await httpClient.query(api.users.me, {});
+        if (user) return user;
+      } catch {
+        /* A blip on the way back in; the retry is the whole recovery. */
+      }
+      if (attempt < attempts - 1) await wait(400 * 2 ** attempt);
+    }
+    return null;
   }
 
   function authCall(args, { withToken }) {
@@ -180,10 +256,21 @@ export function createForgeData({
         const tokens = await exchangeCode(authCode);
         if (tokens) {
           applyTokens(tokens, "member", { reconnect: true });
+          write(PENDING_KEY, null);
+          setHandoff(null);
+          const user = await confirmMember();
+          if (user) pushAccount(user);
           return;
         }
-      } catch {
-        /* An expired or reused link keeps whatever session already exists. */
+        // A reply carrying no tokens is a refusal, not an outage.
+        write(PENDING_KEY, null);
+        setHandoff(null, failure(handoffPending, null));
+      } catch (error) {
+        // An expired or reused code keeps whatever session already exists —
+        // but it used to keep it silently, which is indistinguishable from
+        // never having signed in at all.
+        write(PENDING_KEY, null);
+        setHandoff(null, failure(handoffPending, error));
       }
     }
     if (token !== null || refreshToken !== null) {
@@ -197,7 +284,7 @@ export function createForgeData({
   async function signInWithEmail(email) {
     write(VERIFIER_KEY, null);
     const result = await authCall(
-      { provider: "resend", params: { email, redirectTo: "/" } },
+      { provider: "resend", params: { email, redirectTo } },
       { withToken: true },
     );
     return result?.started === true;
@@ -205,11 +292,21 @@ export function createForgeData({
 
   async function signInWith(provider) {
     write(VERIFIER_KEY, null);
-    const result = await authCall({ provider, params: { redirectTo: "/" } }, { withToken: true });
-    if (!result?.redirect) throw new Error(`Sign-in with ${provider} did not start`);
-    write(VERIFIER_KEY, result.verifier ?? null);
-    navigate(result.redirect);
-    return result.redirect;
+    setHandoff(provider);
+    try {
+      const result = await authCall({ provider, params: { redirectTo } }, { withToken: true });
+      if (!result?.redirect) throw new Error(`Sign-in with ${provider} did not start`);
+      write(VERIFIER_KEY, result.verifier ?? null);
+      // The verifier is only half of what the return leg needs; the other half
+      // is knowing a sign-in is in flight at all.
+      write(PENDING_KEY, provider);
+      navigate(result.redirect);
+      return result.redirect;
+    } catch (error) {
+      write(PENDING_KEY, null);
+      setHandoff(null, failure(provider, error));
+      throw error;
+    }
   }
 
   async function signOut() {
@@ -230,6 +327,8 @@ export function createForgeData({
         /* Already signed out server-side, or unreachable. */
       });
     }
+    write(PENDING_KEY, null);
+    setHandoff(null);
     applyTokens(null, null, { reconnect: true });
     signingOut = false;
     await startGuest();
@@ -242,9 +341,25 @@ export function createForgeData({
 
   return {
     ready,
-    auth: { state, onChange, signInWithEmail, signInWith, signOut, resume },
+    auth: {
+      state,
+      onChange,
+      handoff: () => ({ pending: handoffPending, error: handoffError }),
+      onHandoff,
+      signInWithEmail,
+      signInWith,
+      signOut,
+      resume,
+    },
     account: {
-      subscribe: (callback) => client.onUpdate(api.users.me, {}, callback),
+      subscribe: (callback) => {
+        accountListeners.add(callback);
+        const stop = client.onUpdate(api.users.me, {}, callback);
+        return () => {
+          accountListeners.delete(callback);
+          stop();
+        };
+      },
       providers: (callback) => client.onUpdate(api.users.providers, {}, callback),
       updateProfile: (name) => client.mutation(api.users.updateProfile, { name }),
       // The server deletes the session with the account, so the tokens held

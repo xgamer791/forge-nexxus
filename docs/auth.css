@@ -15,6 +15,11 @@
 .auth-welcome .auth-button{height:50px;border-radius:12px;border:0;background:#3a3a3c;color:#fff}
 .auth-welcome .apple{background:#fff;color:#000}
 .auth-fineprint{margin:4px 0 0;text-align:center;color:#8a8c8f;font-size:13px;line-height:18px}
+/* The return leg of a provider sign-in, on the welcome sheet it started from. */
+.auth-signing{display:flex;align-items:center;justify-content:center;gap:10px;min-height:50px;margin:0;color:#e9ebee;font-size:16px;font-weight:600;line-height:20px}
+.auth-spinner{width:18px;height:18px;flex:none;border-radius:50%;border:2px solid #4a4c4f;border-top-color:#e9ebee;animation:auth-spin .7s linear infinite}
+@keyframes auth-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.auth-spinner{animation-duration:2.4s}}
 .auth-login-content{max-width:430px;margin:auto;padding:clamp(70px,19.4dvh,181px) 20px 65px}
 .auth-back{position:relative;width:40px;height:28px;display:grid;place-items:center;color:#989a9c;touch-action:manipulation}
 .auth-back:before{content:"";position:absolute;inset:-8px -2px}
