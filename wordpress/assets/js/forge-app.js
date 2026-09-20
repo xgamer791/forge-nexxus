@@ -171,7 +171,7 @@ const SETTING_DEFAULTS = {
   codeWrap: false,
   themedDiff: true,
   reduceTransparency: true,
-  uiFont: 'System font',
+  uiFont: 'Switzer',
   codeFont: 'System monospace',
 };
 function knownSettings(values) {
@@ -282,7 +282,13 @@ function applySettings(values) {
   applyTransparency(values.reduceTransparency === true);
   document.querySelectorAll('.font-select[data-setting]').forEach(select => {
     const label = select.querySelector('span');
-    if (label) label.textContent = values[select.dataset.setting];
+    if (!label) return;
+    // An account saved before the typeface changed still holds the old name.
+    // Name what the interface actually renders in, not what it once did.
+    const menu = document.getElementById(select.dataset.fontMenu);
+    const offered = [...(menu?.querySelectorAll('button') ?? [])].map(option => option.textContent);
+    const saved = values[select.dataset.setting];
+    label.textContent = offered.includes(saved) ? saved : SETTING_DEFAULTS[select.dataset.setting];
   });
 }
 function saveSettings(patch) {
