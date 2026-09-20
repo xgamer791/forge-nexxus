@@ -140,9 +140,9 @@ describe("generate.run", () => {
     expect(calls[0].headers.authorization).toBe(`Bearer ${KEY}`);
     expect(calls[0].body.model).toBe("forge-test");
     const roles = calls[0].body.messages.map((m: any) => m.role);
-    expect(roles).toEqual(["system", "user"]);
+    expect(roles).toEqual(["system", "system", "user"]);
     expect(calls[0].body.messages[0].content).toContain("self-contained HTML file");
-    expect(calls[0].body.messages[1].content).toBe("A warm site for a neighbourhood bakery");
+    expect(calls[0].body.messages[2].content).toBe("A warm site for a neighbourhood bakery");
   });
 
   test("a second prompt is an edit: the current page goes along and the edit cost is charged", async () => {
@@ -156,11 +156,11 @@ describe("generate.run", () => {
     await member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" });
 
     const second = calls[1].body.messages;
-    expect(second.map((m: any) => m.role)).toEqual(["system", "system", "user", "assistant", "user"]);
-    expect(second[1].content).toContain(PAGE);
-    expect(second[2].content).toBe("A bakery site");
-    expect(second[3].content).toBe("Built the first version.");
-    expect(second[4].content).toBe("Add opening hours");
+    expect(second.map((m: any) => m.role)).toEqual(["system", "system", "system", "user", "assistant", "user"]);
+    expect(second[2].content).toContain(PAGE);
+    expect(second[3].content).toBe("A bakery site");
+    expect(second[4].content).toBe("Built the first version.");
+    expect(second[5].content).toBe("Add opening hours");
 
     expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE_TWO);
     expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toHaveLength(2);
@@ -354,8 +354,8 @@ describe("generate.run", () => {
     ]);
     // The model is told it may not build, and what standing in the way costs.
     const system = calls[0].body.messages.filter((m: any) => m.role === "system");
-    expect(system[1].content).toContain("This turn is TALK");
-    expect(system[1].content).toContain(`${REQUEST_COSTS.generate} credits and they have ${FREE_OPENING}`);
+    expect(system[2].content).toContain("This turn is TALK");
+    expect(system[2].content).toContain(`${REQUEST_COSTS.generate} credits and they have ${FREE_OPENING}`);
     // Held and settled as a chat, so the welcome credits are not eaten by one hello.
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       credits: FREE_OPENING - REQUEST_COSTS.chat,
