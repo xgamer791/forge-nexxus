@@ -43,8 +43,10 @@
     const heroLoops = [...gate.querySelectorAll('[data-hero-loop]')];
     if (!heroLoops.length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     if (heroLoops.length === 2) {
-      const lead = 0.16;
-      const fadeMs = 140;
+      // The file is a ping-pong whose last frame matches the first. Two
+      // layers cut on that match so the decoder never seeks on the visible
+      // picture — no fade, no endpoint hold.
+      const lead = 1 / 24;
       let active = heroLoops[0];
       let standby = heroLoops[1];
       let switching = false;
@@ -54,6 +56,7 @@
       heroLoops.forEach(video => {
         video.loop = false;
         video.muted = true;
+        video.playsInline = true;
         if (video.readyState >= 1) rewind(video);
         else video.addEventListener('loadedmetadata', () => rewind(video), { once: true });
       });
@@ -68,11 +71,9 @@
           const previous = active;
           active = standby;
           standby = previous;
-          setTimeout(() => {
-            previous.pause();
-            rewind(previous);
-            switching = false;
-          }, fadeMs);
+          previous.pause();
+          rewind(previous);
+          switching = false;
         } catch {
           switching = false;
         }
