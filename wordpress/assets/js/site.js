@@ -83,9 +83,8 @@
     heroLoops[0].loop = true;
   }
 
-  // Cycle the five homepage promises through one word-cascade stage. The
-  // first message gets a longer hold after a complete pass so the loop has a
-  // clear resting point instead of feeling continuously busy.
+  // Cycle the five homepage promises through one word-cascade stage. Every
+  // line sits for the same four seconds after the last word lands.
   const messageStage = document.querySelector('[data-hero-messages]');
   const heroMessages = [...(messageStage?.querySelectorAll('.hero-message') || [])];
   if (heroMessages.length) {
@@ -93,8 +92,7 @@
     const wordDelayMs = 95;
     const wordEnterMs = 766;
     const exitMs = 422;
-    const regularHoldMs = 4200;
-    const returningFirstHoldMs = 6500;
+    const holdMs = 4000;
     let stopped = false;
 
     heroMessages.forEach(message => {
@@ -118,7 +116,6 @@
       const wait = duration => new Promise(resolve => setTimeout(resolve, duration));
       const playMessages = async () => {
         let index = 0;
-        let completedPass = false;
         while (!stopped) {
           const message = heroMessages[index];
           message.classList.remove('is-leaving');
@@ -128,7 +125,7 @@
 
           const wordCount = Number(message.dataset.wordCount) || 1;
           await wait(wordEnterMs + ((wordCount - 1) * wordDelayMs));
-          await wait(index === 0 && completedPass ? returningFirstHoldMs : regularHoldMs);
+          await wait(holdMs);
           if (stopped) break;
 
           message.classList.remove('is-active');
@@ -137,10 +134,7 @@
           message.classList.remove('is-leaving');
 
           index += 1;
-          if (index === heroMessages.length) {
-            index = 0;
-            completedPass = true;
-          }
+          if (index === heroMessages.length) index = 0;
         }
       };
       void playMessages();
