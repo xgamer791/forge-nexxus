@@ -196,13 +196,10 @@ export const fail = internalMutation({
   },
 });
 
-// The deployment names the model. When asked who is answering, say that —
-// never a different provider or version the weights were trained to claim.
-// AI_MODEL_LABEL is an optional product/display name (e.g. "4.1 Flash");
-// it is only for this identity message and is never sent to the provider.
+// Wire facts only: the API model id and the provider host. When asked who is
+// answering, those may be reported; a marketing or product name may not.
 function chatIdentityMessage(): ChatMessage {
   const model = process.env.AI_MODEL?.trim() || "unset";
-  const label = process.env.AI_MODEL_LABEL?.trim() || "";
   const baseUrl = process.env.AI_BASE_URL?.replace(/\/+$/, "") ?? "";
   let host = "unset";
   if (baseUrl) {
@@ -212,18 +209,15 @@ function chatIdentityMessage(): ChatMessage {
       host = "unset";
     }
   }
-  const facts = label
-    ? `The configured chat model display name is ${label}, the API model id is ${model}, and the provider host is ${host}. `
-    : `The configured chat model id is ${model} and the provider host is ${host}. `;
-  const asked = label
-    ? "If the user asks what model, agent, LLM, or AI you are, answer plainly with that display name, API model id, and provider host. "
-    : "If the user asks what model, agent, LLM, or AI you are, answer plainly with that model id and provider host. ";
   return {
     role: "system",
     content:
-      facts +
-      asked +
-      "Do not invent a different provider or version. For all other questions stay Forge the designer and follow the existing BUILD/TALK rules.",
+      `The configured API model id is ${model} and the provider host is ${host}. ` +
+      "If the user asks what model, agent, LLM, or AI you are, you may report that model id and provider host as deployment facts. " +
+      "Do not invent a different provider. Do not invent or assert a marketing or product version name " +
+      '(for example do not claim "4.1" or any branded full name unless it appears in the model id itself). ' +
+      "If you do not know beyond those facts, say so plainly. " +
+      "For all other questions stay Forge the designer and follow the existing BUILD/TALK rules.",
   };
 }
 
