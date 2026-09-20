@@ -9,7 +9,7 @@
 <main class="app" hidden inert>
 <header class="chrome">
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
-<button class="globe-button" type="button" aria-label="Site address and domains" data-open="address" aria-haspopup="dialog"><svg><use href="#globe"/></svg></button>
+<button class="globe-button" type="button" aria-label="Domains" data-open="address" aria-haspopup="dialog"><svg><use href="#globe"/></svg></button>
 <button class="website-preview-button" type="button" aria-label="Preview website" aria-haspopup="dialog" aria-expanded="false"><svg><use href="#preview-eye"/></svg></button>
 </header>
 <div class="stage">
@@ -45,7 +45,7 @@
 <div class="handle"></div>
 </section>
 
-<section class="sheet dropdown address" role="dialog" aria-modal="true" aria-labelledby="address-title" hidden><header><button class="dismiss" aria-label="Close domains"><svg><use href="#close"/></svg></button><h2 id="address-title">Address</h2></header>
+<section class="sheet dropdown address" role="dialog" aria-modal="true" aria-labelledby="address-title" hidden><header><button class="dismiss" aria-label="Close domains"><svg><use href="#close"/></svg></button><h2 id="address-title">Domains</h2></header>
 <p class="sheet-copy address-loading" hidden>Checking your plan…</p>
 <div class="address-upsell" hidden>
 <svg class="address-hero" aria-hidden="true"><use href="#globe"/></svg>
@@ -62,7 +62,7 @@
 <div class="address-body">
 <p class="sheet-copy address-no-site" hidden>No site yet. Describe the site you want in the composer — once Forge has built it, its address is picked here.</p>
 <div class="address-site">
-<div class="address-tabs" role="tablist" aria-label="Address options">
+<div class="address-tabs" role="tablist" aria-label="Domain options">
 <button type="button" class="address-tab" role="tab" id="address-tab-forge" aria-controls="address-panel-forge" aria-selected="true" data-tab="address">Address</button>
 <button type="button" class="address-tab" role="tab" id="address-tab-custom" aria-controls="address-panel-custom" aria-selected="false" tabindex="-1" data-tab="custom">Custom domain</button>
 </div>
