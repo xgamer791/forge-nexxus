@@ -10,6 +10,153 @@
   const back = target => `<button class="auth-back" type="button" data-auth-screen="${target}" aria-label="Back">${icon('arrow-left')}</button>`;
   const mark = `<svg class="auth-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg>`;
   const field = (name, label, placeholder, type = 'text', autocomplete = name) => `<label class="auth-field">${label}<input name="${name}" type="${type}" placeholder="${placeholder}" autocomplete="${autocomplete}" required ${type === 'email' ? 'inputmode="email" autocapitalize="none"' : ''}></label>`;
+  const heroMessages = [
+    'World class website designs in minutes',
+    'Not just a beautiful design, we aim to scale your business',
+    'Fully customized tools with your needs in mind',
+    'Legendary customer support that exceeds expectations',
+    'Don’t fall behind ai, let it work for you with Forge Nexxus',
+  ];
+  const escapeHtml = value => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const heroFilm = () => {
+    const video = gate.dataset.heroVideo || '';
+    const poster = gate.dataset.heroPoster || '';
+    if (!video) return '';
+    const source = `<source src="${escapeHtml(video)}" type="video/mp4">`;
+    return `<div class="auth-hero-film" aria-hidden="true">
+      <video class="auth-hero-video is-active" autoplay muted playsinline preload="auto" poster="${escapeHtml(poster)}" tabindex="-1" disablepictureinpicture data-hero-loop>${source}</video>
+      <video class="auth-hero-video" muted playsinline preload="auto" tabindex="-1" disablepictureinpicture data-hero-loop>${source}</video>
+    </div>`;
+  };
+  const heroRotator = () => `<div class="auth-message-rotator" data-hero-messages aria-hidden="true">${
+    heroMessages.map((line, index) => `<p class="hero-message${index === 0 ? ' is-active' : ''}">${escapeHtml(line)}</p>`).join('')
+  }</div><ul class="visually-hidden">${
+    heroMessages.map(line => `<li>${escapeHtml(line)}</li>`).join('')
+  }</ul>`;
+
+  let stopHero = () => {};
+
+  function startHeroFilm() {
+    const heroLoops = [...gate.querySelectorAll('[data-hero-loop]')];
+    if (!heroLoops.length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (heroLoops.length === 2) {
+      const lead = 0.16;
+      const fadeMs = 140;
+      let active = heroLoops[0];
+      let standby = heroLoops[1];
+      let switching = false;
+      const rewind = video => {
+        try { video.currentTime = 0; } catch { /* seek before metadata */ }
+      };
+      heroLoops.forEach(video => {
+        video.loop = false;
+        video.muted = true;
+        if (video.readyState >= 1) rewind(video);
+        else video.addEventListener('loadedmetadata', () => rewind(video), { once: true });
+      });
+      const swap = async () => {
+        if (switching) return;
+        switching = true;
+        rewind(standby);
+        try {
+          await standby.play();
+          standby.classList.add('is-active');
+          active.classList.remove('is-active');
+          const previous = active;
+          active = standby;
+          standby = previous;
+          setTimeout(() => {
+            previous.pause();
+            rewind(previous);
+            switching = false;
+          }, fadeMs);
+        } catch {
+          switching = false;
+        }
+      };
+      let following = true;
+      const follow = () => {
+        if (!following) return;
+        if (
+          !switching &&
+          Number.isFinite(active.duration) &&
+          active.duration > lead &&
+          active.currentTime >= active.duration - lead
+        ) swap();
+        requestAnimationFrame(follow);
+      };
+      requestAnimationFrame(follow);
+      active.addEventListener('ended', () => { if (!switching) swap(); });
+      void active.play().catch(() => {});
+      const previousStop = stopHero;
+      stopHero = () => { following = false; previousStop(); };
+      return;
+    }
+    heroLoops[0].loop = true;
+    void heroLoops[0].play().catch(() => {});
+  }
+
+  function startHeroCascade() {
+    const messageStage = gate.querySelector('[data-hero-messages]');
+    const messages = [...(messageStage?.querySelectorAll('.hero-message') || [])];
+    if (!messages.length) return;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const wordDelayMs = 95;
+    const wordEnterMs = 766;
+    const exitMs = 422;
+    const holdMs = 4000;
+    let stopped = false;
+    const previousStop = stopHero;
+    stopHero = () => { stopped = true; previousStop(); };
+
+    messages.forEach(message => {
+      const words = message.textContent.trim().split(/\s+/);
+      const fragment = document.createDocumentFragment();
+      words.forEach((word, index) => {
+        const span = document.createElement('span');
+        span.className = 'hero-message-word';
+        span.style.setProperty('--word-index', String(index));
+        span.textContent = word;
+        fragment.append(span);
+      });
+      message.replaceChildren(fragment);
+      message.classList.remove('is-active', 'is-leaving');
+      message.dataset.wordCount = String(words.length);
+    });
+
+    if (reducedMotion) {
+      messages[0].classList.add('is-active');
+      return;
+    }
+
+    const wait = duration => new Promise(resolve => setTimeout(resolve, duration));
+    const playMessages = async () => {
+      let index = 0;
+      while (!stopped) {
+        const message = messages[index];
+        message.classList.remove('is-leaving');
+        await wait(53);
+        if (stopped) break;
+        message.classList.add('is-active');
+        const wordCount = Number(message.dataset.wordCount) || 1;
+        await wait(wordEnterMs + ((wordCount - 1) * wordDelayMs));
+        await wait(holdMs);
+        if (stopped) break;
+        message.classList.remove('is-active');
+        message.classList.add('is-leaving');
+        await wait(exitMs);
+        message.classList.remove('is-leaving');
+        index += 1;
+        if (index === messages.length) index = 0;
+      }
+    };
+    void playMessages();
+  }
+
   function status(message, error = false) {
     const element = gate.querySelector('.auth-message');
     element.textContent = message;
@@ -17,13 +164,21 @@
     element.classList.toggle('error', error);
   }
   function render(next) {
+    stopHero();
+    stopHero = () => {};
     // The handoff wears the welcome layout: it is the same front door, mid-step.
     gate.className = next === 'handoff' ? 'auth-gate auth-welcome auth-handoff' : `auth-gate auth-${next}`;
     const message = '<p class="auth-message" role="status" aria-live="polite" hidden></p>';
-    if (next === 'handoff') gate.innerHTML = `<div class="auth-hero">${mark}<h1>Forge Nexxus</h1><p>Signing you in…</p></div><div class="auth-welcome-sheet"><p class="auth-signing" role="status" aria-live="polite"><span class="auth-spinner" aria-hidden="true"></span>Finishing sign-in…</p><p class="auth-fineprint">Keep this page open — this only takes a moment.</p>${message}</div>`;
-    if (next === 'welcome') gate.innerHTML = `<div class="auth-hero">${mark}<h1>Forge Nexxus</h1><p>Describe the website you want. Forge designs it, builds it and publishes it.</p></div><div class="auth-welcome-sheet">${provider('apple')}${provider('google')}<button class="auth-button" type="button" data-auth-screen="email">Continue with email</button><p class="auth-fineprint">Every plan comes with monthly credits.</p>${message}</div>`;
+    if (next === 'handoff') gate.innerHTML = `${heroFilm()}<div class="auth-hero">${mark}<h1>Forge Nexxus</h1><p>Signing you in…</p></div><div class="auth-welcome-sheet"><p class="auth-signing" role="status" aria-live="polite"><span class="auth-spinner" aria-hidden="true"></span>Finishing sign-in…</p><p class="auth-fineprint">Keep this page open — this only takes a moment.</p>${message}</div>`;
+    if (next === 'welcome') gate.innerHTML = `${heroFilm()}<div class="auth-hero">${mark}<h1>Forge Nexxus</h1>${heroRotator()}</div><div class="auth-welcome-sheet">${provider('apple')}${provider('google')}<button class="auth-button" type="button" data-auth-screen="email">Continue with email</button><p class="auth-fineprint">Every plan comes with monthly credits.</p>${message}</div>`;
     if (next === 'email') gate.innerHTML = `<div class="auth-login-content">${back('welcome')}<h1>Sign in to build</h1><p class="auth-intro">Enter your email and we'll send you a sign-in link. New here? The link creates your account — there's no password to remember.</p><form class="auth-email-form">${field('email', 'Email address', 'you@example.com', 'email')}<button class="auth-button auth-primary">Send sign-in link</button></form><div class="auth-or">OR</div><div class="auth-social">${provider('google')}${provider('apple')}</div>${message}<p class="auth-switch">Your sites, credits and settings follow your account on every device.</p></div>`;
     gate.scrollTop = 0;
+    const film = gate.querySelector('.auth-hero-film');
+    if (film && gate.dataset.heroPoster) {
+      film.style.backgroundImage = `url("${gate.dataset.heroPoster}")`;
+    }
+    if (next === 'welcome' || next === 'handoff') startHeroFilm();
+    if (next === 'welcome') startHeroCascade();
     // Bind navigation to the button itself: SVG <use> targets on iOS can
     // originate in the referenced symbol instead of the button's DOM tree.
     gate.querySelectorAll('[data-auth-screen]').forEach(button => {
@@ -78,6 +233,9 @@
     dashboard.hidden = true;
     dashboard.inert = true;
     gate.hidden = false;
+    if (!gate.classList.contains('auth-welcome') && !gate.classList.contains('auth-email') && !gate.classList.contains('auth-handoff')) {
+      render('welcome');
+    }
   }
   data?.account.subscribe(user => {
     // `null` is not the server saying "guest": the live query re-runs
@@ -92,7 +250,10 @@
     window.ForgeOnboarding?.setMember(member ? user : null);
     if (!window.ForgeOnboarding) { dashboard.hidden = true; dashboard.inert = true; }
     gate.hidden = member;
-    if (member) window.dispatchEvent(new Event('resize'));
+    if (member) {
+      stopHero();
+      window.dispatchEvent(new Event('resize'));
+    }
   });
   data?.auth.onChange(state => { if (!state.signedIn || state.kind !== 'member') lock(); });
   // A handoff that fails says so here. It used to fail into the welcome screen
