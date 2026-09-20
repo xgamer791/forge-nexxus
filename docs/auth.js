@@ -49,8 +49,9 @@
       video.setAttribute('webkit-playsinline', '');
     });
     if (heroLoops.length === 2) {
-      // The file is one forward stroke plus the same frames reversed. Two
-      // layers cut on the matching end frames so iOS never seeks on screen.
+      // The file is one forward stroke that crossfades back to the first
+      // frame — no reversed frames. Two layers cut on the matching ends
+      // so iOS never seeks on screen.
       const lead = 2 / 24;
       let active = heroLoops[0];
       let standby = heroLoops[1];
