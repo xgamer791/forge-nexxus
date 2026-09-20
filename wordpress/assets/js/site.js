@@ -35,12 +35,30 @@
   const microphone = composer?.querySelector('.microphone');
   const restingPlaceholder = 'Describe the site you want…';
   if (composer && field) {
+    const root = document.documentElement;
+    const holdHero = () => {
+      window.scrollTo(0, 0);
+      const viewport = window.visualViewport;
+      if (viewport) root.style.setProperty('--vv-height', `${Math.round(viewport.height)}px`);
+    };
+    const startTyping = () => {
+      if (window.matchMedia('(max-width:899.98px)').matches) root.classList.add('hero-is-typing');
+      holdHero();
+    };
+    const stopTyping = () => {
+      root.classList.remove('hero-is-typing');
+      root.style.removeProperty('--vv-height');
+    };
+    field.addEventListener('focus', startTyping);
+    field.addEventListener('blur', stopTyping);
+    window.visualViewport?.addEventListener('resize', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
+    window.visualViewport?.addEventListener('scroll', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
     field.addEventListener('keydown', event => {
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); composer.requestSubmit(); }
     });
     composer.addEventListener('submit', event => {
       const prompt = field.value.trim();
-      if (!prompt) { event.preventDefault(); field.focus(); return; }
+      if (!prompt) { event.preventDefault(); field.focus({ preventScroll: true }); return; }
       field.value = prompt;
     });
     add?.addEventListener('click', () => {
@@ -60,7 +78,7 @@
     microphone?.addEventListener('click', () => {
       if (!SpeechRecognition) {
         field.placeholder = 'Voice input is not supported in this browser';
-        field.focus();
+        field.focus({ preventScroll: true });
         return;
       }
       if (microphone.getAttribute('aria-pressed') === 'true') {
@@ -95,7 +113,7 @@
       recognition.onend = () => {
         setVoiceInputActive(false);
         field.value = field.value.trimEnd();
-        field.focus();
+        field.focus({ preventScroll: true });
       };
       try { recognition.start(); } catch { setVoiceInputActive(false); }
     });

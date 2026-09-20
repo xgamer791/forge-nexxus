@@ -1,28 +1,30 @@
 :root,html[data-theme=dark]{color-scheme:dark;--bg:#121315;--text:#e9ebee;--muted:#e0e2e5;--subdued:#5e6063;--border:#2e3033;--surface:#18191b;--panel:#161719;--sheet:#1e2022;--elevated:#181a1b;--divider:#292a2d;--handle:#47494c;--disc:#26282b;--icon:#7d7f82;--focus:#9fa1a4;--backdrop:rgba(0,0,0,.5);--nav-backdrop:rgba(0,3,5,.67);--toggle-on:#34c759;--toggle-off:#39393d;--menu:#1c1c1e;--chip:#2b2d30;--menu-shadow:0 8px 28px rgba(0,0,0,.45);--card:#2c2c2e;--ok:#4ade80;--ok-soft:rgba(74,222,128,.14);--danger:#f87171;--danger-soft:rgba(248,113,113,.16);--bottom:env(safe-area-inset-bottom,0px);--composer-bottom:20px;--shell:640px;--drawer:min(320px,calc(100vw - 48px));font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:17px}
-html[data-theme=light]{color-scheme:light;--bg:#f2f2f7;--text:#1c1c1e;--muted:#3a3a3c;--subdued:#6e6e73;--border:#d1d1d6;--surface:#ffffff;--panel:#ffffff;--sheet:#ffffff;--elevated:#ffffff;--divider:#e5e5ea;--handle:#c7c7cc;--disc:#e5e5ea;--icon:#6e6e73;--focus:#8e8e93;--backdrop:rgba(0,0,0,.32);--nav-backdrop:rgba(0,0,0,.28);--toggle-on:#34c759;--toggle-off:#d1d1d6;--menu:#ffffff;--chip:#f2f2f7;--menu-shadow:0 8px 28px rgba(0,0,0,.16);--card:#f2f2f7;--ok:#1a7f37;--ok-soft:rgba(26,127,55,.12);--danger:#c0362c;--danger-soft:rgba(192,54,44,.12)}*{box-sizing:border-box}html,body{height:100%;overflow:hidden;overscroll-behavior:none}body{margin:0;background:var(--bg);color:var(--text)}button,input,select,textarea{font:inherit;color:inherit}button{border:0;background:none;padding:0;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}button[aria-disabled=true]{cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--focus);outline-offset:3px}svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}.symbols{position:absolute;width:0;height:0;overflow:hidden}[hidden]{display:none!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important}.app{position:fixed;inset:0;width:100%;height:100%;max-width:var(--shell);margin:0 auto;overflow:hidden}.hamburger{position:absolute;left:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center}.hamburger svg{width:26px;height:26px;fill:currentColor;stroke:none}.greeting{position:absolute;top:42.9185%;left:0;width:100%;padding:0 32px;text-align:center;pointer-events:none}.forge-mark{width:23px;height:28px;stroke:none;display:block;margin:auto}.greeting h1{font-size:17px;line-height:32px;letter-spacing:-.75px;font-weight:400;margin:22px 0 0}.greeting-sub{margin:2px 0 0;font-size:15px;line-height:20px;color:var(--subdued)}.composer-area{position:fixed;bottom:20px;left:max(16px,calc((100vw - var(--shell))/2 + 16px));right:max(16px,calc((100vw - var(--shell))/2 + 16px))}.composer-error{margin:0 8px 8px;color:var(--danger);font-size:15px;line-height:20px}.composer{height:97px;border:1px solid var(--border);border-radius:27px;background:var(--surface);padding:14px 16px 12px}.composer textarea{display:block;border:0;background:none;resize:none;width:100%;padding:0;height:26px;line-height:23px;font-size:17px;outline:none}.composer textarea::placeholder{color:var(--muted);opacity:1}.toolbar{display:flex;align-items:center;height:24px;margin-top:16px;gap:15px}.toolbar button{display:flex;align-items:center;justify-content:center}.toolbar .add{width:23px;height:24px}.add svg{width:19px;height:19px}.toolbar .microphone{margin-left:auto;width:21px;height:24px}.microphone svg{width:18px;height:23px}.backdrop{position:fixed;inset:0;width:100%;height:100%;background:var(--backdrop);z-index:2}.sheet{position:fixed;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));right:max(0px,calc((100vw - var(--shell))/2));z-index:3;background:var(--sheet);border-radius:28px 28px 0 0;padding:0 16px var(--bottom);max-height:calc(100% - max(55px, env(safe-area-inset-top, 0px) + 22px));overflow:auto;scrollbar-width:none}.handle{width:36px;height:4px;background:var(--handle);border-radius:3px;margin:8px auto 0}.sheet header{position:relative;height:60px;display:flex;align-items:center;justify-content:center}.sheet h2{font-size:17px;line-height:22px;font-weight:600;margin:0}.dismiss{position:absolute;left:0;top:12px;width:36px;height:36px;background:var(--panel);border-radius:50%;display:grid;place-items:center}.dismiss svg{width:28px;height:28px;stroke-width:1.8}.group{border-radius:21px;background:var(--panel);overflow:hidden}.group button{width:100%}.group button+button{border-top:1px solid var(--divider)}.chevron{width:17px;height:17px;color:var(--subdued);margin-left:13px;stroke-width:2}.search{height:44px;border-radius:25px;background:var(--panel);display:flex;align-items:center;padding:0 15px;gap:9px;color:var(--subdued)}.search svg{width:16px;height:16px;stroke-width:1.8}.search input{min-width:0;width:100%;padding:0;border:0;background:none;font-size:17px;line-height:22px;outline:none}.search input::placeholder{color:var(--muted);opacity:1}.sheet-copy{margin:4px 8px 16px;font-size:17px;line-height:22px;color:var(--muted)}.reference .hamburger{top:61px}@media(prefers-reduced-motion:no-preference){button:active:not([aria-disabled=true]):not([disabled]){filter:brightness(1.15)}}
+html[data-theme=light]{color-scheme:light;--bg:#f2f2f7;--text:#1c1c1e;--muted:#3a3a3c;--subdued:#6e6e73;--border:#d1d1d6;--surface:#ffffff;--panel:#ffffff;--sheet:#ffffff;--elevated:#ffffff;--divider:#e5e5ea;--handle:#c7c7cc;--disc:#e5e5ea;--icon:#6e6e73;--focus:#8e8e93;--backdrop:rgba(0,0,0,.32);--nav-backdrop:rgba(0,0,0,.28);--toggle-on:#34c759;--toggle-off:#d1d1d6;--menu:#ffffff;--chip:#f2f2f7;--menu-shadow:0 8px 28px rgba(0,0,0,.16);--card:#f2f2f7;--ok:#1a7f37;--ok-soft:rgba(26,127,55,.12);--danger:#c0362c;--danger-soft:rgba(192,54,44,.12)}*{box-sizing:border-box}html,body{height:100%;overflow:hidden;overscroll-behavior:none}body{margin:0;background:var(--bg);color:var(--text)}button,input,select,textarea{font:inherit;color:inherit}button{border:0;background:none;padding:0;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}button[aria-disabled=true]{cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--focus);outline-offset:3px}svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}.symbols{position:absolute;width:0;height:0;overflow:hidden}[hidden]{display:none!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important}.app{position:fixed;inset:0;width:100%;height:100%;max-width:var(--shell);margin:0 auto;overflow:hidden}.hamburger{position:absolute;left:14px;top:calc((var(--header) - 40px) / 2);width:40px;height:40px;display:grid;place-items:center}.hamburger svg{width:26px;height:26px;fill:currentColor;stroke:none}.greeting{position:absolute;top:42.9185%;left:0;width:100%;padding:0 32px;text-align:center;pointer-events:none}.forge-mark{width:23px;height:28px;stroke:none;display:block;margin:auto}.greeting h1{font-size:17px;line-height:32px;letter-spacing:-.75px;font-weight:400;margin:22px 0 0}.greeting-sub{margin:2px 0 0;font-size:15px;line-height:20px;color:var(--subdued)}.composer-area{position:fixed;bottom:20px;left:max(16px,calc((100vw - var(--shell))/2 + 16px));right:max(16px,calc((100vw - var(--shell))/2 + 16px))}.composer-error{margin:0 8px 8px;color:var(--danger);font-size:15px;line-height:20px}.composer{height:97px;border:1px solid var(--border);border-radius:27px;background:var(--surface);padding:14px 16px 12px}.composer textarea{display:block;border:0;background:none;resize:none;width:100%;padding:0;height:26px;line-height:23px;font-size:17px;outline:none}.composer textarea::placeholder{color:var(--muted);opacity:1}.toolbar{display:flex;align-items:center;height:24px;margin-top:16px;gap:15px}.toolbar button{display:flex;align-items:center;justify-content:center}.toolbar .add{width:23px;height:24px}.add svg{width:19px;height:19px}.toolbar .microphone{margin-left:auto;width:21px;height:24px}.microphone svg{width:18px;height:23px}.backdrop{position:fixed;inset:0;width:100%;height:100%;background:var(--backdrop);z-index:2}.sheet{position:fixed;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));right:max(0px,calc((100vw - var(--shell))/2));z-index:3;background:var(--sheet);border-radius:28px 28px 0 0;padding:0 16px var(--bottom);max-height:calc(100% - max(55px, env(safe-area-inset-top, 0px) + 22px));overflow:auto;scrollbar-width:none}.handle{width:36px;height:4px;background:var(--handle);border-radius:3px;margin:8px auto 0}.sheet header{position:relative;height:60px;display:flex;align-items:center;justify-content:center}.sheet h2{font-size:17px;line-height:22px;font-weight:600;margin:0}.dismiss{position:absolute;left:0;top:12px;width:36px;height:36px;background:var(--panel);border-radius:50%;display:grid;place-items:center}.dismiss svg{width:28px;height:28px;stroke-width:1.8}.group{border-radius:21px;background:var(--panel);overflow:hidden}.group button{width:100%}.group button+button{border-top:1px solid var(--divider)}.chevron{width:17px;height:17px;color:var(--subdued);margin-left:13px;stroke-width:2}.search{height:44px;border-radius:25px;background:var(--panel);display:flex;align-items:center;padding:0 15px;gap:9px;color:var(--subdued)}.search svg{width:16px;height:16px;stroke-width:1.8}.search input{min-width:0;width:100%;padding:0;border:0;background:none;font-size:17px;line-height:22px;outline:none}.search input::placeholder{color:var(--muted);opacity:1}.sheet-copy{margin:4px 8px 16px;font-size:17px;line-height:22px;color:var(--muted)}.reference .hamburger{top:61px}@media(prefers-reduced-motion:no-preference){button:active:not([aria-disabled=true]):not([disabled]){filter:brightness(1.15)}}
 /* Fixed logical iPhone frame used only by visual comparison URLs. */
 body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;height:auto;overflow:visible}.app.reference{position:relative;inset:auto;top:auto;left:auto;width:430px;height:932px;margin:0}
 /* Optical corrections from independent reference review. */
 .greeting h1{transform:scaleX(.965)}
 
-/* The icon row is a fixed instrument panel. Menus hang from its bottom edge
-   instead of covering it, and the stage can slide without taking the icons. */
+/* The icon row is a 55px instrument panel. Icons stay 40px and sit in the
+   vertical middle. status-bar-style=default already keeps the system bar
+   outside the web layer. */
 :root{
-  --chrome:64px;
-  --header:calc(var(--status-strip,env(safe-area-inset-top,0px)) + var(--chrome));
+  --chrome:55px;
+  --status-strip:0px;
+  --header:var(--chrome);
 }
 
 /* Everything docks to the layout viewport. The iOS 26 Home Screen strip is WebKit 301994:
    black-translucent shrinks the web layer by the status-bar height and paints the gap above it.
    Only status-bar-style=default (read when the icon is added) removes it; no CSS can reach it. */
 .stage{position:absolute;inset:0;z-index:1}
-.chrome{position:absolute;top:0;left:0;right:0;height:var(--header);z-index:6;background:var(--bg);pointer-events:none}
-.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:calc(var(--status-strip,env(safe-area-inset-top,0px)) + 12px);pointer-events:auto;z-index:0}
-.app.navigation-open .chrome,.app.sheet-open .chrome,.app:has(.overlay.preview:not([hidden])) .chrome{box-shadow:0 1px 0 var(--border)}
+.chrome{position:absolute;top:0;left:0;right:0;height:var(--header);z-index:6;background:#fff;color:#1c1c1e;pointer-events:none}
+.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{color:#1c1c1e}
+.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:calc((var(--header) - 40px) / 2);pointer-events:auto;z-index:0}
 .composer-area{position:absolute;bottom:20px;left:16px;right:16px}
 .app.reference .composer-area{left:16px;right:16px;bottom:var(--composer-bottom)}
 
-.sheet{position:fixed;left:max(0px,calc((100vw - var(--shell))/2));right:max(0px,calc((100vw - var(--shell))/2));bottom:0;overscroll-behavior:none}
+.sheet{position:fixed;left:max(0px,calc((100vw - var(--shell))/2));right:max(0px,calc((100vw - var(--shell))/2));bottom:0;overscroll-behavior:none;background:#fff;color:#1c1c1e}
 .sheet[hidden],.appearance[hidden]{display:block!important;position:fixed!important;top:auto!important;left:-100vw!important;right:auto!important;bottom:auto!important;width:0!important;height:0!important;max-height:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;transform:translate3d(0,100vh,0)!important}
 /* The dimmer stays in place. Transform parking made it slide up from the bottom. */
 .backdrop[hidden]{display:block!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important;transform:none!important}
@@ -31,8 +33,16 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .backdrop{position:fixed}
 .app.reference .sheet,.app.reference .backdrop{position:absolute;left:0;right:0}
 
-/* Navigation drawer, measured from the supplied mobile reference. */
-.navigation{position:fixed;z-index:4;top:var(--header);bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:var(--drawer);background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;transform:translate3d(-100%,0,0)}
+/* Header, drawer, address, preview, settings and every other pull-out stay
+   white in both themes. Children inherit light-theme ink so copy stays readable. */
+.chrome,.navigation,.sheet,.dropdown,.appearance,.overlay,.theme-menu,.font-menu,.site-menu{
+  --bg:#fff;--text:#1c1c1e;--muted:#3a3a3c;--subdued:#6e6e73;--border:#d1d1d6;--surface:#fff;--panel:#fff;--sheet:#fff;--elevated:#fff;--divider:#e5e5ea;--handle:#c7c7cc;--disc:#e5e5ea;--icon:#6e6e73;--chip:#f2f2f7;--card:#f2f2f7;--menu:#fff;--menu-shadow:0 8px 28px rgba(0,0,0,.16)
+}
+.chrome,.navigation,.sheet,.dropdown,.appearance,.overlay,.theme-menu,.font-menu{
+  background:#fff;
+  color:#1c1c1e;
+}
+.navigation{position:fixed;z-index:4;top:var(--header);bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:var(--drawer);background:#fff;color:#1c1c1e;border-right:1px solid var(--border);display:flex;flex-direction:column;transform:translate3d(-100%,0,0)}
 .app.navigation-open .navigation:not(.is-closing){transform:translate3d(0,0,0)}
 .navigation.is-closing{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:none}
 html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)}
@@ -40,10 +50,10 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 /* iOS tints the standalone status bar from whatever paints beneath it. Keep the
    dimmer out of that strip so the tint never caches the darkened page color. */
 .backdrop{top:var(--header)}
-.status-shield{display:none;position:fixed;top:0;left:0;right:0;height:var(--status-strip,env(safe-area-inset-top,0px));background:var(--bg);z-index:3;pointer-events:none}
-.app.sheet-open .status-shield,.app.navigation-open .status-shield{display:block}
+.status-shield{display:none;position:fixed;top:0;left:0;right:0;height:var(--status-strip,env(safe-area-inset-top,0px));background:#fff;z-index:3;pointer-events:none}
+.app.sheet-open .status-shield,.app.navigation-open .status-shield{display:none}
 .app.reference .status-shield{display:none}
-.nav-content{padding:16px;overflow:auto;flex:1;min-height:0}
+.nav-content{padding:32px 16px 16px;overflow:auto;flex:1;min-height:0}
 .new-site{height:44px;width:100%;border:1px solid var(--border);border-radius:24px;background:var(--surface);display:flex;align-items:center;padding:0 17px;gap:13px;font-size:17px;font-weight:500;line-height:20px}
 .new-site svg{width:17px;height:17px;stroke-width:2.2}
 .site-list{margin-top:19px}
@@ -64,7 +74,7 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .settings{margin-left:auto;width:34px;height:34px;display:grid;place-items:center;color:var(--focus)}
 .settings svg{width:26px;height:26px;fill:currentColor;stroke:none}
 .app.reference .navigation{position:absolute;left:0;width:320px}
-.app.reference .nav-content{padding-top:16px}
+.app.reference .nav-content{padding-top:32px}
 
 /* Credits card: the plan and what is left of this period, above the footer. */
 .credits-card{flex-shrink:0;margin:0 12px 12px;padding:12px 14px;border:1px solid var(--border);border-radius:16px;background:var(--surface);display:grid;gap:10px}
@@ -99,9 +109,9 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 @keyframes sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
 
 /* Appearance and the other full-screen settings screens share one shell. */
-.appearance,.overlay{position:fixed;z-index:5;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(var(--shell),100vw);max-width:var(--shell);background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+.appearance,.overlay{position:fixed;z-index:5;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(var(--shell),100vw);max-width:var(--shell);background:#fff;color:#1c1c1e;display:flex;flex-direction:column}
 .appearance,.overlay:not(.preview){z-index:7}
-.overlay.preview{top:var(--header);z-index:5}
+.overlay.preview{top:var(--header);z-index:5;background:#fff;color:#1c1c1e}
 .overlay.preview .appearance-header{margin-top:0}
 .appearance.is-open,.overlay.is-open{animation:overlay-in .7s cubic-bezier(.22,1,.36,1) both}
 @keyframes overlay-in{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
@@ -128,7 +138,7 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .theme-select,.font-select{flex-shrink:0;height:32px;max-width:168px;margin-top:2px;padding:0 12px 0 14px;border-radius:16px;background:var(--chip);border:1px solid var(--border);display:flex;align-items:center;gap:6px;font-size:17px;line-height:20px;color:var(--text)}
 .theme-select svg,.font-select svg{width:12px;height:12px;stroke-width:2.2;color:var(--muted)}
 .theme-select span,.font-select span{max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.theme-menu,.font-menu{position:absolute;right:16px;z-index:6;width:168px;padding:6px 0;background:var(--menu);border:1px solid var(--border);border-radius:14px;box-shadow:var(--menu-shadow)}
+.theme-menu,.font-menu{position:absolute;right:16px;z-index:6;width:168px;padding:6px 0;background:#fff;color:#1c1c1e;border:1px solid var(--border);border-radius:14px;box-shadow:var(--menu-shadow)}
 .theme-menu:not([hidden]),.font-menu:not([hidden]){animation:popover-in .7s cubic-bezier(.22,1,.36,1) both;transform-origin:top right}
 @keyframes popover-in{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 .theme-menu{top:58px}
@@ -152,7 +162,7 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .toggle[aria-pressed=true]{background:var(--toggle-on)}
 .toggle[aria-pressed=true]::after{transform:translateX(20px)}
 .type-size{flex-shrink:0;font-size:17px;line-height:22px;color:var(--muted);margin-top:2px}
-html[data-theme=light] .appearance-card,html[data-theme=light] .appearance-stack,html[data-theme=light] .theme-menu,html[data-theme=light] .font-menu{border:1px solid var(--border)}
+.appearance-card,.appearance-stack,.theme-menu,.font-menu{border:1px solid var(--border)}
 .app.reference .appearance,.app.reference .overlay{position:absolute;left:0;width:430px}
 .appearance.opaque-surfaces ~ .backdrop{background:var(--bg);opacity:.82}
 .app.opaque-surfaces .backdrop.is-dim{background:var(--nav-backdrop)}
@@ -263,8 +273,8 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .site-bar-preview[disabled]{opacity:.5;cursor:default}
 .preview-frame{flex:1;min-height:0;position:relative;background:#fff}
 .preview-iframe{display:block;width:100%;height:100%;border:0;background:#fff}
-.preview-empty{position:absolute;inset:0;margin:0;display:grid;place-items:center;padding:32px;text-align:center;color:var(--subdued);background:var(--bg);font-size:17px;line-height:23px}
-.preview-footer{flex-shrink:0;border-top:1px solid var(--border);padding:12px 16px max(12px,env(safe-area-inset-bottom));display:grid;gap:8px;background:var(--bg)}
+.preview-empty{position:absolute;inset:0;margin:0;display:grid;place-items:center;padding:32px;text-align:center;color:var(--subdued);background:#fff;font-size:17px;line-height:23px}
+.preview-footer{flex-shrink:0;border-top:1px solid var(--border);padding:12px 16px max(12px,env(safe-area-inset-bottom));display:grid;gap:8px;background:#fff}
 .preview-status{margin:0;font-size:14px;line-height:18px;color:var(--subdued)}
 .preview-link{font-size:15px;line-height:20px;color:var(--text);text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .preview-actions{display:flex;align-items:center;gap:12px}
@@ -305,7 +315,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
    the way the globe is reached, rather than up from the thumb. It keeps every
    sheet part — header, dismiss, copy, groups — and turns the geometry over:
    square at the top edge, rounded below, handle at the bottom. */
-.dropdown{top:var(--header);bottom:auto;border-radius:0 0 28px 28px;padding:4px 16px 0;min-height:0;max-height:calc(100% - var(--header) - 28px);display:flex;flex-direction:column;box-shadow:0 18px 44px rgba(0,0,0,.34)}
+.dropdown{top:var(--header);bottom:auto;border-radius:0 0 28px 28px;padding:4px 16px 0;min-height:0;max-height:calc(100% - var(--header) - 28px);display:flex;flex-direction:column;background:#fff;color:#1c1c1e;box-shadow:0 18px 44px rgba(0,0,0,.16)}
 .dropdown .handle{margin:auto auto max(10px,var(--bottom));flex:none}
 .dropdown header{height:52px}
 @media(prefers-reduced-motion:no-preference){
@@ -316,15 +326,14 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 @keyframes dropdown-in{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 @keyframes dropdown-out{from{transform:translateY(0)}to{transform:translateY(-100%)}}
 .app.reference .dropdown{position:absolute;left:0;right:0}
-html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
-
 /* The globe: the site's address, opposite the drawer button. It appears only
    once there is a site to have an address. */
-.globe-button{position:absolute;right:58px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
+.globe-button{position:absolute;right:58px;top:calc((var(--header) - 40px) / 2);width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
 .globe-button svg{width:28px;height:28px;fill:none;stroke:currentColor}
-.website-preview-button{position:absolute;right:14px;top:max(12px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
+.website-preview-button{position:absolute;right:14px;top:calc((var(--header) - 40px) / 2);width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
 .website-preview-button svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2}
-.app.reference .chrome .hamburger,.app.reference .chrome .globe-button,.app.reference .chrome .website-preview-button{top:calc(var(--status-strip,0px) + 12px)}
+.app.reference{--header:calc(var(--status-strip,0px) + var(--chrome))}
+.app.reference .chrome .hamburger,.app.reference .chrome .globe-button,.app.reference .chrome .website-preview-button{top:var(--status-strip,0px)}
 .sheet:focus{outline:none}
 .dismiss,.dismiss:focus,.dismiss:focus-visible,.dismiss:active{-webkit-appearance:none;appearance:none;background:transparent!important;border:0!important;border-radius:0!important;outline:none!important;box-shadow:none!important}
 
@@ -476,10 +485,9 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
   .site-bar{margin:0 10px 10px}
   /* Sheets are a thumb's gesture. With a pointer they are dialogs: centred,
      rounded all round, no drag handle to offer. */
-  .sheet:not(.dropdown){top:50%;bottom:auto;left:50%;right:auto;width:min(520px,calc(100vw - 64px));transform:translateY(-50%);border-radius:28px;padding:0 20px 24px;max-height:calc(100% - 96px);margin-left:calc(min(520px,100vw - 64px)/-2);box-shadow:0 24px 60px rgba(0,0,0,.34)}
+  .sheet:not(.dropdown){top:50%;bottom:auto;left:50%;right:auto;width:min(520px,calc(100vw - 64px));transform:translateY(-50%);border-radius:28px;padding:0 20px 24px;max-height:calc(100% - 96px);margin-left:calc(min(520px,100vw - 64px)/-2);box-shadow:0 24px 60px rgba(0,0,0,.18)}
   .sheet:not(.dropdown) .handle{display:none}
   .sheet:not(.dropdown).is-open{animation:dialog-in .7s cubic-bezier(.22,1,.36,1) both}
-  html[data-theme=light] .sheet:not(.dropdown){box-shadow:0 24px 60px rgba(0,0,0,.18)}
   /* The domain panel keeps coming down, but from the globe rather than from
      the top edge of the window: a menu belonging to the button that opened it. */
   .dropdown{top:var(--header);left:auto;right:max(16px,calc((100vw - var(--shell))/2));width:min(480px,calc(100vw - 48px));border-radius:24px;padding:4px 18px 0;min-height:0;max-height:calc(100% - var(--header) - 32px)}
@@ -491,8 +499,7 @@ html[data-theme=light] .dropdown{box-shadow:0 18px 44px rgba(0,0,0,.16)}
      rather than as a phone screen stretched. */
   /* The drawer stays on the shell's left edge so a push keeps it flush
      with the dashboard instead of leaving a gap to the window. */
-  .navigation{width:var(--drawer);box-shadow:0 0 40px rgba(0,0,0,.28)}
-  html[data-theme=light] .navigation{box-shadow:0 0 40px rgba(0,0,0,.12)}
+  .navigation{width:var(--drawer);box-shadow:0 0 40px rgba(0,0,0,.12)}
   .preview-actions .chip-button{flex:0 0 auto;min-width:180px}
   /* A built site is a website: preview it at a website's width. */
   .overlay.preview{width:min(1180px,calc(100vw - 64px));max-width:none;left:50%;margin-left:calc(min(1180px,100vw - 64px)/-2)}
