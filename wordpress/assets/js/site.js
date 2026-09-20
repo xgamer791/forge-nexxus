@@ -26,6 +26,23 @@
     document.querySelectorAll('[data-member-text]').forEach(el => { el.textContent = el.dataset.memberText; });
   }
 
+  // Native loop only. Seeking on ended rewinds a playing element and
+  // reads as a pause; the file already wraps last shot into the first.
+  const heroLoop = document.querySelector('[data-hero-loop]');
+  if (heroLoop && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    heroLoop.muted = true;
+    heroLoop.defaultMuted = true;
+    heroLoop.playsInline = true;
+    heroLoop.loop = true;
+    const keepPlaying = () => {
+      if (heroLoop.paused) void heroLoop.play();
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) keepPlaying();
+    });
+    keepPlaying();
+  }
+
   // Cycle the five homepage promises through one word-cascade stage. The
   // first message gets a longer hold after a complete pass so the loop has a
   // clear resting point instead of feeling continuously busy.
