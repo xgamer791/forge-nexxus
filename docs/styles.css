@@ -18,7 +18,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 
 /* Navigation drawer, measured from the supplied mobile reference. */
 .navigation{position:fixed;z-index:4;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(320px,calc(100vw - 48px));background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column}
-.app.navigation-open .navigation{animation:navigation-in .7s cubic-bezier(.22,1,.36,1) both;will-change:transform}
+.app.navigation-open .navigation{animation:navigation-in .7s cubic-bezier(.4,0,.2,1) both;will-change:transform}
 @keyframes navigation-in{from{transform:translate3d(-100%,0,0)}to{transform:translate3d(0,0,0)}}
 .navigation-open .backdrop{background:var(--nav-backdrop)}
 /* iOS tints the standalone status bar from whatever paints beneath it. Keep the
