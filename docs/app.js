@@ -473,15 +473,17 @@ function finishHide(element) {
     if (pending.transition) element.removeEventListener('transitionend', pending.transition);
     pendingPanelHides.delete(element);
   }
+  // A close animation is filled forwards, and a finished fill outranks inline
+  // style. Left in place it holds the next open off-screen, so every panel
+  // drops its animations here rather than only the drawer and the dimmer.
+  element.getAnimations().forEach(animation => animation.cancel());
   if (element.classList.contains('navigation')) {
     element.style.transform = DRAWER_OFF;
-    element.getAnimations().forEach(animation => animation.cancel());
     parkStage();
   }
   if (element === backdrop) {
     element.style.opacity = '0';
     element.style.transform = 'none';
-    element.getAnimations().forEach(animation => animation.cancel());
     element.classList.remove('is-nav', 'is-dim');
   }
   element.hidden = true;
@@ -661,6 +663,7 @@ function openMenu(name, trigger) {
   if (pendingPanelHides.has(panel)) finishHide(panel);
   if (panel.classList.contains('address')) showAddressTab('address');
   panel.hidden = false;
+  panel.getAnimations().forEach(animation => animation.cancel());
   panel.style.transform = '';
   panel.style.animation = '';
   panel.classList.remove('is-closing', 'is-dragging', 'is-dismissing', 'is-settled');
