@@ -36,16 +36,19 @@
   const restingPlaceholder = 'Describe the site you want…';
   if (composer && field) {
     const root = document.documentElement;
-    const keyboardInset = () => {
-      const vk = navigator.virtualKeyboard?.boundingRect?.height;
-      if (typeof vk === 'number' && vk > 0) return Math.round(vk);
+    const visibleBottom = () => {
+      const keyboard = navigator.virtualKeyboard?.boundingRect;
+      if (keyboard && keyboard.height > 0) return keyboard.y;
       const viewport = window.visualViewport;
-      if (!viewport) return 0;
-      return Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop));
+      return viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
     };
     let lockedScrollY = 0;
     const holdHero = () => {
-      root.style.setProperty('--keyboard', `${keyboardInset()}px`);
+      // Start each measurement from the composer's real place in the hero,
+      // then move only the portion that the keyboard would cover.
+      root.style.setProperty('--composer-shift', '0px');
+      const overlap = composer.getBoundingClientRect().bottom + 25 - visibleBottom();
+      root.style.setProperty('--composer-shift', `${Math.min(0, -Math.max(0, Math.round(overlap)))}px`);
     };
     const prepareTyping = () => {
       if (!window.matchMedia('(max-width:899.98px)').matches) return;
@@ -61,7 +64,7 @@
     };
     const stopTyping = () => {
       root.classList.remove('hero-is-typing');
-      root.style.setProperty('--keyboard', '0px');
+      root.style.setProperty('--composer-shift', '0px');
       root.style.removeProperty('--locked-scroll-top');
       window.scrollTo(0, lockedScrollY);
     };
