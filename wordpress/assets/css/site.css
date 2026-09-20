@@ -65,9 +65,9 @@ p{margin:0}
 html.is-member [data-member-hide]{display:none}
 
 /* Hero: the composer is the product, so it is the only thing in the first
-   viewport. Docked 10px from the section floor. A modest radius on this box
+   viewport. Docked 25px from the section floor. A modest radius on this box
    only — buttons stay square. */
-.hero-stage{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:10px}
+.hero-stage{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:25px}
 .hero-composer{width:100%;max-width:900px;margin:0 auto;display:flex;align-items:stretch;background:var(--canvas);border:1px solid var(--ink);border-radius:18px;padding:8px 8px 8px 24px;text-align:left}
 .hero-composer textarea{flex:1;min-width:0;resize:none;border:0;background:none;color:var(--ink);font:inherit;font-size:18px;line-height:1.45;padding:13px 0;min-height:54px;max-height:220px;outline:none}
 .hero-composer textarea::placeholder{color:var(--ink-3);opacity:1}
