@@ -458,9 +458,9 @@ function hideOverlay(element) {
     finishHide(backdrop);
     app.classList.remove('sheet-open');
   };
-  const timer = setTimeout(() => finish(), duration + 140);
+  const timer = setTimeout(() => finish(), duration + 80);
   pendingPanelHides.set(element, {finish, timer});
-  if (animatedDropdown) element.addEventListener('animationend', finish);
+  if (animatedDropdown || animatedDimSheet) element.addEventListener('animationend', finish);
 }
 function closeDrawer() {
   const drawer = document.querySelector('.navigation');
