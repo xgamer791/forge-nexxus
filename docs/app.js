@@ -358,7 +358,7 @@ function hideOverlay(element) {
   const finish = event => {
     if (event.target === element) finishHide(element);
   };
-  const timer = setTimeout(() => finishHide(element), 940);
+  const timer = setTimeout(() => finishHide(element), 840);
   pendingPanelHides.set(element, {finish, timer});
   element.addEventListener('animationend', finish);
 }
