@@ -1,7 +1,8 @@
 /* Forge Nexxus — marketing site.
    White canvas, graphite ink, and one dark plate (#121315, the app's own
    surface) that every site image sits on. No accent colour: the only colour on
-   the page is the websites people built. Square geometry, no glow, no glass. */
+   the page is the websites people built. No glow, no glass. Plates and images
+   stay square; buttons take a modest shared radius. */
 :root{
   --canvas:#ffffff;--canvas-2:#f3f4f6;--plate:#121315;--plate-2:#1b1d21;
   --ink:#101114;--ink-2:#4b5059;--ink-3:#7d828b;--rule:#e3e5e9;--rule-2:#c9cdd3;
@@ -11,6 +12,8 @@
   --wrap:1520px;--gutter:clamp(20px,4vw,64px);--header:72px;
   /* Modular scale, ratio 1.25 from 17px. */
   --t-1:13.6px;--t0:17px;--t1:21px;--t2:26.5px;--t3:33px;--t4:41.5px;--t5:52px;--t6:65px;--t7:81px;--t8:101px;
+  /* 10px on a 42–60px control: visible, not a pill. */
+  --radius-button:10px;
   color-scheme:light;
 }
 *,*::before,*::after{box-sizing:border-box}
@@ -31,12 +34,12 @@ h3{font-size:var(--t2);letter-spacing:-.015em;line-height:1.15}
 h4{font-family:var(--font-text);font-size:var(--t0);font-weight:600;letter-spacing:0;line-height:1.4}
 p{margin:0}
 .visually-hidden,.skip-link:not(:focus){position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.skip-link:focus{position:fixed;top:12px;left:12px;z-index:100;background:var(--ink);color:#fff;padding:10px 14px}
+.skip-link:focus{position:fixed;top:12px;left:12px;z-index:100;background:var(--ink);color:#fff;padding:10px 14px;border-radius:var(--radius-button)}
 .wrap{width:100%;max-width:var(--wrap);margin:0 auto;padding-left:var(--gutter);padding-right:var(--gutter)}
 .lede{font-size:clamp(var(--t0),1.35vw,var(--t1));line-height:1.5;color:var(--ink-2);max-width:60ch}
 
-/* Buttons: square, two tones, no third colour. */
-.button{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:50px;padding:0 24px;font-weight:600;font-size:16px;line-height:1;border:1px solid var(--ink);border-radius:0;white-space:nowrap;background:var(--ink);color:#fff}
+/* Buttons: two tones, no third colour, one shared radius. */
+.button{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:50px;padding:0 24px;font-weight:600;font-size:16px;line-height:1;border:1px solid var(--ink);border-radius:var(--radius-button);white-space:nowrap;background:var(--ink);color:#fff}
 .button:hover{background:#000;border-color:#000}
 .button:active{transform:translateY(1px)}
 .button-ghost{background:transparent;color:var(--ink);border-color:var(--rule-2)}
@@ -131,7 +134,7 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
 .feature p{grid-column:2;margin-top:10px;color:var(--ink-2);line-height:1.5;max-width:52ch}
 
 /* Plans: the one table-like thing, so the one place cards belong. */
-.interval-toggle{display:inline-flex;border:1px solid var(--ink);flex-shrink:0}
+.interval-toggle{display:inline-flex;border:1px solid var(--ink);border-radius:var(--radius-button);overflow:hidden;flex-shrink:0}
 .interval-toggle button{height:44px;padding:0 20px;font-weight:600;font-size:15px;color:var(--ink-2)}
 .interval-toggle button.is-active{background:var(--ink);color:#fff}
 .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--ink)}
@@ -186,7 +189,7 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
 .faq-list details{border-bottom:1px solid var(--rule)}
 .faq-list summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px 0;font-weight:600;font-size:var(--t1);letter-spacing:-.01em}
 .faq-list summary::-webkit-details-marker{display:none}
-.faq-list summary::after{content:"+";flex-shrink:0;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--rule-2);font-weight:400;font-size:22px;line-height:1}
+.faq-list summary::after{content:"+";flex-shrink:0;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--rule-2);border-radius:8px;font-weight:400;font-size:22px;line-height:1}
 .faq-list details[open] summary::after{content:"–"}
 .faq-list details p{padding:0 56px 26px 0;color:var(--ink-2);line-height:1.55;font-size:var(--t0);max-width:64ch}
 
