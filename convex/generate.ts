@@ -8,6 +8,7 @@ import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute } from "./images";
 import { briefFile } from "./onboardingQuestions";
 import { FORGE_MD } from "./forgeMd";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
+import { publishBuild } from "./sites";
 
 // How much of the thread the model sees, and how long a page it may write.
 const HISTORY_LIMIT = 32;
@@ -291,11 +292,24 @@ export const finish = internalMutation({
       createdAt: now,
     });
     await ctx.db.patch(siteId, { currentVersionId: versionId, updatedAt: now });
+    // The finished build goes onto the site's Forge address in the same
+    // transaction that saves it, so a built site is never without a link and
+    // the address never serves anything but the latest build. A claim that
+    // fails must not cost the member the build they just paid for.
+    let live: Awaited<ReturnType<typeof publishBuild>> = null;
+    try {
+      live = await publishBuild(ctx, site, versionId, now);
+    } catch (error) {
+      console.error("Forge could not publish the build:", describe(error));
+    }
     if (setup) await ctx.db.patch(setup._id, { status: "complete", updatedAt: now,
       events: [...setup.events, { label: "Website saved and ready", at: now }] });
     if (await ctx.db.get(assistantId)) {
+      const said = (summary || (kind === "generate" ? "Here's a first version of your site." : "Updated your site.")).trim();
+      // A first build says where it went; every later one is already there.
+      const address = kind === "generate" ? live?.url?.replace(/^https?:\/\//, "") : undefined;
       await ctx.db.patch(assistantId, {
-        body: summary || (kind === "generate" ? "Here's a first version of your site." : "Updated your site."),
+        body: address ? `${/[.!?…]$/.test(said) ? said : `${said}.`} It's published at ${address}.` : said,
         status: undefined,
         versionId,
       });

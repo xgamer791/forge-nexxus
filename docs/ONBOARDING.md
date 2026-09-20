@@ -17,14 +17,19 @@ Free members keep dashboard access; only the preview waits for a plan. The
 globe stays open to them because it is where joining a plan is offered, and
 the preview HTML query enforces the entitlement on the server.
 
-The hand-off screen is where a finished site gets its place on the web. The
-member names `<slug>.sites.forgenexxus.com` in a field that answers as they
-type, and Publish my website saves the address and publishes in one press.
-Picking the first address there does not spend the site's one rename. Once
-published the screen shows the live link, Open my website, and Connect your
-own domain, which opens the globe on its custom-domain tab (the form on plans
-with custom domains, the plan offer on those without). Open it as a draft is
-always there, so publishing is never the only way on.
+A finished build publishes itself: the server claims
+`<slug>.sites.forgenexxus.com` from the business name (or keeps the address the
+member already chose) and puts the build on it in the same transaction that
+saves it. So the hand-off screen opens on a site that is already live. It shows
+the address, View my website — a real link that opens the site in a new tab
+while the same press lands the member in their dashboard — Go to my dashboard,
+and Change the address or connect a domain, which opens the globe. The address
+can be changed once from there, and a custom domain is one tab along (the form
+on plans with custom domains, the plan offer on those without).
+
+The address field and Publish my website remain as the fallback for a finished
+site that is not live — a claim that failed, or a site taken offline — with
+Open it as a draft beside it, so publishing is never the only way on.
 
 Every new website uses the same ten questions in `convex/onboardingQuestions.ts`.
 Answers, current step, uploads and the build state belong to the signed-in user

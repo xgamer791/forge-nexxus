@@ -1063,6 +1063,50 @@ let sitesLoaded = false;
 let activeSite = null;
 // Set by the preview block below; the thread and the site bar open it.
 let openPreview = () => {};
+// Where a site is live right now, or null. Live means its own address is
+// serving the build the member is looking at: published, and published with
+// the latest version. That address is what Preview opens.
+function liveUrl(site = activeSite) {
+  return site?.status === 'published' && site.publishedUrl && site.publishedVersionId === site.currentVersionId
+    ? site.publishedUrl
+    : null;
+}
+// A real link, pressed for them: the one way to open a tab that no popup
+// blocker argues with, because it is what the press already was.
+function openInNewTab(url) {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+}
+// The latest build of a site, asked for once.
+function fetchSiteHtml(site, callback) {
+  let stop = null;
+  let answered = false;
+  stop = forge.sites.currentHtml(site._id, page => {
+    if (answered) return;
+    answered = true;
+    stop?.();
+    callback(page ?? null);
+  });
+  if (answered) stop?.();
+}
+// The page as its address serves it, as a file: what a paid plan can take away.
+function saveSiteHtml(site, page) {
+  if (!page?.html) return;
+  const name = (site.slug || site.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'site') + '.html';
+  const url = URL.createObjectURL(new Blob([page.html], {type: 'text/html'}));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 if (forge?.sites && siteList && thread) {
   let activeId = null;
   let stopMessages = null;
@@ -1124,20 +1168,46 @@ if (forge?.sites && siteList && thread) {
       menu.className = 'font-menu site-menu';
       menu.setAttribute('role', 'menu');
       menu.hidden = true;
-      menu.append(
-        menuItem('Preview', () => { selectConversation(site.conversationId); openPreview(); }),
-        menuItem('Rename', () => {
-          const next = prompt('Rename site', site.name)?.trim();
-          if (next && next !== site.name) forge.sites.rename(site._id, next).catch(error => showNote(sitesError, messageOf(error)));
-        }),
-        menuItem('Delete', () => {
-          if (confirm(`Delete "${site.name}" and its build thread?`)) forge.sites.remove(site._id).catch(error => showNote(sitesError, messageOf(error)));
-        })
-      );
+      // The menu is filled as it opens, not as the list renders: what a plan
+      // allows is only known once billing has answered, and Preview now leaves
+      // the app for the site's own address, so taking a site offline, putting
+      // it back and downloading its code live here rather than behind it.
+      const fillMenu = () => {
+        const built = Boolean(site.currentVersionId);
+        const items = [menuItem('Preview', () => { selectConversation(site.conversationId); openPreview(); })];
+        if (built && summary?.plan.codeDownload) {
+          // Asked for as the menu opens, so the press that follows can save it
+          // while the browser still counts it as the member's own doing.
+          let page = null;
+          fetchSiteHtml(site, next => { page = next; });
+          items.push(menuItem('Download code', () => {
+            if (page) saveSiteHtml(site, page);
+            else fetchSiteHtml(site, next => saveSiteHtml(site, next));
+          }));
+        }
+        if (built && summary?.plan.publicAddress) {
+          items.push(site.status === 'published'
+            ? menuItem('Unpublish', () => {
+              if (confirm('Take this site offline? The address is kept for when you publish again.')) forge.sites.unpublish(site._id).catch(error => showNote(sitesError, messageOf(error)));
+            })
+            : menuItem('Publish', () => forge.sites.publish(site._id).catch(error => showNote(sitesError, messageOf(error)))));
+        }
+        items.push(
+          menuItem('Rename', () => {
+            const next = prompt('Rename site', site.name)?.trim();
+            if (next && next !== site.name) forge.sites.rename(site._id, next).catch(error => showNote(sitesError, messageOf(error)));
+          }),
+          menuItem('Delete', () => {
+            if (confirm(`Delete "${site.name}" and its build thread?`)) forge.sites.remove(site._id).catch(error => showNote(sitesError, messageOf(error)));
+          })
+        );
+        menu.replaceChildren(...items);
+      };
       options.addEventListener('click', event => {
         event.stopPropagation();
         const open = menu.hidden;
         closePopovers();
+        if (open) fillMenu();
         menu.hidden = !open;
         options.setAttribute('aria-expanded', String(open));
       });
@@ -1843,8 +1913,20 @@ if (forge?.sites && previewScreen) {
       renderPreview();
     });
   }
+  // Once a build is live, Preview is the real thing: the site's own address in
+  // a tab of its own, serving the whole page exactly as a visitor gets it. The
+  // frame below is only for a site that is not on its address right now -- one
+  // its owner took offline, or whose address still has an older build on it --
+  // and it is where that site gets published.
   openPreview = () => {
     if (!window.ForgeOnboarding?.canPreview()) return;
+    const live = liveUrl();
+    if (live) {
+      if (!previewScreen.hidden) closeMenu();
+      closePopovers();
+      openInNewTab(live);
+      return;
+    }
     if (!previewScreen.hidden) {
       closeMenu();
       return;
@@ -1911,10 +1993,27 @@ if (forge?.sites && previewScreen) {
   });
 }
 
-// Free members keep the dashboard, with the eye and globe visibly disabled.
+// Free members keep the dashboard, with the eye visibly disabled.
 // Paid members can preview their built site or start another site's questions.
 const websitePreviewButton = document.querySelector('.website-preview-button');
 const previewStartButton = document.querySelector('.preview-start');
+// Preview opens a dialog for a site that is not live and a new tab for one
+// that is. Its name and role say which, so the tab is never a surprise to
+// someone who cannot see it open.
+function describePreviewControls() {
+  const live = Boolean(liveUrl());
+  const name = 'Preview: open your website in a new tab';
+  if (websitePreviewButton) {
+    websitePreviewButton.setAttribute('aria-label', live ? name : 'Preview website');
+    if (live) websitePreviewButton.removeAttribute('aria-haspopup');
+    else websitePreviewButton.setAttribute('aria-haspopup', 'dialog');
+  }
+  const bar = document.querySelector('.site-bar-preview');
+  if (bar && live) bar.setAttribute('aria-label', name);
+  else bar?.removeAttribute('aria-label');
+}
+document.addEventListener('forge:active-site', describePreviewControls);
+describePreviewControls();
 websitePreviewButton?.addEventListener('click', () => {
   if (!window.ForgeOnboarding?.canPreview()) return;
   if (activeSite?.currentVersionId) {

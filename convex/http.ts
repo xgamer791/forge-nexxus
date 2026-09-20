@@ -12,9 +12,12 @@ http.route({ path: "/stripe/webhook", method: "POST", handler: webhook });
 
 const NOT_FOUND = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not published</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;background:#121315;color:#e9ebee;text-align:center}p{color:#9fa1a4}</style></head><body><main><h1>Nothing here yet</h1><p>This site isn't published, or the address has changed.</p></main></body></html>`;
 
+// Every build publishes itself, and Preview opens this address, so a page a
+// browser kept from a minute ago would show a member the site they just
+// changed as though they had not. The page is always asked for again.
 const PAGE_HEADERS = {
   "content-type": "text/html; charset=utf-8",
-  "cache-control": "public, max-age=60",
+  "cache-control": "public, max-age=0, must-revalidate",
   "x-content-type-options": "nosniff",
   "content-security-policy":
     "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data: https:; base-uri 'none'; form-action 'none'",

@@ -305,6 +305,33 @@ export const unpublish = mutation({
   },
 });
 
+// A finished build goes straight onto the site's Forge address, so the member
+// leaves every build with a link that serves it: `<slug>.sites.forgenexxus.com`
+// and nowhere else. The address they chose is kept; one that was never chosen
+// is claimed from the site's name. Two things stay as they were. A plan without
+// an address gets none -- the globe is still where joining one is offered. And
+// a site its owner took offline stays offline until they publish it again:
+// `publishedAt` on a draft is what an unpublish leaves behind.
+export async function publishBuild(
+  ctx: MutationCtx,
+  site: Doc<"sites">,
+  versionId: Id<"siteVersions">,
+  now: number,
+) {
+  const plan = await currentPlan(ctx, site.userId);
+  if (!plan.publicAddress) return null;
+  if (site.status === "draft" && site.publishedAt !== undefined) return null;
+  const slug = site.slug ?? (await uniqueSlug(ctx, site.name));
+  await ctx.db.patch(site._id, {
+    status: "published",
+    slug,
+    publishedVersionId: versionId,
+    publishedAt: now,
+    updatedAt: now,
+  });
+  return { slug, host: siteHostFor(slug), url: publishedUrlFor(slug) };
+}
+
 // The page a published site is currently serving, or null while it is a draft
 // or its published build has gone.
 async function livePage(ctx: QueryCtx, site: Doc<"sites"> | null) {
@@ -365,14 +392,21 @@ export function slugify(name: string) {
     .replace(/-+$/, "");
 }
 
+// An address claimed from a name holds to the same rules as one that was
+// typed: a name too short to be an address, or one that spells a reserved
+// label, is lengthened rather than handed out, and a suffix never pushes an
+// address past the length every other path enforces.
 async function uniqueSlug(ctx: QueryCtx | MutationCtx, name: string) {
-  const base = slugify(name) || "site";
+  let base = slugify(name) || "site";
+  if (slugProblem(base)) base = slugify(`${base}-site`);
+  if (slugProblem(base)) base = "site";
   const taken = async (slug: string) =>
     (await ctx.db.query("sites").withIndex("by_slug", (q) => q.eq("slug", slug)).first()) !== null;
   if (!(await taken(base))) return base;
+  const stem = base.slice(0, SLUG_LIMIT - 5).replace(/-+$/, "");
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = `${base}-${Math.random().toString(36).slice(2, 6)}`;
-    if (!(await taken(candidate))) return candidate;
+    const candidate = `${stem}-${Math.random().toString(36).slice(2, 6).padEnd(4, "0")}`;
+    if (!slugProblem(candidate) && !(await taken(candidate))) return candidate;
   }
   throw new ConvexError("Could not find a free address for this site");
 }

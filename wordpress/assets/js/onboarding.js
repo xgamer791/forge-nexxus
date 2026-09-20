@@ -145,10 +145,13 @@ const ENABLED = true;
   // publishes it, and leaves with a link. Publishing is never the only way on —
   // the site is already saved, so opening it as a draft is always there too.
   function handoff(site) {
+    // A finished build publishes itself, so this is the state a member arrives
+    // in. The way on is a real link: it opens the site at its own address in a
+    // new tab, and the press that opened it also lands them in the dashboard.
     if (site?.status === 'published' && site.publishedUrl) {
       return `<a class="onboarding-live-link" href="${escape(site.publishedUrl)}" target="_blank" rel="noopener">${escape(site.publishedUrl.replace(/^https?:\/\//, ''))}</a>
-        <button type="button" class="onboarding-primary" data-onboarding-action="finish">Open my website</button>
-        <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="domain">Connect your own domain</button></div>`;
+        <a class="onboarding-primary" href="${escape(site.publishedUrl)}" target="_blank" rel="noopener" data-onboarding-action="finish">View my website</a>
+        <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="finish">Go to my dashboard</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="domain">Change the address or connect a domain</button></div>`;
     }
     if (!site || state.isFree) return '<button type="button" class="onboarding-primary" data-onboarding-action="finish">Open my website</button>';
     const locked = Boolean(site.slug) && site.addressChangeAvailable === false;
@@ -170,7 +173,7 @@ const ENABLED = true;
     rendered = key;
     const has = label => draft.events.some(event => event.label === label);
     const title = live ? 'Your website is published.' : done ? 'Your website is ready.' : failed ? 'Let’s try that again.' : 'Your idea is taking shape.';
-    const detail = live ? 'It is on the web at this address. Every change you publish lands here.'
+    const detail = live ? 'It is on the web at this address, and every change you make lands there.'
       : done ? (site && !state.isFree ? 'Pick its address and put it on the web.' : 'Your first version is saved. Make it yours from your dashboard.')
       : failed ? draft.error : 'Forge is creating your website from your answers. You can return to this screen at any time.';
     const progress = draft.status === 'queued' ? 'Waiting for the build to start…'
@@ -214,12 +217,12 @@ const ENABLED = true;
       else settle(answer.problem ?? 'That address is taken. Try another one.', 'taken', true);
     }).catch(() => { /* Publishing still asks the server properly. */ });
   }
-  // The globe owns domains. Open it on its custom-domain tab, the way a tap
-  // would, once the dashboard is back and the finished site is selected.
+  // The globe owns the address and any domain pointed at it. Open it the way a
+  // tap would, once the dashboard is back and the finished site is selected;
+  // it opens on the address, with a domain of their own one tab along.
   function openDomains(tries = 0) {
     if (dashboard.hidden && tries < 40) { setTimeout(() => openDomains(tries + 1), 75); return; }
     document.querySelector('.globe-button')?.click();
-    document.querySelector('#address-tab-custom')?.click();
   }
   async function publishSite() {
     const site = builtSite();
@@ -319,7 +322,9 @@ const ENABLED = true;
     else void next();
   });
   screen.addEventListener('click', async event => {
-    const button = event.target.closest('button');
+    // A link that carries an action keeps its own job too: the browser opens
+    // it in its tab while the action runs here, so nothing is prevented.
+    const button = event.target.closest('button,a[data-onboarding-action]');
     if (!button || button.disabled) return;
     if (button.dataset.choice) {
       const selected = button.getAttribute('aria-pressed') === 'true';

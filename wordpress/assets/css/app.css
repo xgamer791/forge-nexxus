@@ -485,6 +485,9 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .onboarding-address .onboarding-primary{width:100%;margin-top:20px}
 .onboarding-live-link{display:block;width:fit-content;max-width:100%;margin:0 auto 28px;font-size:19px;line-height:26px;font-weight:700;letter-spacing:-.2px;color:var(--text);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:5px;overflow-wrap:anywhere}
 .onboarding-live-link:focus-visible{outline:2px solid var(--focus);outline-offset:4px;border-radius:4px}
+/* The way on from a published site is a real link wearing the primary pill. */
+a.onboarding-primary{text-decoration:none}
+a.onboarding-primary:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
 .onboarding-after{display:flex;flex-wrap:wrap;justify-content:center;gap:0 24px;margin-top:12px}
 .onboarding-after .onboarding-exit{margin:0}
 /* On a narrow phone the domain drops under the name rather than squeezing it. */
