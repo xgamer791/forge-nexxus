@@ -153,13 +153,15 @@ export type TopUp = { key: string; credits: number; priceCents: number };
 
 // Extra credits bought inside a period, on plans that allow it. They expire
 // with the period, like the monthly allowance does. $30 per 1,000 through
-// 5,000 is 3¢ a credit — above Starter (2.4¢) and Pro (2¢).
+// 5,000 is 3¢ a credit — above Starter (2.4¢) and Pro (2¢). The 10,000 pack
+// is a volume break at 2¢, the same unit rate as Pro's included allowance.
 export const TOP_UPS: readonly TopUp[] = [
   { key: "topup-1000", credits: 1000, priceCents: 3000 },
   { key: "topup-2000", credits: 2000, priceCents: 6000 },
   { key: "topup-3000", credits: 3000, priceCents: 9000 },
   { key: "topup-4000", credits: 4000, priceCents: 12000 },
   { key: "topup-5000", credits: 5000, priceCents: 15000 },
+  { key: "topup-10000", credits: 10000, priceCents: 20000 },
 ];
 
 // What each kind of AI request holds when it starts. Wegic prices a complete

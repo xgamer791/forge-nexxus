@@ -102,6 +102,7 @@ describe("billing", () => {
       [3000, 9000],
       [4000, 12000],
       [5000, 15000],
+      [10000, 20000],
     ]);
     expect(catalog.requestCosts).toEqual(REQUEST_COSTS);
   });
