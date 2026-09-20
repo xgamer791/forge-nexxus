@@ -29,19 +29,23 @@ $hero_messages = [
 	'Legendary customer support that exceeds expectations',
 	'Don’t fall behind ai, let it work for you with Forge Nexxus',
 ];
-$hero_video  = add_query_arg( 'ver', FORGE_THEME_VERSION, get_theme_file_uri( 'assets/video/forge-viking-loop.mp4' ) );
-$hero_poster = add_query_arg( 'ver', FORGE_THEME_VERSION, get_theme_file_uri( 'assets/video/forge-viking-poster.jpg' ) );
-
 get_header();
 ?>
 
 <section class="hero">
-	<video class="hero-background-video is-active" autoplay muted playsinline preload="auto" poster="<?php echo esc_url( $hero_poster ); ?>" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
-		<source src="<?php echo esc_url( $hero_video ); ?>" type="video/mp4">
-	</video>
-	<video class="hero-background-video" muted playsinline preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture data-hero-loop>
-		<source src="<?php echo esc_url( $hero_video ); ?>" type="video/mp4">
-	</video>
+	<div class="hero-lockup" aria-hidden="true">
+		<?php
+		$lockup_unit = '<span>Forge Nexxus</span><span>Forge Nexxus</span><span>Forge Nexxus</span><span>Forge Nexxus</span>';
+		for ( $row = 0; $row < 8; $row++ ) :
+			?>
+			<div class="hero-lockup-row">
+				<div class="hero-lockup-run">
+					<div class="hero-lockup-unit"><?php echo $lockup_unit; ?></div>
+					<div class="hero-lockup-unit"><?php echo $lockup_unit; ?></div>
+				</div>
+			</div>
+		<?php endfor; ?>
+	</div>
 	<div class="wrap hero-stage">
 		<h1 class="visually-hidden">Forge Nexxus</h1>
 		<div class="hero-message-rotator" data-hero-messages aria-hidden="true">
