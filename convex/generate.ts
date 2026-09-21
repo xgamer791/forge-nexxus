@@ -20,13 +20,14 @@ const REASON_LIMIT = 300;
 // the one-line summary that rides along with a build.
 const TALK_LIMIT = 4000;
 
-// Conversation and site building run on DeepSeek Flash, and on nothing else.
+// Conversation and site building run on Gemini 3.8 Flash, and on nothing else.
 // The deployment's `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY` name the route;
-// what they fall back to is DeepSeek too, so an unset variable can never send
-// a build somewhere else. Pictures have a route of their own in `images.ts`.
-const CHAT_BASE_URL = "https://api.deepseek.com/v1";
-const CHAT_MODEL = "deepseek-flash";
-const CHAT_MODEL_LABEL = "DeepSeek V4.1 Flash";
+// what they fall back to is Gemini 3.8 Flash too, so an unset variable can
+// never send a build to DeepSeek. Pictures have a route of their own in
+// `images.ts` (Nano Banana 2 Lite) and are refused here.
+const CHAT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+const CHAT_MODEL = "gemini-3.8-flash";
+const CHAT_MODEL_LABEL = "Gemini 3.8 Flash";
 
 // How many new pictures one reply may ask for.
 export const BUILD_IMAGE_LIMIT = 4;
@@ -46,22 +47,41 @@ const RETRY_WAIT_MS = 1500;
 // for a build that is already gone.
 const RUN_WATCHDOG_MS = 610000;
 
+function chatRefuseReason(baseUrl: string, model: string): "deepseek" | "image" | null {
+  let host = baseUrl;
+  try {
+    host = new URL(baseUrl).host;
+  } catch {
+    /* keep the raw base if it is not a URL */
+  }
+  // DeepSeek is out of the chat/build path: host or deepseek-* model id.
+  if (/deepseek\.com$/i.test(host) || /deepseek\.com/i.test(baseUrl) || /deepseek/i.test(model)) {
+    return "deepseek";
+  }
+  // Image-only model ids stay on `images.ts`. Plain gemini-3.8-flash must not
+  // match — it is the chat/build model.
+  if (/imagen|banana|flash-lite-image|-image(?:-|$)/i.test(model)) {
+    return "image";
+  }
+  return null;
+}
+
 export function chatRoute() {
   const baseUrl = (process.env.AI_BASE_URL?.trim() || CHAT_BASE_URL).replace(/\/+$/, "");
   const model = process.env.AI_MODEL?.trim() || CHAT_MODEL;
+  const refuseReason = chatRefuseReason(baseUrl, model);
   return {
     baseUrl,
     model,
     apiKey: process.env.AI_API_KEY,
-    // What the agent says it runs on. It only says DeepSeek when it does.
-    label: process.env.AI_MODEL_LABEL?.trim() || (/deepseek/i.test(model) ? CHAT_MODEL_LABEL : model),
-    // Text never goes to the image provider. A chat route pointed at Gemini is
-    // the image key in the wrong variable, and it is refused rather than used:
-    // a site quietly built by the wrong model is worse than one that says why
-    // it was not built.
-    misrouted:
-      /generativelanguage\.googleapis\.com|aiplatform\.googleapis\.com/i.test(baseUrl) ||
-      /gemini|imagen|banana|-image(?:-|$)/i.test(model),
+    // What the agent says it runs on. It only uses the pretty Gemini label
+    // when the model is Gemini 3.8 Flash.
+    label: process.env.AI_MODEL_LABEL?.trim() || (/gemini-3\.8-flash/i.test(model) ? CHAT_MODEL_LABEL : model),
+    // DeepSeek is refused. Image models (banana, imagen, *-image,
+    // flash-lite-image) stay on the image route. Gemini 3.8 Flash on the
+    // OpenAI-compatible Gemini host is the intended chat path and is allowed.
+    misrouted: refuseReason !== null,
+    refuseReason,
   };
 }
 
@@ -73,7 +93,7 @@ export const routing = internalQuery({
     const chat = chatRoute();
     const image = imageRoute();
     return {
-      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), misrouted: chat.misrouted },
+      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), misrouted: chat.misrouted, refuseReason: chat.refuseReason },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -110,7 +130,7 @@ Reply with one sentence saying what you built or changed, then the complete HTML
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
 
-IDENTITY — if someone asks which AI or model you are, say it plainly in one sentence and get back to their site: your conversation and site building run on ${chatRoute().label}, and the pictures on a site are made by ${IMAGE_MODEL_LABEL}. You yourself are not Gemini, GPT or Claude, and you do not guess at anything about the models beyond this.
+IDENTITY — if someone asks which AI or model you are, say it plainly in one sentence and get back to their site: your conversation and site building run on ${chatRoute().label}, and the pictures on a site are made by ${IMAGE_MODEL_LABEL}. You are not DeepSeek, GPT or Claude, and you do not guess at anything about the models beyond this.
 
 Never ask the user questions or append a follow-up question. For an ambiguous request, use the saved website brief and sensible design defaults. Never invent missing business facts. Keep strategy private. If the request is clearly about creating or changing a website, build it.`;
 }
@@ -461,7 +481,7 @@ function buildMessages(
   imageLimit: number,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
-    // forge.md + frontend-design skill — every DeepSeek chat/build turn.
+    // forge.md + frontend-design skill — every Gemini 3.8 Flash chat/build turn.
     { role: "system", content: FORGE_MD },
     { role: "system", content: FRONTEND_DESIGN },
     { role: "system", content: systemPrompt(imageLimit) },
@@ -652,10 +672,13 @@ export async function callProvider(
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
   if (route.misrouted) {
-    console.error(
-      `Forge refused the chat route: AI_BASE_URL / AI_MODEL point at the image provider (${route.model}). ` +
-        "Conversation and site building run on DeepSeek Flash; set AI_BASE_URL, AI_MODEL and AI_API_KEY for it.",
-    );
+    const why =
+      route.refuseReason === "deepseek"
+        ? `Forge refused the chat route: AI_BASE_URL / AI_MODEL point at DeepSeek (${route.model}). ` +
+          "Conversation and site building run on Gemini 3.8 Flash; set AI_BASE_URL, AI_MODEL and AI_API_KEY for it."
+        : `Forge refused the chat route: AI_BASE_URL / AI_MODEL name an image model (${route.model}). ` +
+          "Conversation and site building run on Gemini 3.8 Flash; set AI_BASE_URL, AI_MODEL and AI_API_KEY for it.";
+    console.error(why);
     await trace?.note({
       phase: "provider_error",
       label: "Site generation isn't set up on this deployment yet",

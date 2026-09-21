@@ -1,4 +1,4 @@
-// Embedded frontend-design skill for DeepSeek (and any chat/build model).
+// Embedded frontend-design skill for Gemini 3.8 Flash (and any chat/build model).
 // Claude Code loads this from a skill file; Convex cannot, so generate.ts
 // injects FRONTEND_DESIGN on every build/chat/strategy turn. Keep in sync
 // with ../frontend-design.md (sourced from the Anthropic frontend-design skill).
