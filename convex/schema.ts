@@ -256,4 +256,16 @@ export default defineSchema({
     uiFont: v.optional(v.string()),
     codeFont: v.optional(v.string()),
   }).index("by_user", ["userId"]),
+  // Deployment telemetry: how many times the building agent was sent FED,
+  // and when that last happened. Not user data.
+  fedReads: defineTable({
+    count: v.number(),
+    lastTriggeredAt: v.number(),
+    lastSource: v.union(
+      v.literal("chat"),
+      v.literal("build"),
+      v.literal("strategy"),
+      v.literal("rebuild"),
+    ),
+  }),
 });

@@ -4,7 +4,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { FORGE_MD } from "./forgeMd";
+import { FED, FORGE_MD } from "./agentRules";
 import { QUESTIONS } from "./onboardingQuestions";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -544,6 +544,8 @@ describe("a rebuild, start to finish", () => {
     expect(await versions(t)).toEqual([]);
     expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "released"]]);
     expect((await t.run((ctx) => ctx.db.get(siteId)))!.currentVersionId).toBeUndefined();
+    // Finish the queued rebuild so it cannot reuse this test's fetch stub.
+    await drain(t);
   });
 
   test("an identical design is retried without sending the discarded page to the model", async () => {
@@ -588,13 +590,21 @@ describe("a rebuild, start to finish", () => {
   });
 });
 
-// Whether the standing rules and the design skill actually leave the server.
-// scripts/prompts.test.ts proves the embedded strings match their markdown
-// files; this proves those strings are in the request body of every turn that
-// writes or discusses a site, whole rather than summarised or truncated.
+// Whether the standing rules actually leave the server. This proves FORGE_MD
+// and FED travel together, whole rather than summarised or truncated, on every
+// turn that writes or discusses a site.
 describe("what actually reaches the model", () => {
   const systemsOf = (call: any) =>
     call.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content);
+
+  const expectStandingPair = (systems: string[]) => {
+    expect(systems[0]).toBe(FORGE_MD);
+    expect(systems[1]).toBe(FED);
+    expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
+    expect(systems.filter((s: string) => s === FED).length).toBe(1);
+    expect(systems[0].length).toBe(FORGE_MD.length);
+    expect(systems[1].length).toBe(FED.length);
+  };
 
   test("the build turn carries both files verbatim, in precedence order", async () => {
     const t = fresh();
@@ -611,18 +621,16 @@ describe("what actually reaches the model", () => {
       .find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
     const systems = systemsOf(build);
 
-    // Whole-string equality, so a truncated or paraphrased copy fails here.
-    expect(systems[0]).toBe(FORGE_MD);
-    expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
-    expect(systems[0].length).toBe(FORGE_MD.length);
+    expectStandingPair(systems);
 
-    // House rules + skill are one system message, then the contract.
-    expect(systems[1]).toContain("You are Forge, the website-building agent");
+    // House rules, then the official design skill, then the contract.
+    expect(systems[2]).toContain("You are Forge, the website-building agent");
     expect(systems.at(-1)).toContain("This is an onboarding BUILD");
 
     expect(systems[0]).toContain("What the site must cover");
-    expect(systems[0]).toContain("One typeface for the entire build");
-    expect(systems[0]).toContain("plan, review against the brief, build, critique");
+    expect(systems[0]).toContain("Rebuild means a different design");
+    expect(systems[0]).toContain("A rebuild rejects the preceding design, not the onboarding answers");
+    expect(systems[1]).toContain("Approach this as the design lead at a design studio");
   });
 
   test("the strategy passes behind the questions carry them too", async () => {
@@ -636,9 +644,7 @@ describe("what actually reaches the model", () => {
       .chatCalls()
       .find((call) => /private website strategist/.test(JSON.stringify(call.body.messages)))!;
     expect(strategy).toBeDefined();
-    const systems = systemsOf(strategy);
-    expect(systems[0]).toBe(FORGE_MD);
-    expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
+    expectStandingPair(systemsOf(strategy));
   });
 
   test("a thread turn after the build carries them as well", async () => {
@@ -654,12 +660,60 @@ describe("what actually reaches the model", () => {
     await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Make the hero bolder" });
 
     const systems = systemsOf(providers.chatCalls().at(-1)!);
-    expect(systems[0]).toBe(FORGE_MD);
-    expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
-    // On a site with a saved brief, generate.begin splices that brief in at
-    // index 1. FORGE_MD (house rules + skill) is still the only forge prompt.
-    expect(systems[1]).toContain("Saved project context");
+    expectStandingPair(systems);
+    // On a site with a saved brief, generate.begin splices that brief in after
+    // both standing files. FORGE_MD and FED stay adjacent.
+    expect(systems[2]).toContain("Saved project context");
     expect(systems.some((c: string) => c.includes("You are Forge, the website-building agent"))).toBe(true);
+  });
+
+  test("opening FED bumps a counter and records when it was triggered", async () => {
+    const t = fresh();
+    const before = await t.query(internal.fedReads.stats, {});
+    expect(before).toEqual({
+      count: 0,
+      lastTriggeredAt: null,
+      lastTriggered: null,
+      lastSource: null,
+      opened: false,
+    });
+
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    const id = await answerEverything(member);
+    await drain(t);
+
+    const afterStrategy = await t.query(internal.fedReads.stats, {});
+    expect(afterStrategy.opened).toBe(true);
+    expect(afterStrategy.count).toBeGreaterThan(0);
+    expect(afterStrategy.lastSource).toBe("strategy");
+    expect(afterStrategy.lastTriggeredAt).toEqual(expect.any(Number));
+    expect(afterStrategy.lastTriggered).toBe(new Date(afterStrategy.lastTriggeredAt!).toISOString());
+    const strategy = providers
+      .chatCalls()
+      .find((call) => /private website strategist/.test(JSON.stringify(call.body.messages)))!;
+    expect(strategy.body.messages.some((m: any) => m.role === "system" && m.content === FED)).toBe(true);
+
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+
+    const afterBuild = await t.query(internal.fedReads.stats, {});
+    expect(afterBuild.count).toBeGreaterThan(afterStrategy.count);
+    expect(afterBuild.lastSource).toBe("build");
+    expect(afterBuild.lastTriggeredAt).toBeGreaterThanOrEqual(afterStrategy.lastTriggeredAt!);
+    const build = providers
+      .chatCalls()
+      .find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
+    expect(build.body.messages.some((m: any) => m.role === "system" && m.content === FED)).toBe(true);
+
+    await member.as.mutation(api.onboarding.rebuild, {});
+    await drain(t);
+
+    const afterRebuild = await t.query(internal.fedReads.stats, {});
+    expect(afterRebuild.count).toBeGreaterThan(afterBuild.count);
+    expect(afterRebuild.lastSource).toBe("rebuild");
+    expect(afterRebuild.lastTriggeredAt).toBeGreaterThanOrEqual(afterBuild.lastTriggeredAt!);
+    expect(providers.chatCalls().at(-1)!.body.messages.some((m: any) => m.role === "system" && m.content === FED)).toBe(true);
   });
 });
 

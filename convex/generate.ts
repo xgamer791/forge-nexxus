@@ -2,12 +2,13 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import { action, internalMutation, internalQuery, type ActionCtx } from "./_generated/server";
+import { messagesOpenFed, type FedSource } from "./fedReads";
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
-import { FORGE_MD } from "./forgeMd";
+import { standingSystemMessages } from "./agentRules";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
@@ -111,7 +112,7 @@ You give one of two kinds of reply, and what the user asked for decides which.
 BUILD — when they describe a site to make, or ask for a change to the page.
 Return one self-contained HTML file:
 - A full document (<!doctype html> … </html>) with a lang, a <title>, a meta description, a meta viewport, and all CSS in one <style> block in the <head>.
-- The page's shape is yours to decide from this business, not a running order to fill in. The design skill's plan step settles what opens the page, what follows it, and what each section looks like — a headline, a picture, a list, a table of what you sell, whatever this subject actually calls for. Two businesses must not come out with the same skeleton, and a page that could be rebranded to an unrelated company by swapping its words has failed.
+- The page's shape is yours to decide from this business, not a running order to fill in. Decide what opens the page, what follows it, and what each section looks like — a headline, a picture, a list, a table of what you sell, whatever this subject actually calls for. Two businesses must not come out with the same skeleton, and a page that could be rebranded to an unrelated company by swapping its words has failed.
 - What every page owes, whatever shape it takes: a way to navigate it whose links all point at sections that exist, an opening that makes plain what this is and who it is for, somewhere obvious to act on it, whatever contact details were supplied, and an ending rather than a stop.
 - Cover every job the brief says the site has to do. A business that sells products gets a products section — one block per line of the catalogue the brief supplies, with its name, what it is, its price where that line carries one, and an action — as surely as one that takes bookings gets a booking section. Then add what this business needs to be understood.
 - Name the action a visitor should take the same thing wherever it appears, and make it easy to find — without repeating it mechanically in every section.
@@ -198,7 +199,14 @@ export const run = action({
           keySet: Boolean(route.apiKey),
           },
       });
-      const reply = await callProvider(job.messages, undefined, undefined, trace, purpose);
+      const reply = await callProvider(
+        job.messages,
+        undefined,
+        undefined,
+        trace,
+        purpose,
+        { ctx, source: purpose === "chat" ? "chat" : "build" },
+      );
       const parsed = parseReply(reply);
       // The pictures a page asked for are made before it is stored, so the
       // version that lands never points at anything that does not exist. A page
@@ -317,7 +325,12 @@ export const begin = internalMutation({
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const imageLimit = current ? EDIT_IMAGE_LIMIT : BUILD_IMAGE_LIMIT;
     const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit, kind === "chat" ? "chat" : "build");
-    if (setup) messages.splice(1, 0, { role: "system", content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
+    if (setup) {
+      messages.splice(standingSystemMessages().length, 0, {
+        role: "system",
+        content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}`,
+      });
+    }
     return {
       siteId: site._id,
       holdId,
@@ -480,8 +493,8 @@ function buildMessages(
   purpose: "chat" | "build",
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
-    // FORGE_MD (house rules + frontend-design skill) — every chat, build and strategy turn.
-    { role: "system", content: FORGE_MD },
+    // FORGE_MD and FED always travel together — every chat, build and strategy turn.
+    ...standingSystemMessages(),
     { role: "system", content: systemPrompt(imageLimit, purpose) },
   ];
   if (currentHtml) {
@@ -666,7 +679,14 @@ export async function callProvider(
   budgetMs = TEXT_BUDGET_MS,
   trace?: ProviderTrace,
   purpose: "chat" | "build" = "chat",
+  fed?: { ctx: ActionCtx; source: FedSource },
 ) {
+  if (fed) {
+    await fed.ctx.runMutation(internal.fedReads.record, {
+      source: fed.source,
+      opened: messagesOpenFed(messages),
+    });
+  }
   const route = chatRoute(purpose);
   if (!route.apiKey) {
     await trace?.note({

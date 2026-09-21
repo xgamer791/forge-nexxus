@@ -107,12 +107,12 @@ account, and no invented price, stock count or review.
 
 The instructions that produce all this are split so nothing contradicts: the
 build contract in `convex/generate.ts` owns output format and page structure,
-`forge.md` owns Forge's house rules (identity, what the site must cover,
-typography, images, safety), and the injected `frontend-design.md` skill owns
-method. `forge.md` used to restate the skill for three hundred lines and
-disagree with the contract about typefaces; `scripts/prompts.test.ts` now keeps
-the three in their lanes, holds the whole stack under a size budget, and fails
-if the markdown files and their embedded copies in `convex/` drift apart.
+`convex/forgeMd.ts` owns Forge's house rules (identity, what the site must
+cover, domains, pictures, safety, and that a rebuild must not copy the last
+design), and `convex/fed.ts` is the official frontend-design skill. Those two
+files always load together through `convex/agentRules.ts` — one is never sent
+without the other. `scripts/prompts.test.ts` keeps those lanes, holds the stack
+under a size budget, and fails if FORGE_MD grows design-method rules again.
 
 ## Deployment
 
