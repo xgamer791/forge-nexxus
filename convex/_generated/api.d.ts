@@ -23,7 +23,6 @@ import type * as messages from "../messages.js";
 import type * as onboarding from "../onboarding.js";
 import type * as plans from "../plans.js";
 import type * as probe from "../probe.js";
-import type * as rebuildDesign from "../rebuildDesign.js";
 import type * as settings from "../settings.js";
 import type * as sites from "../sites.js";
 import type * as stripe from "../stripe.js";
@@ -51,7 +50,6 @@ declare const fullApi: ApiFromModules<{
   onboarding: typeof onboarding;
   plans: typeof plans;
   probe: typeof probe;
-  rebuildDesign: typeof rebuildDesign;
   settings: typeof settings;
   sites: typeof sites;
   stripe: typeof stripe;

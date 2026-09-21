@@ -11,7 +11,6 @@ import { BUILD_IMAGE_LIMIT, callProvider, chatRoute, describe, parseReply } from
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
-import { rebuildDirection, repeatsStyling, styleSignature } from "./rebuildDesign";
 
 // The words and the pictures share an action's ten minutes. The text gets the
 // larger part; the watchdog sits just inside the platform's own limit, so it
@@ -60,9 +59,9 @@ async function scrapBriefBuild(ctx: MutationCtx, row: Doc<"siteOnboarding">) {
 }
 
 async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined, userId: Id<"users">) {
-  if (!siteId) return { hashes: [], styles: [] };
+  if (!siteId) return { hashes: [] };
   const site = await ctx.db.get(siteId);
-  if (!site || site.userId !== userId) return { hashes: [], styles: [] };
+  if (!site || site.userId !== userId) return { hashes: [] };
   const images = await ctx.db.query("siteImages").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
   for (const image of images) {
     await ctx.storage.delete(image.storageId);
@@ -70,7 +69,6 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
   }
   const versions = await ctx.db.query("siteVersions").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
   const hashes = await Promise.all(versions.map(version => designHash(version.html)));
-  const styles = await Promise.all(versions.slice(-8).map(version => styleSignature(version.html)));
   for (const version of versions) await ctx.db.delete(version._id);
   const messages = await ctx.db.query("messages").withIndex("by_conversation", q => q.eq("conversationId", site.conversationId)).collect();
   for (const message of messages) await ctx.db.delete(message._id);
@@ -93,7 +91,7 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
     buildEpoch: (site.buildEpoch ?? 0) + 1,
     updatedAt: Date.now(),
   });
-  return { hashes, styles };
+  return { hashes };
 }
 
 async function queueOnboardingBuild(
@@ -307,10 +305,9 @@ export const rebuild = mutation({
     // briefs that normal chat's by_site lookup could otherwise pick up.
     const related = rows.filter(row => row._id === brief._id || (target && row.siteId === target._id));
     for (const row of related) await scrapBriefBuild(ctx, row);
-    const { hashes, styles } = await scrapSiteBuild(ctx, target?._id, userId);
+    const { hashes } = await scrapSiteBuild(ctx, target?._id, userId);
     await ctx.db.patch(brief._id, {
       discardedDesignHashes: [...new Set([...related.flatMap(row => row.discardedDesignHashes ?? []), ...hashes])].slice(-64),
-      discardedStyleSignatures: [...related.flatMap(row => row.discardedStyleSignatures ?? []), ...styles].slice(-8),
     });
     let siteId = target?._id;
     if (!siteId) {
@@ -521,7 +518,7 @@ async function writePage(
   deadline: number,
   trace?: Parameters<typeof callProvider>[3],
   discardedDesignHashes: string[] = [],
-  redesign?: { attempt: number; styles: string[][]; requireImages: boolean },
+  redesign?: { requireImages: boolean },
 ) {
   let shortfall: unknown;
   let repeated = false;
@@ -531,8 +528,7 @@ async function writePage(
     try {
       const reply = await callProvider(
         [...messages.slice(0, -1),
-          ...(redesign ? [{ role: "system" as const, content: rebuildDirection(redesign.attempt, round) +
-            (redesign.requireImages ? "\nInclude at least one new subject-relevant photograph or illustration using an img with src=\"forge-image:1\" and a detailed data-forge-image prompt. Do not substitute an inline SVG diagram, CSS drawing, gradient or decorative icon for the principal subject image. Respect the image limit in the build rules." : "") }] : []),
+          ...(redesign?.requireImages ? [{ role: "system" as const, content: "Include at least one new subject-relevant photograph or illustration using an img with src=\"forge-image:1\" and a detailed data-forge-image prompt. Do not substitute an inline SVG diagram, CSS drawing, gradient or decorative icon for the principal subject image. Respect the image limit in the build rules." }] : []),
           ...(round > 0 ? [{ role: "system" as const, content: repeated ? DIFFERENT_BUILD : BUILD_AGAIN }] : []),
           messages[messages.length - 1],
         ],
@@ -543,8 +539,7 @@ async function writePage(
       );
       const parsed = parseReply(reply);
       if (parsed.html) {
-        const duplicate = discardedDesignHashes.includes(await designHash(parsed.html)) ||
-          (redesign && repeatsStyling(await styleSignature(parsed.html), redesign.styles));
+        const duplicate = discardedDesignHashes.includes(await designHash(parsed.html));
         const requestedPicture = (parsed.html.match(/<img\b[^>]*>/gi) ?? [])
           .some(tag => /\bdata-forge-image\s*=\s*["'][^"']+/i.test(tag));
         if (!duplicate && (!redesign?.requireImages || requestedPicture)) return { html: parsed.html, summary: parsed.summary };
@@ -633,7 +628,7 @@ export const build = internalAction({
           content: `${FRESH_BUILD}\nFresh-build identifier: ${id}/${attempt}/${row.revision}` }] : []),
         { role: "user", content: `File: website-build-brief.md\n\n${brief}` },
       ], deadline, trace, row.discardedDesignHashes,
-      row.discardedDesignHashes !== undefined ? { attempt, styles: row.discardedStyleSignatures ?? [], requireImages: Boolean(imageRoute().apiKey) } : undefined);
+      row.discardedDesignHashes !== undefined ? { requireImages: Boolean(imageRoute().apiKey) } : undefined);
       // The pictures the page asked for are made before it is saved, so the
       // first version a member opens is the finished one.
       let html = page.html;
