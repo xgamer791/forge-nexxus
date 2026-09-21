@@ -107,4 +107,16 @@ describe("only the sanctioned files steer the agent", () => {
     const text = forge.slice(forge.indexOf('FORGE_MD = "'));
     expect(text.length).toBeLessThan(1500);
   });
+
+  test("memory never becomes a fourth design voice", () => {
+    const memory = read("memory.ts");
+    // What the reflection is told to keep. Aesthetics belong to the design
+    // files; a memory carrying them would outlive and contradict them.
+    expect(memory).toMatch(/Never keep how a site should look/);
+    for (const word of ["colours, fonts, tone", "no stock photos"]) {
+      expect(memory).not.toContain(word);
+    }
+    // And the note the model reads says the same thing from the other side.
+    expect(memory).toMatch(/never for how a site should look/);
+  });
 });
