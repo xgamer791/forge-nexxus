@@ -269,6 +269,38 @@ describe("billing", () => {
     expect(await guest.as.query(api.billing.usage, {})).toEqual([]);
   });
 
+  test("the provider's balance is carried forward by what the meter has priced since", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
+    // Spending before the reading is already inside the figure the console gave.
+    const before = await t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "generate" });
+    await t.mutation(internal.billing.settle, { holdId: before.holdId, costCents: 500 });
+
+    expect((await t.query(internal.billing.funding, {})).provider).toBeNull();
+    await t.mutation(internal.billing.recordProviderBalance, { usd: 28.41 });
+
+    const after = await t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: "generate" });
+    await t.mutation(internal.billing.settle, { holdId: after.holdId, costCents: 9.41 });
+
+    const { provider } = await t.query(internal.billing.funding, {});
+    expect(provider).toMatchObject({
+      readingCents: 2841,
+      spentSinceCents: 9.41,
+      leftCents: 2831.59,
+    });
+
+    // Topping up is a new reading, not an edit, and the newest one wins.
+    await t.mutation(internal.billing.recordProviderBalance, { usd: 50, note: "Added $20" });
+    expect((await t.query(internal.billing.funding, {})).provider).toMatchObject({
+      readingCents: 5000,
+      spentSinceCents: 0,
+      leftCents: 5000,
+    });
+    expect(await t.run((ctx) => ctx.db.query("providerBalance").collect())).toHaveLength(2);
+    await expect(t.mutation(internal.billing.recordProviderBalance, { usd: -1 })).rejects.toThrow("at or above zero");
+  });
+
   test("a request the provider never priced is unmetered, not free", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });

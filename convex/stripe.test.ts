@@ -427,6 +427,8 @@ describe("how a payment divides", () => {
       metered: 0,
       unmetered: 0,
       budgetLeftCents: 6000,
+      // Nothing has read the provider's console on this deployment yet.
+      provider: null,
     });
   });
 

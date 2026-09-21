@@ -138,6 +138,18 @@ export default defineSchema({
     type: v.string(),
     receivedAt: v.number(),
   }).index("by_event", ["eventId"]),
+  // What the provider's own console says is left to spend, read by hand. No
+  // API reports a prepaid Gemini credit balance, so this is a snapshot: the
+  // figure and the moment it was true. The meter carries it forward from
+  // there, so what is left now can be answered without opening the console.
+  // Append-only, so topping up is a new reading rather than an edit.
+  providerBalance: defineTable({
+    balanceCents: v.number(),
+    // When the figure was true, which is not always when it was entered.
+    asOf: v.number(),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_asOf", ["asOf"]),
   // Money received, and where it went. Half of every payment is set aside to
   // pay the providers for that member's work and half is Forge's, recorded the
   // moment Stripe says the money moved. This is operator accounting in real

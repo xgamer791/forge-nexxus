@@ -316,6 +316,26 @@ export const usage = query({
   },
 });
 
+// Records what the provider's console says is left, since nothing reports a
+// prepaid Gemini balance over an API:
+//   npx convex run billing:recordProviderBalance '{"usd": 28.41}'
+// Run it again after topping up, or whenever the console is checked. Each run
+// is a new reading rather than an edit, so the drift between what the meter
+// expected and what the console actually said stays visible.
+export const recordProviderBalance = internalMutation({
+  args: { usd: v.number(), asOf: v.optional(v.number()), note: v.optional(v.string()) },
+  handler: async (ctx, { usd, asOf, note }) => {
+    if (!Number.isFinite(usd) || usd < 0) throw new ConvexError("A balance is a number of dollars, at or above zero");
+    const now = Date.now();
+    await ctx.db.insert("providerBalance", {
+      balanceCents: storedCents(usd * 100),
+      asOf: asOf ?? now,
+      note,
+      createdAt: now,
+    });
+  },
+});
+
 // What has been taken in and how much of it is the providers' to spend, for
 // whoever runs the deployment: `npx convex run billing:funding`. Cash is never
 // answered to a browser, so this is an internal query and stays one.
@@ -339,12 +359,28 @@ export const funding = internalQuery({
     const holds = await ctx.db.query("creditHolds").collect();
     const settled = holds.filter((hold) => hold.status === "settled");
     const spentCents = settled.reduce((sum, hold) => sum + (hold.costCents ?? 0), 0);
+    // What the provider has left, carried forward from the last reading of its
+    // console by everything the meter has priced since. It is only as good as
+    // the meter's reach, so `unmetered` below is the figure to read beside it:
+    // requests the provider never priced have been spent and are not here.
+    const reading = await ctx.db.query("providerBalance").withIndex("by_asOf").order("desc").first();
+    const sinceReading = reading
+      ? settled.reduce((sum, hold) => (hold.createdAt >= reading.asOf ? sum + (hold.costCents ?? 0) : sum), 0)
+      : 0;
     return {
       payments: rows.length,
       ...total,
       spentCents: storedCents(spentCents),
       metered: settled.filter((hold) => hold.costCents !== undefined).length,
       unmetered: settled.filter((hold) => hold.costCents === undefined).length,
+      provider: reading
+        ? {
+            readingCents: reading.balanceCents,
+            asOf: reading.asOf,
+            spentSinceCents: storedCents(sinceReading),
+            leftCents: storedCents(reading.balanceCents - sinceReading),
+          }
+        : null,
       // What is left of the budget those payments funded. Negative means the
       // providers have been paid more than the plans set aside for them.
       budgetLeftCents: storedCents(total.apiCents - spentCents),
