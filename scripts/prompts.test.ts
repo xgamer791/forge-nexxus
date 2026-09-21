@@ -34,11 +34,17 @@ describe("one instruction, in one place", () => {
     expect(stack.length).toBeLessThan(35000);
   });
 
-  test("type is decided once: one family, from either permitted host", () => {
+  test("type is decided once: Satoshi or Switzer from Fontshare", () => {
     expect(FORGE_MD).toContain("One typeface for the entire build");
+    expect(FORGE_MD).toContain("Satoshi or **Switzer** from Fontshare only");
+    expect(FORGE_MD).toContain("https://www.fontshare.com/fonts/satoshi");
+    expect(FORGE_MD).toContain("https://www.fontshare.com/fonts/switzer");
+    expect(FORGE_MD).toContain("No more than one font per site");
+    expect(FORGE_MD).not.toMatch(/There is no preferred family/);
+    expect(FORGE_MD).not.toMatch(/Fontshare and Google Fonts are both available/);
     expect(contract).toContain("one typeface for the whole site");
+    expect(contract).toContain("Satoshi or Switzer");
     expect(stack).not.toMatch(/at most two (Google Fonts )?families/i);
-    expect(contract).toContain("Google Fonts and Fontshare are the only external stylesheets");
   });
 
   test("the site covers the job the brief names, including selling", () => {
@@ -107,6 +113,18 @@ describe("the injected skill fits the reply Forge is allowed to give", () => {
   test("it does not offer a typeface pairing the house rule forbids", () => {
     expect(FORGE_MD).not.toMatch(/use one family or two/i);
     expect(FORGE_MD).toContain("Forge uses one family for the whole site");
+  });
+
+  test("the frontend-design skill keeps its body and adds Fonts below it", () => {
+    const skill = read(".claude/skills/frontend-design/SKILL.md");
+    const job = skill.indexOf("Let each written element do exactly one job.");
+    const fonts = skill.indexOf("## Fonts");
+    expect(job).toBeGreaterThan(0);
+    expect(fonts).toBeGreaterThan(job);
+    expect(skill).toContain("use one family or two");
+    expect(skill).toContain("https://www.fontshare.com/fonts/satoshi");
+    expect(skill).toContain("https://www.fontshare.com/fonts/switzer");
+    expect(skill).toContain("No more than one font per site unless the user requests another.");
   });
 });
 

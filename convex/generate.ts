@@ -121,7 +121,7 @@ Return one self-contained HTML file:
 - Semantic landmarks (header, nav, main, section, footer), one h1, headings in order, alt text on every image, visible :focus-visible styles, and a prefers-reduced-motion rule if anything moves.
 - Real, specific copy written for this business from what they told you — never lorem ipsum or "[placeholder]". Use the prices, addresses, phone numbers and names the brief supplies, and leave out testimonials, statistics, awards and team members it does not.
 - No scripts and no frameworks, so build the surface honestly rather than faking what sits behind it. A shop still gets its products, a booking business still gets its booking section, and a form is static markup. Their actions lead somewhere true — an anchor to the contact section, or an external store or booking link the brief supplies. Never render a cart, a checkout, a payment form, a signed-in account or a confirmed order as though it worked.
-- Links between sections use anchors. Google Fonts and Fontshare are the only external stylesheets, and they load the one family.
+- Links between sections use anchors. Load one family from Fontshare — Satoshi or Switzer — unless the member names another font.
 
 ${pictures}
 
