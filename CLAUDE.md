@@ -114,6 +114,15 @@ to it:
 Where the skill and something already here disagree, follow one and say which,
 and why. Silently picking either is the only wrong answer.
 
+## Rule 5: client version number
+
+The number at the top-right of the prompt is the Forge Nexxus client version.
+It is a plain integer, not a hash.
+
+**Read `VERSION.md` before you finish any change a user can see.** Increment
+the number there, paint it on both surfaces, say `Latest version: N` in your
+summary, and push to `main`. That file is the source of truth.
+
 ## The name
 
 The product is **Forge Nexxus**. Do not rename or rebrand it — not the title,

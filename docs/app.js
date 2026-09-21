@@ -1,23 +1,20 @@
 // Menus, appearance, and voice input are local; sites, credits, and the account persist through ForgeData (Convex).
 // Revalidate on return so cached tabs discover new GitHub Pages releases.
 const loadedVersion = document.querySelector('meta[name="app-version"]')?.content;
-function shortBuild(version = loadedVersion) {
-  if (!version) return '';
-  return version === 'development' ? 'dev' : version.slice(0, 8);
-}
-function paintBuildStamp(version = loadedVersion) {
-  const short = shortBuild(version);
+const loadedBuild = document.querySelector('meta[name="app-build"]')?.content;
+function paintBuildStamp(build = loadedBuild) {
+  const number = String(build ?? '').trim();
   document.querySelectorAll('[data-build-stamp]').forEach(node => {
-    if (!short) {
+    if (!number) {
       node.textContent = '';
       node.removeAttribute('title');
       node.removeAttribute('aria-label');
       return;
     }
     node.hidden = false;
-    node.textContent = short;
-    node.title = version;
-    node.setAttribute('aria-label', `Build ${short}`);
+    node.textContent = number;
+    node.title = `Version ${number}`;
+    node.setAttribute('aria-label', `Version ${number}`);
   });
 }
 paintBuildStamp();
