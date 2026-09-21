@@ -25,6 +25,7 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
 .chrome{position:absolute;top:0;left:0;right:0;height:var(--header);z-index:6;background:#fff;color:#1c1c1e;pointer-events:none}
 .chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{color:#1c1c1e}
 .chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:calc((var(--header) - 40px) / 2);pointer-events:auto;z-index:0}
+.build-stamp{position:absolute;top:var(--header);right:16px;height:28px;display:grid;place-items:center;color:var(--subdued);font-size:12px;line-height:16px;font-weight:500;font-variant-numeric:tabular-nums;pointer-events:none;user-select:text;z-index:1}
 .composer-area{position:absolute;bottom:20px;left:16px;right:16px}
 .app.reference .composer-area{left:16px;right:16px;bottom:var(--composer-bottom)}
 
