@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { parseReply } from "./generate";
+import { chatRoute, parseReply } from "./generate";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
 
@@ -73,6 +73,44 @@ afterEach(() => {
   delete process.env.AI_BASE_URL;
   delete process.env.AI_API_KEY;
   delete process.env.AI_MODEL;
+  delete process.env.AI_MODEL_LABEL;
+});
+
+describe("chatRoute", () => {
+  test("defaults to Gemini 3.8 Flash on the OpenAI-compatible Gemini host", () => {
+    delete process.env.AI_BASE_URL;
+    delete process.env.AI_MODEL;
+    delete process.env.AI_MODEL_LABEL;
+    const route = chatRoute();
+    expect(route.baseUrl).toBe("https://generativelanguage.googleapis.com/v1beta/openai");
+    expect(route.model).toBe("gemini-3.8-flash");
+    expect(route.label).toBe("Gemini 3.8 Flash");
+    expect(route.misrouted).toBe(false);
+    expect(route.refuseReason).toBeNull();
+  });
+
+  test("allows gemini-3.8-flash and refuses DeepSeek and image-only models", () => {
+    process.env.AI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+    process.env.AI_MODEL = "gemini-3.8-flash";
+    expect(chatRoute()).toMatchObject({
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+      model: "gemini-3.8-flash",
+      label: "Gemini 3.8 Flash",
+      misrouted: false,
+      refuseReason: null,
+    });
+
+    process.env.AI_BASE_URL = "https://api.deepseek.com/v1";
+    process.env.AI_MODEL = "deepseek-flash";
+    expect(chatRoute()).toMatchObject({ misrouted: true, refuseReason: "deepseek" });
+
+    process.env.AI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+    process.env.AI_MODEL = "gemini-3.1-flash-lite-image";
+    expect(chatRoute()).toMatchObject({ misrouted: true, refuseReason: "image" });
+
+    process.env.AI_MODEL = "nano-banana-2";
+    expect(chatRoute()).toMatchObject({ misrouted: true, refuseReason: "image" });
+  });
 });
 
 describe("parseReply", () => {
