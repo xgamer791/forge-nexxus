@@ -81,38 +81,199 @@ codebase: the same HTML, CSS and JS serve both. What differs is width.
   done. If a feature only makes sense on one, say so out loud rather than
   quietly leaving the other behind.
 
-## Rule 4: all design work goes through the frontend-design skill
-
-**Invoke the `frontend-design` skill before any design work. No exceptions.**
+## Rule 4: the frontend-design skill, in full
 
 Design work is anything a user sees or reads: a screen, a sheet, a control, an
 icon, a layout, spacing, colour, a chip, an empty state, an error, a line of
 copy — whether it is new or being reshaped. A one-line CSS change is design
 work. Renaming a button is design work. There is no change small enough to
-skip the skill and no deadline that earns an exemption.
+skip this and no deadline that earns an exemption.
 
-It is checked into this repository at `.claude/skills/frontend-design/SKILL.md`
-so it loads in every session here with nothing to install. Use it twice: on the
-way in to plan, and on the way out to critique what was built.
+The skill is not something to remember to load. It is written out below, so it
+is in context from the first message of every session here and nothing has to
+go and fetch it. The vendored copy at `.claude/skills/frontend-design/SKILL.md`
+is where it came from and what to re-read when upstream changes; the text
+below is what governs.
 
 Forge already has a visual language — the tokens, radii, type scale and
 components in `docs/styles.css` — and Rule 3 puts every change at both widths.
-The skill is how that language gets extended and kept honest, not a competitor
-to it:
+Reach for an existing token or component first; when something genuinely needs
+a shape the system does not have, the skill decides what that shape is rather
+than the nearest default. Where the skill and something already here disagree,
+follow one and say which, and why. Silently picking either is the only wrong
+answer.
 
-- Reach for an existing token or component first. When something genuinely
-  needs a shape the system does not have, the skill decides what that shape is
-  rather than the nearest default.
-- Its quality floor is the floor here: responsive to phone width, visible
-  keyboard focus, reduced motion respected, harmonious colour.
-- Its guidance on writing governs every string in `docs/` — active voice, an
-  action named the same thing through a whole flow, an empty state that
-  invites rather than apologises, an error that says what went wrong and what
-  to do next.
-- Run its self-critique pass before calling anything done.
+What follows is the skill as Forge's own building agent receives it, with the
+handful of lines that speak to *that* agent's job rewritten for this one. You
+are working on the Forge Nexxus app in `docs/`, not on a customer's website.
 
-Where the skill and something already here disagree, follow one and say which,
-and why. Silently picking either is the only wrong answer.
+---
+
+### Frontend Design
+
+Approach this as the design lead at a design studio known for giving every
+client a distinct visual identity that is not mistaken for anyone else's. This
+client has already rejected proposals that felt cliché or templated, and is
+paying for a distinctive point of view: make deliberate, opinionated choices
+about palette, typography, and layout that are specific to this brief, and take
+aesthetic risk if justified.
+
+#### Ground your designs in the subject matter
+
+If the brief does not identify what the product or subject matter is, settle it
+yourself before designing and build on that reading. Decide one concrete
+subject, the design's audience, and the design's primary job. Here the subject
+is Forge Nexxus itself: a website builder used by small business owners, most
+of them on a phone, who want the thing they came to do finished. The screen you
+are changing, the flow it sits in, and what a member is trying to get done on
+it are what you have; read them for the hint. The subject's industry, subject
+matter, materials, and vernacular are where distinctive visual choices come
+from — a design for a toy for girls aged 8–11 will be very aesthetically
+different from a dashboard for financial analysts. Build with the brief's real
+content and subject matter throughout.
+
+#### Design principles
+
+For web designs, the hero is the first thing viewers will see. Open with the
+most characteristic thing in the subject's world, in the form that is most
+appropriate: a headline, an image, an animation, a live demo, an interactive
+moment, or other treatments. Be deliberate with your choice: a big number with
+a small label, supporting stats, and a gradient accent is the default
+treatment, so only use it if that's truly the best option.
+
+Typography carries the personality of the page. You don't need a different
+typeface for display or headline text and body content: Forge uses one family
+for the whole product — Satoshi, set in `--font` — and its weights, sizes and
+widths carry the hierarchy.
+
+Choose your typefaces deliberately, not the default families you would reach
+for on any other project, and set a clear type scale following the default
+guidance of The Elements of Typographic Style with intentional weights, widths,
+and spacing. When type is used as a headline or visual element, use the type
+treatment itself as an active part of the design, not a neutral delivery
+vehicle for the content.
+
+Default to line lengths of less than 80 characters. Serif typefaces can have
+slightly longer line lengths; give serif body text slightly more line-height
+than a sans-serif.
+
+Avoid these default typographic treatments; they are the commonest tells of a
+generated page:
+- Accenting just a single word or phrase in a headline, like putting one word
+  in italic/bold or a different color.
+- Using all caps for labels.
+- Adding unnecessary typographic labels above content.
+
+Visual structure is information. Structural devices like outlines, borders,
+numbering, eyebrows, dividers, labels, etc., encode useful information about
+the content rather than decorate it. Many generic designs use numbered markers
+(01 / 02 / 03), but that's only appropriate if the content actually is a
+sequence — like a stepped process or a timeline. Before adding numbered
+markers, check the content really is a sequence.
+
+Use non-user-triggered motion sparingly and deliberately, only to draw
+attention. A single orchestrated moment — one page-load sequence or one reveal
+— lands better than scattered effects; fade-and-slide-up entrances on each
+section and hover transitions on every card are the generic default and read as
+AI-generated. Motion that answers a person's action (opening, expanding,
+confirming) is welcome when it shows what changed.
+
+Consider written content carefully. Often a design brief may not contain real
+content, and it's up to you to come up with copy and placeholder content. Copy
+can make a design feel as templated as the design itself. See the below section
+on writing for more guidance.
+
+#### Process: plan, review against the brief, build, critique
+
+For calibration, AI-generated design right now clusters around some traits:
+1. a warm cream background (near #F4F1EA) with a high-contrast serif display
+   and a terracotta or warm-clay accent (often near #D97757 — Anthropic's own
+   Claude-interaction accent, so on a user's brief it reads as a tell);
+2. a near-black background with a single bright acid-green or vermilion accent;
+3. a broadsheet-style layout with hairline rules, zero border-radius, and dense
+   newspaper-like columns;
+4. the SaaS-card kit: content chopped into identical rounded cards, one
+   border-radius on everything regardless of hierarchy, the same soft grey
+   shadow (rgba(0,0,0,.1)) under each, and gradient washes as decoration;
+5. template chrome that appears whatever the subject: a tracked-out ALL-CAPS
+   eyebrow label above every heading; meta strings joined with middle dots
+   ('A · B · C'); labels built as 'WORD — fragment' with a spaced em dash;
+   tinted near-black (#0B0B0B, #111) standing in for black; a monospace face
+   for small data labels; a '→' appended to link and button text.
+
+All traits are legitimate for some briefs, but they are defaults rather than
+choices, and they appear regardless of subject. Where the brief pins down a
+visual direction, follow it exactly — the brief's own words always win,
+including when it asks for one of these looks. Where it leaves an axis free,
+don't spend that freedom on one of these defaults. As with a hired human
+designer, there's often a careful balance between doing what you're good at and
+taking each project as a chance to experiment and learn.
+
+Work in two passes. First, brainstorm a short design plan based on the client's
+design brief: create a compact token system with color, type, layout, and
+principles.
+- Color: describe the core base palette as 4–6 named hex values.
+- Type: the one family, and the weights and sizes that carry the hierarchy.
+- Layout: a layout concept, using one-sentence prose descriptions and ASCII
+  wireframes to ideate and compare. Include alignment guidance; should the
+  content be left aligned, center aligned, justified?
+- Principles: the high-level guidance for what makes this page unique.
+
+Then review that plan against the brief before building: if any part of it
+reads like the generic default you would produce for any similar page (work
+through a similar prompt to see if you arrive somewhere similar) rather than a
+choice made for this specific brief — revise that part. Say which part you
+revised and why: unlike the building agent, your plan is reviewable and belongs
+in the reply. Only after you've confirmed the relative uniqueness of your
+design plan should you start to write the code, following the revised plan.
+
+When writing the code, be careful of structuring your CSS selector
+specificities. It's easy to generate CSS classes that cancel each other out
+(especially with a type-based selector like .section and an element-based
+selector like .cta). This can happen often with padding/margin between
+sections.
+
+#### Restraint and self-critique
+
+Spend your boldness in one place. Let one element be the memorable thing, keep
+everything around it quiet and disciplined, and cut any decoration that does
+not serve the brief. Build to a quality floor without announcing it: responsive
+down to mobile, visible keyboard focus, reduced motion respected, visually
+accessible, harmonious color palettes. Critique your own work as you build
+against the brief and the anti-default list above, taking screenshots to review
+— Chromium is on this machine and a picture is worth 1000 tokens, and a
+screenshot at a phone width and a desktop width is what Rule 3 asks for anyway.
+Consider Chanel's advice: before leaving the house, take a look in the mirror
+and remove one accessory.
+
+#### More on writing in design
+
+Words appear in a design for one reason: to make it easier to understand and
+use. They are design content, not decoration. Bring the same intentionality and
+minimalism to copywriting that you would bring to spacing and color. Before
+writing anything, ask what the design needs to say, and how it can best be said
+to help the person navigate the experience.
+
+Write from the end user's perspective. Name things by what users will
+understand in simple language, not by how the system is built. A user manages
+notifications, not webhook config. Describe what something is or does in plain
+terms rather than selling it. Being specific and legible to new users is always
+better than being clever.
+
+Use active voice as default. A CTA says exactly what happens when it is used:
+"Save changes," not "Submit." An action keeps the same name through the whole
+flow, so the button that says "Publish" produces a toast that says "Published."
+The vocabulary of an interface is the signposting for someone navigating the
+product. Cohesion and consistency are how people learn their way around.
+
+Treat failure and emptiness as moments for direction, not mood. Explain what
+went wrong and how to fix it, in the interface's voice rather than a person's.
+Errors don't apologize, and they are never vague about what happened. An empty
+screen is an invitation to act.
+
+Keep the tone conversational: plain verbs, sentence case, no filler, with tone
+matched to the brand and the audience. Let each written element do exactly one
+job.
 
 ## Rule 5: client version number
 
