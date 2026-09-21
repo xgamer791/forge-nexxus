@@ -9,7 +9,7 @@ import { FRONTEND_DESIGN } from "../convex/frontendDesign";
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const generate = read("convex/generate.ts");
 const onboarding = read("convex/onboarding.ts");
-// What the build turn actually sends: forge.md, the design skill, and the
+// What the build turn actually sends: FORGE_MD, the design skill, and the
 // build contract inside systemPrompt().
 const contract = generate.slice(
   generate.indexOf("You are Forge, the website-building agent"),
@@ -19,7 +19,7 @@ const contract = generate.slice(
 describe("the embedded prompts match their source files", () => {
   // Convex cannot read the filesystem, so these markdown files are embedded as
   // strings. Editing one and not the other ships a prompt nobody reviewed.
-  test("forge.md and the frontend-design skill are embedded verbatim", () => {
+  test("FORGE_MD is present and the frontend-design skill is embedded verbatim", () => {
     expect(contract.length).toBeGreaterThan(500);
     expect(FORGE_MD).toBe(read("forge.md"));
     expect(FRONTEND_DESIGN).toBe(read("frontend-design.md"));
