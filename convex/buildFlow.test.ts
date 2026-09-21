@@ -613,7 +613,7 @@ describe("what actually reaches the model", () => {
 
     // Whole-string equality, so a truncated or paraphrased copy fails here.
     expect(systems[0]).toBe(FORGE_MD);
-    expect(systems.filter((s) => s === FORGE_MD).length).toBe(1);
+    expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
     expect(systems[0].length).toBe(FORGE_MD.length);
 
     // House rules + skill are one system message, then the contract.
@@ -638,7 +638,7 @@ describe("what actually reaches the model", () => {
     expect(strategy).toBeDefined();
     const systems = systemsOf(strategy);
     expect(systems[0]).toBe(FORGE_MD);
-    expect(systems.filter((s) => s === FORGE_MD).length).toBe(1);
+    expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
   });
 
   test("a thread turn after the build carries them as well", async () => {
@@ -655,7 +655,7 @@ describe("what actually reaches the model", () => {
 
     const systems = systemsOf(providers.chatCalls().at(-1)!);
     expect(systems[0]).toBe(FORGE_MD);
-    expect(systems.filter((s) => s === FORGE_MD).length).toBe(1);
+    expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
     // On a site with a saved brief, generate.begin splices that brief in at
     // index 1. FORGE_MD (house rules + skill) is still the only forge prompt.
     expect(systems[1]).toContain("Saved project context");
