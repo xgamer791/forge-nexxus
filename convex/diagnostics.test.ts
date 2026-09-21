@@ -203,6 +203,47 @@ describe("building-agent diagnostics", () => {
     expect(mine?.events.filter((event) => event.phase === "provider_cap").length).toBeGreaterThan(0);
   });
 
+  test("a model that answers with only its reasoning fails once, and names what to change", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await seedBuiltSite(t, member.userId);
+    const thinking = "Let me consider the bakery's palette. ".repeat(20);
+    // A reasoning model that spent the whole budget thinking: HTTP 200, the
+    // thinking in its own field, and no content at all.
+    const calls = stubProvider(() =>
+      json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: thinking } }] }),
+    );
+
+    await expect(
+      member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" }),
+    ).rejects.toThrow("only its reasoning");
+
+    // Once. The same request would only buy the same answer a minute later.
+    expect(calls).toHaveLength(1);
+    const mine = await member.as.query(api.diagnostics.mine, {});
+    expect(mine?.latest).toMatchObject({ status: "failed", errorClass: "reasoning_budget" });
+    expect(mine?.latest?.error).toContain("length limit needs changing");
+    const failure = mine?.events.find((event) => event.phase === "provider_error");
+    expect(failure?.label).toBe("The model spent its length limit thinking and returned no page");
+    expect(failure?.detail).toMatchObject({ reasoningChars: thinking.length, finishReason: "length" });
+    // The balance is untouched: a build that never happened is never charged.
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({ credits: OPENING, reserved: 0 });
+  });
+
+  test("an empty reply with nothing behind it keeps its old class", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await seedBuiltSite(t, member.userId);
+    stubProvider(() => json({ choices: [{ finish_reason: "stop", message: { content: "   " } }] }));
+
+    await expect(
+      member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" }),
+    ).rejects.toThrow("empty reply");
+
+    const mine = await member.as.query(api.diagnostics.mine, {});
+    expect(mine?.latest).toMatchObject({ status: "failed", errorClass: "empty" });
+  });
+
   test("rebuild queues a diagnostic run before the agent starts", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");

@@ -635,7 +635,12 @@ async function complete(
       });
       throw new Error(`The model provider answered ${response.status}${excerpt(bodyText)}`);
     }
-    let data: { choices?: { finish_reason?: unknown; message?: { content?: unknown } }[] };
+    let data: {
+      choices?: {
+        finish_reason?: unknown;
+        message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown };
+      }[];
+    };
     try {
       data = JSON.parse(bodyText);
     } catch {
@@ -649,14 +654,38 @@ async function complete(
     }
     const choice = data?.choices?.[0];
     const content = choice?.message?.content;
+    const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined;
+    const reasoning = reasoningOf(choice?.message);
     if (typeof content !== "string" || !content.trim()) {
+      // A reasoning model puts its thinking in its own field and counts it
+      // against the same length budget, so a long enough think leaves nothing
+      // to say and the page never starts. Asking again buys the same answer a
+      // minute later, so this one stops here: what has to change is the model
+      // or the limit, and neither is something another attempt can reach.
+      const spentThinking = reasoning.length > 0 || finishReason === "length";
       await trace?.note({
         phase: "provider_error",
-        label: "The model returned an empty reply",
+        label: spentThinking
+          ? "The model spent its length limit thinking and returned no page"
+          : "The model returned an empty reply",
         level: "error",
-        detail: { httpStatus: 200, attempt, durationMs: Date.now() - started, errorClass: "empty" },
+        detail: {
+          httpStatus: 200,
+          attempt,
+          durationMs: Date.now() - started,
+          errorClass: spentThinking ? "reasoning_budget" : "empty",
+          finishReason,
+          reasoningChars: reasoning.length || undefined,
+          tokensAsked: limit,
+          host,
+          model: route.model,
+        },
       });
-      throw new Error("The model returned an empty reply");
+      throw new Error(
+        spentThinking
+          ? "The model returned only its reasoning and no page. This deployment's model or length limit needs changing."
+          : "The model returned an empty reply",
+      );
     }
     await trace?.note({
       phase: "provider_response",
@@ -666,14 +695,17 @@ async function complete(
         durationMs: Date.now() - started,
         attempt,
         continuation: meta?.continuation,
-        truncated: choice?.finish_reason === "length",
+        truncated: finishReason === "length",
         replyChars: content.length,
+        // How much of the budget went on thinking, on a turn that did answer.
+        reasoningChars: reasoning.length || undefined,
+        finishReason,
         tokensAsked: limit,
         host,
         model: route.model,
       },
     });
-    return { content, truncated: choice?.finish_reason === "length" };
+    return { content, truncated: finishReason === "length" };
   }
   throw new Error("The model provider kept refusing this request.");
 }
@@ -776,6 +808,16 @@ export function parseReply(content: string) {
     .trim()
     .slice(0, REASON_LIMIT);
   return { html, summary };
+}
+
+// Where a reasoning model keeps its thinking. It is not an answer and never
+// reaches a page, so it is read only to explain an empty reply; providers that
+// speak the OpenAI shape do not agree on the name.
+function reasoningOf(message: { reasoning_content?: unknown; reasoning?: unknown } | undefined) {
+  for (const value of [message?.reasoning_content, message?.reasoning]) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return "";
 }
 
 // What the provider said, as one line. An OpenAI-style error body is read for

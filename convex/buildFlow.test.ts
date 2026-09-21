@@ -519,6 +519,31 @@ describe("a rebuild, start to finish", () => {
     expect(await versions(t)).toHaveLength(2);
   });
 
+  test("a reasoning-only reply stops the build instead of buying the same answer twice", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    // writePage retries a reply that fell short of a page. This is not that:
+    // the budget went on thinking, so a second attempt spends another minute
+    // to be told the same thing.
+    const providers = stubProviders(() =>
+      json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking about the roastery…" } }] }),
+    );
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+
+    const builds = providers.chatCalls().filter((call) =>
+      call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)),
+    );
+    expect(builds).toHaveLength(1);
+    const row = (await t.run((ctx) => ctx.db.get(id)))!;
+    expect(row.status).toBe("failed");
+    expect(row.error).toContain("only its reasoning");
+    // Nothing was built and nothing was charged for it.
+    expect(await versions(t)).toHaveLength(0);
+    expect((await member.as.query(api.billing.summary, {}))!.reserved).toBe(0);
+  });
+
   test("a page still arriving from before the rebuild cannot land on the fresh site", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");

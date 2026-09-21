@@ -37,6 +37,8 @@ const detailValidator = v.object({
   truncated: v.optional(v.boolean()),
   tokensAsked: v.optional(v.number()),
   replyChars: v.optional(v.number()),
+  reasoningChars: v.optional(v.number()),
+  finishReason: v.optional(v.string()),
   promptChars: v.optional(v.number()),
   htmlChars: v.optional(v.number()),
   imageWanted: v.optional(v.number()),
@@ -99,6 +101,8 @@ export type EventDetail = {
   truncated?: boolean;
   tokensAsked?: number;
   replyChars?: number;
+  reasoningChars?: number;
+  finishReason?: string;
   promptChars?: number;
   htmlChars?: number;
   imageWanted?: number;
@@ -132,6 +136,9 @@ export type ProviderTrace = {
 };
 
 export function classifyError(reason: string) {
+  // Ahead of the length and emptiness tests below, which this one's wording
+  // would otherwise fall into.
+  if (/only its reasoning/i.test(reason)) return "reasoning_budget";
   if (/too long|timed out|Timeout|Abort/i.test(reason)) return "timeout";
   if (/empty reply/i.test(reason)) return "empty";
   if (/complete page|did not return a website/i.test(reason)) return "incomplete_page";

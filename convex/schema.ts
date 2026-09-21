@@ -225,6 +225,8 @@ export default defineSchema({
       truncated: v.optional(v.boolean()),
       tokensAsked: v.optional(v.number()),
       replyChars: v.optional(v.number()),
+      reasoningChars: v.optional(v.number()),
+      finishReason: v.optional(v.string()),
       promptChars: v.optional(v.number()),
       htmlChars: v.optional(v.number()),
       imageWanted: v.optional(v.number()),
