@@ -25,12 +25,44 @@ const ENABLED = true;
   // the address Forge gave it. It comes from Convex, like everything else.
   let sitesList = [];
   let localBuild = null;
+  let trace = null;
   const REBUILD_PROMPT = 'Rebuild this website from scratch. Discard the current design. Use only real business facts already known. Return one complete new HTML document, not an edit of the old page.';
   function missingRebuild(error) {
     return /Could not find public function|onboarding:rebuild/i.test(String(error?.data || error?.message || ''));
   }
   function currentDraft() {
     return localBuild || state?.draft || null;
+  }
+  function belongsToDraft(draft) {
+    const latest = trace?.latest;
+    if (!latest) return false;
+    if (draft.local) return true;
+    if (latest.onboardingId && draft.id === latest.onboardingId) return true;
+    return Boolean(latest.siteId && draft.siteId && latest.siteId === draft.siteId);
+  }
+  function progressEvents(draft) {
+    const extras = belongsToDraft(draft) ? (trace?.events ?? []) : [];
+    const seen = new Set();
+    const rows = [];
+    for (const event of [...(draft.events ?? []), ...extras].sort((a, b) => (a.at ?? 0) - (b.at ?? 0))) {
+      const key = `${event.at}:${event.label}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(event);
+    }
+    return rows;
+  }
+  function liveProgress(draft, events) {
+    const phase = belongsToDraft(draft) ? trace?.latest?.status : null;
+    if (draft.status === 'queued' || phase === 'queued') return 'Waiting for the build to start…';
+    if (draft.status === 'saving' || phase === 'saving') return 'Saving your website…';
+    if (phase === 'images') return 'Making pictures for your site…';
+    if (phase === 'calling') return 'Agent is building…';
+    const has = label => events.some(event => event.label === label);
+    return has('Pictures made for your site') ? 'Putting the page together…'
+      : has('Page written') ? 'Making pictures for your site…'
+      : has('Agent started building your website') || has('Calling the model') ? 'Agent is building…'
+      : 'Preparing the agent…';
   }
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const mark = '<svg class="onboarding-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" stroke="none" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg>';
@@ -163,25 +195,25 @@ const ENABLED = true;
     const failed = draft.status === 'failed';
     const site = done ? builtSite() : null;
     const live = site?.status === 'published' && Boolean(site.publishedUrl);
-    const key = `${draft.id}:${draft.status}:${draft.events.length}:${site?._id ?? ''}:${site?.publishedUrl ?? ''}:${site?.status ?? ''}:${state.isFree}`;
+    const events = progressEvents(draft);
+    const key = `${draft.id}:${draft.status}:${events.length}:${trace?.latest?.status ?? ''}:${trace?.latest?.updatedAt ?? ''}:${site?._id ?? ''}:${site?.publishedUrl ?? ''}:${site?.status ?? ''}:${state.isFree}`;
     if (rendered === key) return;
     rendered = key;
-    const has = label => draft.events.some(event => event.label === label);
     const title = live ? 'Your website is published.' : done ? 'Your website is ready.' : failed ? 'Let’s try that again.' : 'Your idea is taking shape.';
     const detail = live ? 'It is on the web at this address, and every change you make lands there.'
       : done ? (site && !state.isFree ? 'Publish it and Forge gives it an address of its own.' : 'Your first version is saved. Make it yours from your dashboard.')
       : failed ? draft.error : 'Forge is creating your website from your answers. You can return to this screen at any time.';
-    const progress = draft.status === 'queued' ? 'Waiting for the build to start…'
-      : draft.status === 'saving' ? 'Saving your website…'
-      : has('Pictures made for your site') ? 'Putting the page together…'
-      : has('Page written') ? 'Making pictures for your site…'
-      : has('Agent started building your website') ? 'Agent is building…' : 'Preparing the agent…';
+    const progress = liveProgress(draft, events);
     // Billing is the way on when the build stopped for credits or a plan;
     // otherwise the answers are, so that is what the failed screen offers.
     const aboutBilling = failed && /credit|plan|limit/i.test(draft.error ?? '');
+    const log = events.map((event, index) => {
+      const current = !done && !failed && index === events.length - 1;
+      return `<div class="onboarding-milestone${current ? ' is-current' : ''}">${current ? '<span class="onboarding-step-mark" aria-hidden="true"></span>' : '<svg aria-hidden="true"><use href="#check"/></svg>'}<span>${escape(event.label)}</span></div>`;
+    }).join('');
     screen.innerHTML = shell(`<div class="onboarding-content onboarding-loading ${done || failed ? 'is-settled' : ''}">
       <div class="build-emblem" aria-hidden="true">${mark}</div><h1 tabindex="-1">${title}</h1><p class="onboarding-hint">${escape(detail)}</p>
-      ${done ? '' : `<div class="onboarding-build-log" role="log" aria-live="polite" aria-label="Website build progress">${draft.events.map(event => `<div class="onboarding-milestone"><svg aria-hidden="true"><use href="#check"/></svg><span>${escape(event.label)}</span></div>`).join('')}</div>`}
+      ${done || !events.length ? '' : `<div class="onboarding-build-log" role="log" aria-live="polite" aria-label="Website build progress">${log}</div>`}
       ${!done && !failed ? `<p class="onboarding-live" role="status"><span class="onboarding-spinner" aria-hidden="true"></span>${progress}</p>` : ''}
       <p class="onboarding-connection" role="status" ${offline ? '' : 'hidden'}>Connection lost. Reconnecting to live progress…</p>
       ${done ? handoff(site) : failed ? `<button type="button" class="onboarding-primary" data-onboarding-action="retry">Try building again</button>
@@ -459,9 +491,13 @@ const ENABLED = true;
     if (nextState) { state = nextState; subscriptionError = false; }
     render();
   }, () => { subscriptionError = true; render(); });
+  data?.diagnostics?.subscribe?.(next => {
+    trace = next;
+    render();
+  });
   // The hand-off redraws when the finished site's address or status changes.
   data?.sites?.subscribe?.(list => {
     sitesList = Array.isArray(list) ? list : [];
-    if (state?.draft?.status === 'complete') render();
+    if (currentDraft()?.status === 'complete') render();
   });
 })();

@@ -423,6 +423,11 @@ export function createForgeData({
       attach: (id, storageId, name) => client.mutation(api.onboarding.attach, { id, storageId, name }),
       detach: (id, storageId) => client.mutation(api.onboarding.detach, { id, storageId }),
     },
+    // Live log of what the building agent is doing. Labels are safe to show;
+    // the query never returns a key, a prompt, or HTML.
+    diagnostics: {
+      subscribe: (callback, onError) => client.onUpdate(api.diagnostics.mine, {}, callback, onError),
+    },
     messages: {
       subscribe: (conversationId, callback) =>
         client.onUpdate(api.messages.list, { conversationId }, callback),

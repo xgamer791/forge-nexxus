@@ -158,6 +158,86 @@ export default defineSchema({
     status: v.union(v.literal("held"), v.literal("settled"), v.literal("released")),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
+  // One row per building-agent turn. The member can subscribe to it, and an
+  // operator can inspect it, so a hung or looping build is visible without
+  // reading Convex logs. Nothing here is a prompt, a key, or HTML.
+  buildRuns: defineTable({
+    userId: v.id("users"),
+    siteId: v.optional(v.id("sites")),
+    conversationId: v.optional(v.id("conversations")),
+    onboardingId: v.optional(v.id("siteOnboarding")),
+    messageId: v.optional(v.id("messages")),
+    holdId: v.optional(v.id("creditHolds")),
+    attempt: v.optional(v.number()),
+    source: v.union(v.literal("generate"), v.literal("onboarding"), v.literal("rebuild")),
+    requestKind: v.optional(v.string()),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("started"),
+      v.literal("calling"),
+      v.literal("images"),
+      v.literal("saving"),
+      v.literal("complete"),
+      v.literal("failed"),
+    ),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    endedAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+    errorClass: v.optional(v.string()),
+    providerHost: v.optional(v.string()),
+    providerModel: v.optional(v.string()),
+    providerLabel: v.optional(v.string()),
+    keySet: v.optional(v.boolean()),
+    misrouted: v.optional(v.boolean()),
+    promptChars: v.optional(v.number()),
+    htmlChars: v.optional(v.number()),
+    imageWanted: v.optional(v.number()),
+    imageMade: v.optional(v.number()),
+    creditsHeld: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_started", ["userId", "startedAt"])
+    .index("by_site", ["siteId"])
+    .index("by_conversation", ["conversationId"])
+    .index("by_onboarding", ["onboardingId"])
+    .index("by_onboarding_attempt", ["onboardingId", "attempt"])
+    .index("by_message", ["messageId"])
+    .index("by_started", ["startedAt"]),
+  buildEvents: defineTable({
+    userId: v.id("users"),
+    runId: v.id("buildRuns"),
+    at: v.number(),
+    phase: v.string(),
+    level: v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
+    label: v.string(),
+    detail: v.optional(v.object({
+      httpStatus: v.optional(v.number()),
+      durationMs: v.optional(v.number()),
+      attempt: v.optional(v.number()),
+      continuation: v.optional(v.number()),
+      truncated: v.optional(v.boolean()),
+      tokensAsked: v.optional(v.number()),
+      replyChars: v.optional(v.number()),
+      promptChars: v.optional(v.number()),
+      htmlChars: v.optional(v.number()),
+      imageWanted: v.optional(v.number()),
+      imageMade: v.optional(v.number()),
+      errorClass: v.optional(v.string()),
+      host: v.optional(v.string()),
+      model: v.optional(v.string()),
+      keySet: v.optional(v.boolean()),
+      misrouted: v.optional(v.boolean()),
+      requestKind: v.optional(v.string()),
+      holdStatus: v.optional(v.string()),
+      creditAmount: v.optional(v.number()),
+      timedOut: v.optional(v.boolean()),
+    })),
+  })
+    .index("by_run", ["runId"])
+    .index("by_run_at", ["runId", "at"])
+    .index("by_user", ["userId"])
+    .index("by_user_at", ["userId", "at"]),
   // Appearance choices follow the account rather than the device, so they
   // survive signing out and back in.
   settings: defineTable({

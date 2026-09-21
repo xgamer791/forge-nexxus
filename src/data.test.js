@@ -33,6 +33,7 @@ const api = {
     portal: "billing:portal",
   },
   settings: { get: "settings:get", update: "settings:update" },
+  diagnostics: { mine: "diagnostics:mine" },
 };
 
 const tokens = (label) => ({ token: `${label}-token`, refreshToken: `${label}-refresh` });
@@ -311,6 +312,7 @@ describe("data access", () => {
     data.billing.catalog(callback);
     data.billing.history(callback);
     data.settings.subscribe(callback);
+    data.diagnostics.subscribe(callback);
     data.sites.currentHtml("s1", callback);
     await data.account.updateProfile("Sam");
     await data.sites.create();
@@ -338,6 +340,7 @@ describe("data access", () => {
       ["billing:catalog", {}, callback],
       ["billing:history", {}, callback],
       ["settings:get", {}, callback],
+      ["diagnostics:mine", {}, callback, undefined],
       ["sites:currentHtml", { siteId: "s1" }, callback],
     ]);
     expect(client.mutation.mock.calls).toEqual([

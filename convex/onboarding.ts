@@ -6,7 +6,8 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireMemberId } from "./access";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
-import { BUILD_IMAGE_LIMIT, callProvider, describe, parseReply } from "./generate";
+import { failOpenRun, openRun, providerTrace } from "./diagnostics";
+import { BUILD_IMAGE_LIMIT, callProvider, chatRoute, describe, parseReply } from "./generate";
 import { FORGE_MD } from "./forgeMd";
 import { FRONTEND_DESIGN } from "./frontendDesign";
 import { fulfilImages, wantsImages } from "./images";
@@ -60,9 +61,10 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
 async function queueOnboardingBuild(
   ctx: MutationCtx,
   id: Id<"siteOnboarding">,
-  row: { attempt: number },
+  row: { attempt: number; userId: Id<"users"> },
   siteId: Id<"sites">,
   label: string,
+  source: "onboarding" | "rebuild" = "onboarding",
 ) {
   const attempt = row.attempt + 1;
   await ctx.db.patch(id, {
@@ -75,6 +77,17 @@ async function queueOnboardingBuild(
     holdId: undefined,
     assistantId: undefined,
     updatedAt: Date.now(),
+  });
+  const site = await ctx.db.get(siteId);
+  await openRun(ctx, {
+    userId: row.userId,
+    source,
+    status: "queued",
+    siteId,
+    conversationId: site?.conversationId,
+    onboardingId: id,
+    attempt,
+    requestKind: "generate",
   });
   await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
   await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id, attempt });
@@ -254,7 +267,7 @@ export const rebuild = mutation({
       const conversationId = await ctx.db.insert("conversations", { userId, title: brief.answers[0], updatedAt: now });
       siteId = await ctx.db.insert("sites", { userId, conversationId, name: brief.answers[0], status: "draft", createdAt: now, updatedAt: now });
     }
-    await queueOnboardingBuild(ctx, brief._id, brief, siteId, "Rebuilding from your answers");
+    await queueOnboardingBuild(ctx, brief._id, brief, siteId, "Rebuilding from your answers", "rebuild");
     return brief._id;
   },
 });
@@ -346,13 +359,22 @@ const BUILD_AGAIN = "Your last reply did not contain a complete page. Return the
 // The page, asked for until it is whole. A reply that talked instead of
 // building, or stopped short of </html>, is worth one more go while there is
 // time for it; a provider that refused will only say the same thing twice.
-async function writePage(messages: Parameters<typeof callProvider>[0], deadline: number) {
+async function writePage(
+  messages: Parameters<typeof callProvider>[0],
+  deadline: number,
+  trace?: Parameters<typeof callProvider>[3],
+) {
   let shortfall: unknown;
   for (let round = 0; round < 2; round += 1) {
     const remaining = deadline - Date.now();
     if (round > 0 && remaining < RETRY_FLOOR_MS) break;
     try {
-      const reply = await callProvider(round === 0 ? messages : [...messages, { role: "system", content: BUILD_AGAIN }], undefined, remaining);
+      const reply = await callProvider(
+        round === 0 ? messages : [...messages, { role: "system", content: BUILD_AGAIN }],
+        undefined,
+        remaining,
+        trace,
+      );
       const parsed = parseReply(reply);
       if (parsed.html) return { html: parsed.html, summary: parsed.summary };
       shortfall = new Error("The agent did not return a website");
@@ -369,6 +391,33 @@ export const build = internalAction({
   handler: async (ctx, { id, attempt }): Promise<void> => {
     const row = await ctx.runQuery(internal.onboarding.load, { id });
     if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
+    const existing = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
+    const runId = existing ?? await ctx.runMutation(internal.diagnostics.open, {
+      userId: row.userId,
+      source: "onboarding",
+      status: "started",
+      siteId: row.siteId,
+      onboardingId: id,
+      attempt,
+      requestKind: "generate",
+    });
+    const route = chatRoute();
+    let providerHost = route.baseUrl;
+    try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
+    await ctx.runMutation(internal.diagnostics.attach, {
+      runId,
+      siteId: row.siteId,
+      onboardingId: id,
+      attempt,
+      requestKind: "generate",
+      providerHost,
+      providerModel: route.model,
+      providerLabel: route.label,
+      keySet: Boolean(route.apiKey),
+      misrouted: route.misrouted,
+      status: "started",
+    });
+    const trace = providerTrace(ctx, runId, row.userId);
     const deadline = Date.now() + TEXT_BUDGET_MS;
     try {
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
@@ -380,24 +429,59 @@ export const build = internalAction({
       if (!file) throw new Error("The build brief could not be read");
       const brief = await file.text();
       if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, storageId })) {
-        await ctx.storage.delete(storageId); return;
+        await ctx.storage.delete(storageId);
+        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
+        return;
       }
       const job = await ctx.runMutation(internal.generate.beginOnboarding, { id, attempt });
+      await ctx.runMutation(internal.diagnostics.attach, {
+        runId,
+        messageId: job.result.assistantId,
+        holdId: job.result.holdId,
+        requestKind: job.result.requestKind,
+        status: "calling",
+      });
+      await trace.note({
+        phase: "held",
+        label: "Credits held for a build",
+        detail: { requestKind: job.result.requestKind, host: providerHost, model: route.model, keySet: Boolean(route.apiKey), misrouted: route.misrouted },
+      });
       const page = await writePage([...job.messages,
         { role: "system", content: BUILD_ORDER },
         { role: "user", content: `File: website-build-brief.md\n\n${brief}` },
-      ], deadline);
+      ], deadline, trace);
       // The pictures the page asked for are made before it is saved, so the
       // first version a member opens is the finished one.
       let html = page.html;
+      let imageWanted = 0;
+      let imageMade = 0;
       if (wantsImages(html)) {
         await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Page written" });
+        await trace.note({ phase: "images", label: "Making pictures", status: "images" });
         const pictures = await fulfilImages(ctx, { html, userId: row.userId, siteId: row.siteId, limit: BUILD_IMAGE_LIMIT });
         html = pictures.html;
+        imageWanted = pictures.wanted;
+        imageMade = pictures.made;
         if (pictures.made) await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Pictures made for your site" });
+        await trace.note({
+          phase: "images_done",
+          label: pictures.made ? "Pictures made for your site" : "No new pictures to make",
+          detail: { imageWanted: pictures.wanted, imageMade: pictures.made },
+        });
       }
-      if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, saving: true })) return;
+      if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, saving: true })) {
+        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
+        return;
+      }
+      await trace.note({ phase: "saving", label: "Saving your website", status: "saving", detail: { htmlChars: html.length } });
       await ctx.runMutation(internal.generate.finish, { ...job.result, html, summary: page.summary || "Your first website is ready.", onboardingId: id, attempt });
+      await ctx.runMutation(internal.diagnostics.close, {
+        runId,
+        status: "complete",
+        htmlChars: html.length,
+        imageWanted,
+        imageMade,
+      });
     } catch (error) {
       const reason = describe(error);
       console.error("Forge onboarding build failed:", reason);
@@ -418,5 +502,6 @@ export const expire = internalMutation({
       : failed ? "Your website couldn’t be completed. Your answers are saved. Try building again." : "The build stopped responding. Your answers are saved. Try building again.";
     if (row.assistantId && await ctx.db.get(row.assistantId)) await ctx.db.patch(row.assistantId, { status: "failed", body: error });
     await ctx.db.patch(id, { status: "failed", error, updatedAt: Date.now() });
+    await failOpenRun(ctx, { onboardingId: id, attempt, error });
   },
 });

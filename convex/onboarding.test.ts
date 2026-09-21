@@ -127,6 +127,16 @@ describe("onboarding rebuild", () => {
     expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
     expect(await t.run((ctx) => ctx.db.query("messages").collect())).toEqual([]);
     expect(await t.run((ctx) => ctx.db.query("conversations").collect())).toHaveLength(1);
+    const runs = await t.run((ctx) => ctx.db.query("buildRuns").collect());
+    expect(runs).toEqual([
+      expect.objectContaining({
+        userId: member.userId,
+        siteId: seeded.siteId,
+        source: "rebuild",
+        status: "queued",
+        attempt: 2,
+      }),
+    ]);
 
     const after = await member.as.query(api.onboarding.state, {});
     expect(after).toMatchObject({

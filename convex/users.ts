@@ -88,6 +88,8 @@ export async function purgeUser(ctx: MutationCtx, userId: Id<"users">) {
     ...(await ctx.db.query("creditLedger").withIndex("by_user_created", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("creditHolds").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("settings").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
+    ...(await ctx.db.query("buildRuns").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
+    ...(await ctx.db.query("buildEvents").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
   ];
   await Promise.all(owned.map((row) => ctx.db.delete(row._id)));
   const accounts = await ctx.db

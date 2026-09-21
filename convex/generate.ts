@@ -4,7 +4,8 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
-import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute } from "./images";
+import { providerTrace, type ProviderTrace } from "./diagnostics";
+import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
 import { FORGE_MD } from "./forgeMd";
 import { FRONTEND_DESIGN } from "./frontendDesign";
@@ -37,6 +38,7 @@ const CALL_TIMEOUT_MS = 240000;
 const TEXT_BUDGET_MS = 400000;
 const CONTINUE_FLOOR_MS = 45000;
 const MAX_CONTINUATIONS = 2;
+const MAX_COMPLETE_LOOPS = 5;
 const RETRY_WAIT_MS = 1500;
 
 export function chatRoute() {
@@ -132,16 +134,77 @@ export const run = action({
     if (!userId) throw new ConvexError("Not signed in");
     const text = prompt.trim();
     if (!text) throw new ConvexError("Describe what you want first");
-    const job = await ctx.runMutation(internal.generate.begin, { userId, conversationId, prompt: text });
+    const runId = await ctx.runMutation(internal.diagnostics.open, {
+      userId,
+      conversationId,
+      source: "generate",
+      promptChars: text.length,
+    });
+    let assistantId: Id<"messages"> | undefined;
+    let holdId: Id<"creditHolds"> | undefined;
     try {
-      const reply = await callProvider(job.messages);
+      const job = await ctx.runMutation(internal.generate.begin, { userId, conversationId, prompt: text });
+      assistantId = job.assistantId;
+      holdId = job.holdId;
+      const route = chatRoute();
+      let providerHost = route.baseUrl;
+      try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
+      await ctx.runMutation(internal.diagnostics.attach, {
+        runId,
+        siteId: job.siteId,
+        conversationId,
+        messageId: job.assistantId,
+        holdId: job.holdId,
+        requestKind: job.requestKind,
+        providerHost,
+        providerModel: route.model,
+        providerLabel: route.label,
+        keySet: Boolean(route.apiKey),
+        misrouted: route.misrouted,
+        status: "calling",
+      });
+      const trace = providerTrace(ctx, runId, userId);
+      await trace.note({
+        phase: "held",
+        label: job.requestKind === "chat" ? "Credits held for a conversation" : "Credits held for a build",
+        detail: {
+          requestKind: job.requestKind,
+          host: providerHost,
+          model: route.model,
+          keySet: Boolean(route.apiKey),
+          misrouted: route.misrouted,
+        },
+      });
+      const reply = await callProvider(job.messages, undefined, undefined, trace);
       const parsed = parseReply(reply);
       // The pictures a page asked for are made before it is stored, so the
       // version that lands never points at anything that does not exist. A page
       // that came back on a talk-only turn is about to be dropped: it gets none.
-      const html = parsed.html && job.requestKind !== "chat"
-        ? (await fulfilImages(ctx, { html: parsed.html, userId, siteId: job.siteId, limit: job.imageLimit })).html
-        : parsed.html ?? undefined;
+      let imageWanted = 0;
+      let imageMade = 0;
+      let html = parsed.html ?? undefined;
+      if (parsed.html && job.requestKind !== "chat") {
+        if (wantsImages(parsed.html)) {
+          await trace.note({ phase: "images", label: "Making pictures", status: "images" });
+        }
+        const pictures = await fulfilImages(ctx, { html: parsed.html, userId, siteId: job.siteId, limit: job.imageLimit });
+        html = pictures.html;
+        imageWanted = pictures.wanted;
+        imageMade = pictures.made;
+        if (pictures.wanted) {
+          await trace.note({
+            phase: "images_done",
+            label: pictures.made ? "Pictures made for your site" : "No new pictures to make",
+            detail: { imageWanted: pictures.wanted, imageMade: pictures.made },
+          });
+        }
+      }
+      await trace.note({
+        phase: "saving",
+        label: job.requestKind === "chat" ? "Saving the reply" : "Saving your website",
+        status: "saving",
+        detail: { htmlChars: html?.length, requestKind: job.requestKind },
+      });
       await ctx.runMutation(internal.generate.finish, {
         assistantId: job.assistantId,
         siteId: job.siteId,
@@ -151,12 +214,26 @@ export const run = action({
         summary: parsed.summary,
         blockedNote: job.blockedNote,
       });
+      await ctx.runMutation(internal.diagnostics.close, {
+        runId,
+        status: "complete",
+        htmlChars: html?.length,
+        imageWanted,
+        imageMade,
+      });
     } catch (error) {
       const reason = describe(error);
-      await ctx.runMutation(internal.generate.fail, { assistantId: job.assistantId, holdId: job.holdId, reason });
+      if (assistantId && holdId) {
+        await ctx.runMutation(internal.generate.fail, { assistantId, holdId, reason });
+      }
+      try {
+        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: reason });
+      } catch {
+        /* A failed close must not hide the build error. */
+      }
       throw new ConvexError(reason);
     }
-    return { messageId: job.assistantId };
+    return { messageId: assistantId! };
   },
 });
 
@@ -376,10 +453,37 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // and one whose output cap is lower than what was asked for says what its cap
 // is, so the same request goes again inside it. A call that ran out its clock
 // is not repeated: a second slow answer would only spend the build's time.
-async function complete(route: Route, messages: ChatMessage[], maxTokens: number, deadline: number) {
+async function complete(
+  route: Route,
+  messages: ChatMessage[],
+  maxTokens: number,
+  deadline: number,
+  trace?: ProviderTrace,
+  meta?: { continuation?: number },
+) {
   let limit = maxTokens;
-  for (let attempt = 0; ; attempt += 1) {
+  let host = route.baseUrl;
+  try { host = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
+  for (let attempt = 0; attempt < MAX_COMPLETE_LOOPS; attempt += 1) {
     const timeout = Math.max(1000, Math.min(CALL_TIMEOUT_MS, deadline - Date.now()));
+    const started = Date.now();
+    await trace?.note({
+      phase: "provider_request",
+      label: meta?.continuation
+        ? "Continuing a cut-off page"
+        : attempt === 0
+          ? "Calling the model"
+          : "Retrying the model",
+      level: attempt === 0 ? "info" : "warn",
+      status: "calling",
+      detail: {
+        attempt,
+        continuation: meta?.continuation,
+        tokensAsked: limit,
+        host,
+        model: route.model,
+      },
+    });
     let response: Response;
     try {
       response = await fetch(`${route.baseUrl}/chat/completions`, {
@@ -390,6 +494,12 @@ async function complete(route: Route, messages: ChatMessage[], maxTokens: number
       });
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      await trace?.note({
+        phase: "provider_error",
+        label: timedOut ? "The model took too long to answer" : "The model provider could not be reached",
+        level: "error",
+        detail: { attempt, continuation: meta?.continuation, durationMs: Date.now() - started, timedOut, host, model: route.model, errorClass: timedOut ? "timeout" : "unreachable" },
+      });
       if (timedOut) throw new Error("The model took too long to answer. Try again, or ask for a smaller change.");
       if (attempt === 0) { await wait(RETRY_WAIT_MS); continue; }
       throw new Error("The model provider could not be reached. Try again in a moment.");
@@ -397,33 +507,95 @@ async function complete(route: Route, messages: ChatMessage[], maxTokens: number
     const bodyText = await response.text();
     if (!response.ok) {
       const cap = response.status === 400 ? bodyText.match(/max_tokens[^[\]]*\[\s*\d+\s*,\s*(\d+)\s*\]/i) : null;
-      if (cap && Number(cap[1]) > 0 && Number(cap[1]) < limit) { limit = Number(cap[1]); continue; }
+      if (cap && Number(cap[1]) > 0 && Number(cap[1]) < limit) {
+        limit = Number(cap[1]);
+        await trace?.note({
+          phase: "provider_cap",
+          label: "Lowered the model's length limit",
+          level: "warn",
+          detail: { httpStatus: 400, attempt, tokensAsked: limit, durationMs: Date.now() - started, host, model: route.model },
+        });
+        continue;
+      }
       if (attempt === 0 && (response.status === 408 || response.status === 429 || response.status >= 500)) {
+        await trace?.note({
+          phase: "provider_retry",
+          label: "Retrying the model",
+          level: "warn",
+          detail: { httpStatus: response.status, attempt, durationMs: Date.now() - started, host, model: route.model, errorClass: "provider_http" },
+        });
         await wait(RETRY_WAIT_MS);
         continue;
       }
+      await trace?.note({
+        phase: "provider_error",
+        label: `The model provider answered ${response.status}`,
+        level: "error",
+        detail: { httpStatus: response.status, attempt, durationMs: Date.now() - started, host, model: route.model, errorClass: "provider_http" },
+      });
       throw new Error(`The model provider answered ${response.status}${excerpt(bodyText)}`);
     }
     let data: { choices?: { finish_reason?: unknown; message?: { content?: unknown } }[] };
     try {
       data = JSON.parse(bodyText);
     } catch {
+      await trace?.note({
+        phase: "provider_error",
+        label: "The model provider sent an unreadable reply",
+        level: "error",
+        detail: { httpStatus: response.status, attempt, durationMs: Date.now() - started, errorClass: "unreadable" },
+      });
       throw new Error("The model provider sent an unreadable reply");
     }
     const choice = data?.choices?.[0];
     const content = choice?.message?.content;
-    if (typeof content !== "string" || !content.trim()) throw new Error("The model returned an empty reply");
+    if (typeof content !== "string" || !content.trim()) {
+      await trace?.note({
+        phase: "provider_error",
+        label: "The model returned an empty reply",
+        level: "error",
+        detail: { httpStatus: 200, attempt, durationMs: Date.now() - started, errorClass: "empty" },
+      });
+      throw new Error("The model returned an empty reply");
+    }
+    await trace?.note({
+      phase: "provider_response",
+      label: "The model answered",
+      detail: {
+        httpStatus: 200,
+        durationMs: Date.now() - started,
+        attempt,
+        continuation: meta?.continuation,
+        truncated: choice?.finish_reason === "length",
+        replyChars: content.length,
+        tokensAsked: limit,
+        host,
+        model: route.model,
+      },
+    });
     return { content, truncated: choice?.finish_reason === "length" };
   }
+  throw new Error("The model provider kept refusing this request.");
 }
 
 // The chat route, and only the chat route: the deployment names the base URL,
 // the key and the model, and nothing about them reaches a client. A page cut
 // off by the output cap is picked up where it stopped rather than thrown away,
 // which is the difference between a long site and a failed one.
-export async function callProvider(messages: ChatMessage[], tokenLimit?: number, budgetMs = TEXT_BUDGET_MS) {
+export async function callProvider(
+  messages: ChatMessage[],
+  tokenLimit?: number,
+  budgetMs = TEXT_BUDGET_MS,
+  trace?: ProviderTrace,
+) {
   const route = chatRoute();
   if (!route.apiKey) {
+    await trace?.note({
+      phase: "provider_error",
+      label: "Site generation isn't set up on this deployment yet",
+      level: "error",
+      detail: { keySet: false, errorClass: "unset" },
+    });
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
   if (route.misrouted) {
@@ -431,11 +603,17 @@ export async function callProvider(messages: ChatMessage[], tokenLimit?: number,
       `Forge refused the chat route: AI_BASE_URL / AI_MODEL point at the image provider (${route.model}). ` +
         "Conversation and site building run on DeepSeek Flash; set AI_BASE_URL, AI_MODEL and AI_API_KEY for it.",
     );
+    await trace?.note({
+      phase: "provider_error",
+      label: "Site generation isn't set up on this deployment yet",
+      level: "error",
+      detail: { keySet: Boolean(route.apiKey), misrouted: true, model: route.model, errorClass: "unset" },
+    });
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
   const maxTokens = tokenLimit ?? (Number(process.env.AI_MAX_TOKENS) || DEFAULT_MAX_TOKENS);
   const deadline = Date.now() + Math.min(budgetMs, TEXT_BUDGET_MS);
-  let reply = await complete(route, messages, maxTokens, deadline);
+  let reply = await complete(route, messages, maxTokens, deadline, trace);
   let content = reply.content;
   for (
     let round = 0;
@@ -457,6 +635,8 @@ export async function callProvider(messages: ChatMessage[], tokenLimit?: number,
       ],
       maxTokens,
       deadline,
+      trace,
+      { continuation: round + 1 },
     );
     // A continuation that opens its own fence anyway would split the page in two.
     content += reply.content.replace(/^\s*```(?:html)?[ \t]*\r?\n/i, "");
