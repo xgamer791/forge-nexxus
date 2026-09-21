@@ -1543,6 +1543,54 @@ function workFor(credits) {
   if (images >= 1) return `About ${plural(images, 'image', 'images')}.`;
   return null;
 }
+// The month as one bar, and the same list as its legend. Both are drawn from
+// one ordered array so they can never disagree about what came first or how
+// dark it was: the segment and its swatch read the same step of the ramp.
+let spendByKind = [];
+// Four steps of one ink. A fifth kind lands on the lightest step rather than
+// inventing another, which is fine because the legend is what names them.
+const RAMP = [1, 0.7, 0.45, 0.26];
+function paintUsageBar() {
+  const bar = document.querySelector('[data-usage-bar]');
+  const legend = document.querySelector('[data-usage-legend]');
+  if (!bar || !legend) return;
+  const granted = summary && !summary.unlimited ? summary.granted : 0;
+  const rows = summary?.unlimited ? [] : spendByKind;
+  const spent = rows.reduce((total, row) => total + row.credits, 0);
+  // Rule 2: a month that has spent nothing has no shape to draw.
+  const show = rows.length > 0 && granted > 0 && spent > 0;
+  bar.hidden = !show;
+  legend.hidden = !show;
+  if (!show) {
+    bar.replaceChildren();
+    legend.replaceChildren();
+    return;
+  }
+  bar.setAttribute('aria-label', `${spent.toLocaleString('en-US')} of ${granted.toLocaleString('en-US')} credits used`);
+  const shade = index => RAMP[Math.min(index, RAMP.length - 1)];
+  bar.replaceChildren(...rows.map((row, index) => {
+    const segment = document.createElement('span');
+    segment.style.width = `${Math.max(0, Math.min(100, (100 * row.credits) / granted))}%`;
+    segment.style.opacity = shade(index);
+    return segment;
+  }));
+  legend.replaceChildren(...rows.map((row, index) => {
+    const line = document.createElement('div');
+    line.className = 'usage-legend-row';
+    const swatch = document.createElement('span');
+    swatch.className = 'usage-swatch';
+    swatch.style.opacity = shade(index);
+    const name = document.createElement('span');
+    name.textContent = row.label || row.kind;
+    const count = document.createElement('small');
+    count.textContent = plural(row.requests, 'request', 'requests');
+    name.append(count);
+    const credits = document.createElement('b');
+    credits.textContent = row.credits.toLocaleString('en-US');
+    line.append(swatch, name, credits);
+    return line;
+  }));
+}
 // The same thing on a plan card, where the allowance is what is being sold.
 function allowanceBullet(credits) {
   const perBuild = catalog?.requestCosts?.generate ?? 0;
@@ -1592,8 +1640,16 @@ function renderCredits() {
       line.textContent = worth ?? '';
     });
     setText('[data-plan-end]', when);
-    setText('[data-usage-headline]', unlimited ? `Unlimited credits on ${plan.name}` : `${used} of ${granted} credits used`);
-    setText('[data-usage-sub]', unlimited ? `Renews ${when}` : `${available} left · resets ${when}`);
+    setText('[data-usage-left]', unlimited ? 'Unlimited' : available.toLocaleString('en-US'));
+    setText('[data-usage-left-label]', unlimited ? `credits on ${plan.name}` : 'credits left');
+    // An unlimited plan has no denominator, and an empty line still takes up a
+    // row, so it goes rather than sits there blank.
+    setText('[data-usage-of]', unlimited ? '' : `of ${granted.toLocaleString('en-US')} this month`);
+    document.querySelectorAll('[data-usage-of]').forEach(line => { line.hidden = unlimited; });
+    setText('[data-usage-resets]', unlimited
+      ? `Renews ${when}.`
+      : `Resets ${when}. Unused credits don't roll over.`);
+    paintUsageBar();
     if (planScreen) {
       planScreen.querySelector('.plan-billing').hidden = !summary.billingAccount;
       planScreen.querySelector('.plan-cancel').hidden = plan.key === 'free' || cancelAtPeriodEnd;
@@ -1778,30 +1834,9 @@ if (forge?.billing && usageScreen) {
   const empty = usageScreen.querySelector('[data-ledger-empty]');
   // What this period went on, dearest first. The server groups it, so a busy
   // month is summed whole rather than from the fifty rows Activity shows.
-  // Rule 2: a period that has spent nothing shows no section at all.
-  const breakdown = usageScreen.querySelector('[data-breakdown]');
-  const breakdownHeading = usageScreen.querySelector('[data-breakdown-heading]');
   forge.billing.usage(list => {
-    const rows = Array.isArray(list) ? list : [];
-    breakdown.hidden = rows.length === 0;
-    if (breakdownHeading) breakdownHeading.hidden = rows.length === 0;
-    breakdown.replaceChildren(...rows.map(entry => {
-      const row = document.createElement('div');
-      row.className = 'ledger-row';
-      const copy = document.createElement('span');
-      copy.className = 'ledger-copy';
-      const label = document.createElement('strong');
-      label.textContent = entry.label || entry.kind;
-      const count = document.createElement('small');
-      count.textContent = plural(entry.requests, 'request', 'requests');
-      copy.append(label, count);
-      // A total, not a movement: no sign and no plus/minus colour.
-      const total = document.createElement('span');
-      total.className = 'ledger-amount';
-      total.textContent = entry.credits.toLocaleString('en-US');
-      row.append(copy, total);
-      return row;
-    }));
+    spendByKind = Array.isArray(list) ? list : [];
+    paintUsageBar();
   });
   const KIND_LABELS = {grant: 'Monthly credits', topup: 'Top-up', spend: 'Build request', refund: 'Refund', expire: 'Credits expired', adjust: 'Adjustment'};
   forge.billing.history(list => {
