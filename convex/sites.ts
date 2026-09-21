@@ -49,18 +49,40 @@ export function cleanSiteName(name: string | undefined) {
   return (trimmed || DEFAULT_NAME).slice(0, NAME_LIMIT);
 }
 
-// Every site gets a name of its own under one domain: `<slug>.sites.forgenexxus.com`.
-// `SITES_DOMAIN` names it so a deployment can host somewhere else; emptying it
-// falls back to the deployment's own origin, which is all a test has.
+// The domain published sites sit under, when there is one. `SITES_DOMAIN`
+// names it -- `sites.forgenexxus.com` in production -- and a deployment that
+// does not set it serves sites from its own origin instead.
+//
+// This is deliberately opt-in rather than defaulted. A domain only answers
+// once three things are true: DNS points it at Convex, Convex has been told
+// to hold a certificate for it, and this variable names it. A default put the
+// first two outside the code's knowledge and the third inside it, so a
+// deployment where nobody had done the DNS still handed every member a link
+// on a hostname that did not resolve. Naming the domain is now the last step
+// of setting it up rather than a promise made before it. See HOSTING.md.
 export function sitesDomain() {
-  const configured = process.env.SITES_DOMAIN ?? "sites.forgenexxus.com";
+  const configured = process.env.SITES_DOMAIN ?? "";
   return configured.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
 }
 
-// The host a site answers on, and what a custom domain is pointed at.
+// The host a site answers on, or null when sites are served from the
+// deployment's own origin by path instead.
 export function siteHostFor(slug: string) {
   const domain = sitesDomain();
   return domain ? `${slug}.${domain}` : null;
+}
+
+// This deployment's own host, which is where everything ultimately answers:
+// `<deployment>.convex.site`. It is what a custom domain is pointed at when
+// there is no sites domain to point it at instead.
+export function deploymentHost() {
+  const origin = process.env.CONVEX_SITE_URL;
+  if (!origin) return null;
+  try {
+    return new URL(origin).host;
+  } catch {
+    return null;
+  }
 }
 
 // Where a published site lives. Null when there is neither a sites domain nor
@@ -325,8 +347,8 @@ export const unpublish = mutation({
 });
 
 // A finished build goes straight onto the site's Forge address, so the member
-// leaves every build with a link that serves it: `<slug>.sites.forgenexxus.com`
-// and nowhere else. Nobody is asked for that address and nothing waits on one:
+// leaves every build with a link that serves it -- whichever host this
+// deployment serves on. Nobody is asked for that address and nothing waits on one:
 // a site that has none is assigned one here, and one it already has -- assigned
 // earlier, or changed since -- is kept. Two things stay as they were. A plan
 // without an address gets none -- the globe is still where joining one is

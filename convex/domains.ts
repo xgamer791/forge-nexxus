@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { requireOwnedDomain, requireOwnedSite } from "./access";
 import { currentPlan } from "./billing";
 import { PLANS } from "./plans";
-import { siteHostFor, sitesDomain } from "./sites";
+import { deploymentHost, siteHostFor, sitesDomain } from "./sites";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import {
@@ -44,10 +44,14 @@ export function dnsRecordFor(hostname: string, target: string | null) {
   };
 }
 
-// The host a domain has to resolve to, which is the site's own address.
+// The host a domain has to resolve to: the site's own address where there is
+// a sites domain, and this deployment's host where sites are served by path
+// instead. Either way it is a name that answers, so the record we hand a
+// member is one that can actually be verified.
 async function targetFor(ctx: QueryCtx, domain: Doc<"domains">) {
   const site = await ctx.db.get(domain.siteId);
-  return site?.slug ? siteHostFor(site.slug) : null;
+  if (!site?.slug) return null;
+  return siteHostFor(site.slug) ?? deploymentHost();
 }
 
 function presentable(domain: Doc<"domains">, target: string | null) {

@@ -1,12 +1,22 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import { dnsRecordFor, normalizeHostname } from "./domains";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
 const fresh = () => convexTest(schema, modules);
+
+// A custom domain is pointed at the site's own address, so these tests need a
+// deployment that has a sites domain. There is no default for one; see
+// HOSTING.md for why, and for what setting it up takes.
+beforeEach(() => {
+  process.env.SITES_DOMAIN = "sites.forgenexxus.com";
+});
+afterEach(() => {
+  delete process.env.SITES_DOMAIN;
+});
 
 async function createUser(
   t: ReturnType<typeof fresh>,
