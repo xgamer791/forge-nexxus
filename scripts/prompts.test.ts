@@ -30,10 +30,10 @@ describe("one instruction, in one place", () => {
   const stack = `${FORGE_MD}\n${FRONTEND_DESIGN}\n${contract}`;
 
   // Every character here is read before the brief on every build, by a model
-  // with a finite budget for instructions. Design quality now inlines the
-  // frontend-design skill (still also injected as FRONTEND_DESIGN).
+  // with a finite budget for instructions. forge.md used to restate the design
+  // skill for 300 lines, which crowded out the site it was meant to produce.
   test("the stack stays small enough to leave room for the site", () => {
-    expect(stack.length).toBeLessThan(33000);
+    expect(stack.length).toBeLessThan(24000);
   });
 
   // The build contract, the house rules and the skill each said something
@@ -100,13 +100,7 @@ describe("nothing claims to know which model is running", () => {
   // deny what it was while the build contract, in the same turn, named it
   // correctly. So forge.md names none of them and reads the label instead.
   test("forge.md names no model or vendor", () => {
-    // Design quality inlines the frontend-design skill, which names Anthropic
-    // and Claude as an aesthetic tell — not as the model on this turn.
-    const houseRules = FORGE_MD.replace(
-      /## Design quality \(mandatory\)[\s\S]*?(?=## Typography \(house rule\))/,
-      "",
-    );
-    expect(houseRules).not.toMatch(/deepseek|gemini|openai|anthropic|\bGPT\b|\bClaude\b|nano banana/i);
+    expect(FORGE_MD).not.toMatch(/deepseek|gemini|openai|anthropic|\bGPT\b|\bClaude\b|nano banana/i);
   });
 
   // The contract interpolates the label instead, and for a build it has to be
@@ -182,7 +176,7 @@ describe("the contract sets a floor, not a mould", () => {
   // catalogue, one typeface, what the site must cover — were in neither.
   test("forge.md and the skill are two different documents", () => {
     expect(FORGE_MD).not.toBe(FRONTEND_DESIGN);
-    expect(FORGE_MD).toContain("Approach this as the design lead at a design studio");
+    expect(FORGE_MD).not.toContain("Approach this as the design lead at a design studio");
     expect(FRONTEND_DESIGN).toContain("Approach this as the design lead at a design studio");
     expect(FORGE_MD).toContain("Forge — standing instructions for the website agent");
   });
