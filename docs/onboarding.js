@@ -202,8 +202,14 @@ const ENABLED = true;
       if (publish?.isConnected) publish.textContent = 'Publish my website';
     } finally { setBusy(false); render(); }
   }
+  function paintRebuild() {
+    document.querySelectorAll('.rebuild-site').forEach(button => {
+      button.hidden = !state?.canRebuild;
+    });
+  }
   function render() {
     controls();
+    paintRebuild();
     if (!ENABLED) {
       screen.hidden = true;
       screen.replaceChildren();
@@ -375,6 +381,10 @@ const ENABLED = true;
     async start() {
       if (!ENABLED || !member) return;
       await data.onboarding.start();
+    },
+    async rebuild() {
+      if (!ENABLED || !member) return;
+      await data.onboarding.rebuild();
     },
   };
   data?.onboarding.subscribe(nextState => {

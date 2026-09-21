@@ -26,6 +26,60 @@ async function owned(ctx: MutationCtx | QueryCtx, id: Id<"siteOnboarding">) {
   return row;
 }
 
+function isActiveBuild(status: string) {
+  return status === "queued" || status === "building" || status === "saving";
+}
+
+function briefReadyToBuild(row: { answers: string[]; step: number; status: string }) {
+  return Boolean(row.answers[0]?.trim() && row.answers[1]?.trim()) &&
+    (row.step === 9 || row.status === "complete" || row.status === "failed");
+}
+
+async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined, userId: Id<"users">) {
+  if (!siteId) return;
+  const site = await ctx.db.get(siteId);
+  if (!site || site.userId !== userId) return;
+  const images = await ctx.db.query("siteImages").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
+  for (const image of images) {
+    await ctx.storage.delete(image.storageId);
+    await ctx.db.delete(image._id);
+  }
+  const versions = await ctx.db.query("siteVersions").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
+  for (const version of versions) await ctx.db.delete(version._id);
+  const messages = await ctx.db.query("messages").withIndex("by_conversation", q => q.eq("conversationId", site.conversationId)).collect();
+  for (const message of messages) await ctx.db.delete(message._id);
+  await ctx.db.patch(siteId, {
+    currentVersionId: undefined,
+    publishedVersionId: undefined,
+    publishedAt: undefined,
+    status: "draft",
+    updatedAt: Date.now(),
+  });
+}
+
+async function queueOnboardingBuild(
+  ctx: MutationCtx,
+  id: Id<"siteOnboarding">,
+  row: { attempt: number },
+  siteId: Id<"sites">,
+  label: string,
+) {
+  const attempt = row.attempt + 1;
+  await ctx.db.patch(id, {
+    siteId,
+    attempt,
+    status: "queued",
+    dismissed: false,
+    events: [{ label, at: Date.now() }],
+    error: undefined,
+    holdId: undefined,
+    assistantId: undefined,
+    updatedAt: Date.now(),
+  });
+  await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
+  await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id, attempt });
+}
+
 export const state = query({
   args: {},
   handler: async ctx => {
@@ -37,17 +91,19 @@ export const state = query({
     const sites = await ctx.db.query("sites").withIndex("by_user_updated", q => q.eq("userId", userId)).collect();
     const hasWebsite = sites.some(site => Boolean(site.currentVersionId));
     const rows = await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", userId)).collect();
-    const row = rows.filter(r => !r.dismissed).sort((a, b) => b.createdAt - a.createdAt)[0];
+    const open = rows.filter(r => !r.dismissed);
+    const row = open.find(r => isActiveBuild(r.status)) ?? open.sort((a, b) => b.createdAt - a.createdAt)[0];
     // Never expose the agent's strategy, provider details, or private brief.
     const draft = row ? { id: row._id, siteId: row.siteId, answers: row.answers, step: row.step,
       status: row.status, events: row.events, error: row.error,
       assets: row.assets.map(a => ({ name: a.name, storageId: a.storageId })) } : null;
+    const canRebuild = plan.key !== "free" && !rows.some(r => isActiveBuild(r.status)) && rows.some(briefReadyToBuild);
     // The questions come first for a paid member with nothing built -- but a
     // build that failed is not a locked door. Someone who stepped away from
     // one reaches their dashboard, and New site brings the saved brief back.
     const newest = [...rows].sort((a, b) => b.updatedAt - a.updatedAt)[0];
     const leftFailedBuild = !row && newest?.status === "failed";
-    return { userId, isFree: plan.key === "free", required: plan.key !== "free" && !hasWebsite && !leftFailedBuild, hasWebsite, draft };
+    return { userId, isFree: plan.key === "free", required: plan.key !== "free" && !hasWebsite && !leftFailedBuild, hasWebsite, draft, canRebuild };
   },
 });
 
@@ -163,10 +219,43 @@ export const submit = mutation({
         siteId = await ctx.db.insert("sites", { userId: row.userId, conversationId, name: row.answers[0], status: "draft", createdAt: Date.now(), updatedAt: Date.now() });
       }
     }
-    const attempt = row.attempt + 1;
-    await ctx.db.patch(id, { siteId, attempt, status: "queued", events: [{ label: "Answers submitted", at: Date.now() }], error: undefined, holdId: undefined, assistantId: undefined, updatedAt: Date.now() });
-    await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
-    await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id, attempt });
+    await queueOnboardingBuild(ctx, id, row, siteId, "Answers submitted");
+  },
+});
+
+// Scraps the live site and builds a new one from the saved answers, then
+// puts the member back on the building screen. The brief stays; the old
+// page, pictures and thread do not.
+export const rebuild = mutation({
+  args: {},
+  returns: v.id("siteOnboarding"),
+  handler: async ctx => {
+    const userId = await requireMemberId(ctx);
+    const plan = await currentPlan(ctx, userId);
+    if (plan.key === "free") throw new ConvexError("Choose a paid plan to rebuild your website. Your answers are saved.");
+    const rows = await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", userId)).collect();
+    if (rows.some(r => isActiveBuild(r.status))) throw new ConvexError("Your website is still building");
+    const brief = rows.filter(briefReadyToBuild).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (!brief) throw new ConvexError("Finish your website questions first");
+    const now = Date.now();
+    for (const other of rows) {
+      if (other._id !== brief._id && !other.dismissed) {
+        await ctx.db.patch(other._id, { dismissed: true, updatedAt: now });
+      }
+    }
+    if (brief.holdId) await releaseHold(ctx, brief.holdId);
+    const sites = await ctx.db.query("sites").withIndex("by_user_updated", q => q.eq("userId", userId)).collect();
+    const kept = brief.siteId ? sites.find(site => site._id === brief.siteId) : undefined;
+    const target = kept ?? sites.find(site => site.currentVersionId) ?? sites[0];
+    if (target) await scrapSiteBuild(ctx, target._id, userId);
+    let siteId = target?._id;
+    if (!siteId) {
+      if (plan.maxSites !== null && sites.length >= plan.maxSites) throw new ConvexError("Your plan has reached its website limit");
+      const conversationId = await ctx.db.insert("conversations", { userId, title: brief.answers[0], updatedAt: now });
+      siteId = await ctx.db.insert("sites", { userId, conversationId, name: brief.answers[0], status: "draft", createdAt: now, updatedAt: now });
+    }
+    await queueOnboardingBuild(ctx, brief._id, brief, siteId, "Rebuilding from your answers");
+    return brief._id;
   },
 });
 

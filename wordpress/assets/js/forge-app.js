@@ -1031,6 +1031,7 @@ const siteList = document.querySelector('.site-list');
 const sitesEmpty = document.querySelector('.sites-empty');
 const sitesError = document.querySelector('.sites-error');
 const newSite = document.querySelector('.new-site');
+const rebuildSite = document.querySelector('.rebuild-site');
 const thread = document.querySelector('.thread');
 const composerError = document.querySelector('.composer-error');
 const siteBar = document.querySelector('.site-bar');
@@ -1297,6 +1298,21 @@ if (forge?.sites && siteList && thread) {
     }).catch(error => {
       reportError(error);
       showNote(sitesError, messageOf(error));
+    });
+  });
+  rebuildSite?.addEventListener('click', () => {
+    showNote(sitesError, '');
+    rebuildSite.disabled = true;
+    const begin = window.ForgeOnboarding?.rebuild
+      ? window.ForgeOnboarding.rebuild()
+      : forge.onboarding.rebuild();
+    Promise.resolve(begin).then(() => {
+      closeMenu();
+    }).catch(error => {
+      reportError(error);
+      showNote(sitesError, messageOf(error));
+    }).finally(() => {
+      rebuildSite.disabled = false;
     });
   });
   document.addEventListener('forge:onboarding-complete', event => {

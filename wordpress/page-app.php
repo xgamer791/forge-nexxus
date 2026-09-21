@@ -116,6 +116,7 @@ defined( 'ABSPATH' ) || exit;
 <div class="nav-handle" aria-hidden="true"></div>
 <div class="nav-content">
 <button class="new-site" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>New site</span></button>
+<button class="rebuild-site" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg><span>Rebuild website</span></button>
 <div class="site-list" aria-label="Your sites"></div>
 <p class="sites-empty" hidden>Your sites will show up here. Describe one to get started.</p>
 <p class="sites-error" role="alert" hidden></p>

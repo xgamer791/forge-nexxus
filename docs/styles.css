@@ -59,8 +59,10 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 .app.sheet-open .status-shield,.app.navigation-open .status-shield{display:none}
 .app.reference .status-shield{display:none}
 .nav-content{padding:32px 28px 16px 16px;overflow:auto;flex:1;min-height:0}
-.new-site{height:44px;width:100%;border:1px solid var(--border);border-radius:24px;background:var(--surface);display:flex;align-items:center;padding:0 17px;gap:13px;font-size:17px;font-weight:500;line-height:20px}
-.new-site svg{width:17px;height:17px;stroke-width:2.2}
+.new-site,.rebuild-site{height:44px;width:100%;border:1px solid var(--border);border-radius:24px;background:var(--surface);display:flex;align-items:center;padding:0 17px;gap:13px;font-size:17px;font-weight:500;line-height:20px}
+.new-site svg,.rebuild-site svg{width:17px;height:17px;stroke-width:2.2}
+.rebuild-site{margin-top:10px}
+.rebuild-site:disabled{opacity:.45;cursor:wait}
 .site-list{margin-top:19px}
 .site{position:relative;height:33px;display:flex;align-items:center;gap:8px;color:var(--muted)}
 .site-dot{width:8px;height:8px;border:1px solid var(--subdued);border-radius:50%;flex-shrink:0}
@@ -545,7 +547,7 @@ a.onboarding-primary:focus-visible{outline:2px solid var(--focus);outline-offset
   .icon-button:hover,.dismiss:hover,.hamburger:hover,.globe-button:hover,.website-preview-button:hover,.settings:hover,.site-options:hover,.appearance-back:hover{background:var(--chip);border-radius:50%}
   .site:hover{color:var(--text)}
   .address-tab:hover:not([aria-selected=true]){color:var(--text);background:var(--surface)}
-  .chip-button:hover:not([disabled]),.plan-cta:hover:not([disabled]),.account-button:hover:not(:disabled),.credits-cta:hover,.new-site:hover,.site-bar-preview:hover:not([disabled]){filter:brightness(1.08)}
+  .chip-button:hover:not([disabled]),.plan-cta:hover:not([disabled]),.account-button:hover:not(:disabled),.credits-cta:hover,.new-site:hover,.rebuild-site:hover,.site-bar-preview:hover:not([disabled]){filter:brightness(1.08)}
   .credits-summary:hover{opacity:.9}
   .address-remove:hover{text-decoration:underline}
   .dismiss:hover{background:transparent!important;border-radius:0!important;color:var(--muted)}
