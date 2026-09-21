@@ -30,12 +30,42 @@ describe("only the sanctioned files steer the agent", () => {
     expect(writers.sort()).toEqual(Object.keys(WRITERS).sort());
   });
 
-  test("the design direction is carried from forgeMd.ts, not written anywhere else", () => {
+  test("the design direction is carried from the three files and nowhere else", () => {
     expect(read("forgeMd.ts")).toMatch(/export const FORGE_MD =/);
-    // Both build paths hand the model that file and no other design source.
+    expect(read("designgod.ts")).toMatch(/export const DESIGN_GOD =/);
+    expect(read("fed.ts")).toMatch(/export const FED =/);
+    // Both build paths hand the model all three and no other design source.
     for (const name of ["generate.ts", "onboarding.ts"]) {
-      expect(read(name)).toMatch(/import \{ FORGE_MD \} from "\.\/forgeMd"/);
+      const src = read(name);
+      expect(src).toMatch(/import \{ FORGE_MD \} from "\.\/forgeMd"/);
+      expect(src).toMatch(/import \{ DESIGN_GOD \} from "\.\/designgod"/);
+      expect(src).toMatch(/import \{ FED \} from "\.\/fed"/);
     }
+  });
+
+  test("all three reach every text turn, the rebuild included", () => {
+    const generate = read("generate.ts");
+    // buildMessages is what a thread turn and beginOnboarding (onboarding and
+    // rebuild alike) both assemble, so carrying them here carries them to all.
+    const assembled = generate.slice(generate.indexOf("function buildMessages"));
+    for (const name of ["FORGE_MD", "DESIGN_GOD", "FED"]) {
+      expect(assembled).toMatch(new RegExp(`role: "system", content: ${name}`));
+    }
+    expect((generate.match(/buildMessages\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    // The strategist runs before a rebuild and gets the same direction.
+    const strategist = read("onboarding.ts");
+    const call = strategist.slice(strategist.indexOf("private website strategist") - 600);
+    for (const name of ["FORGE_MD", "DESIGN_GOD", "FED"]) {
+      expect(call).toContain(`content: ${name}`);
+    }
+  });
+
+  test("fed.ts is the frontend-design skill verbatim, not a paraphrase of it", () => {
+    const fed = read("fed.ts");
+    // One statement, no commentary: the skill is carried, never edited.
+    expect(fed.startsWith("export const FED = `")).toBe(true);
+    expect(fed.trimEnd().endsWith("`;")).toBe(true);
+    expect(fed).toContain("name: frontend-design");
   });
 
   test("the build contract stays a contract, not a design brief", () => {

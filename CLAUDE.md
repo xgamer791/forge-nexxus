@@ -119,9 +119,10 @@ and why. Silently picking either is the only wrong answer.
 The number at the top-right of the prompt is the Forge Nexxus client version.
 It is a plain integer, not a hash.
 
-**Read `VERSION.md` before you finish any change a user can see.** Increment
-the number there, paint it on both surfaces, say `Latest version: N` in your
-summary, and push to `main`. That file is the source of truth.
+**Read `VERSION.md` before you finish any change.** Every change triggers a
+bump — there is no skip for prompt-only or backend-only work. Increment the
+number there, paint it on both surfaces, say `Latest version: N` at the end of
+every completed task, and push to `main`. That file is the source of truth.
 
 ## The name
 

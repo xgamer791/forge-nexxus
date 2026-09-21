@@ -4,6 +4,8 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { DESIGN_GOD } from "./designgod";
+import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
 import { QUESTIONS } from "./onboardingQuestions";
 import { REQUEST_COSTS, planFor } from "./plans";
@@ -623,7 +625,7 @@ describe("what actually reaches the model", () => {
   const systemsOf = (call: any) =>
     call.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content);
 
-  test("the build turn carries both files verbatim, in precedence order", async () => {
+  test("the build turn carries the three prompt files verbatim, in precedence order", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const providers = stubProviders(() => built("Harbor Roasters"));
@@ -640,16 +642,19 @@ describe("what actually reaches the model", () => {
 
     // Whole-string equality, so a truncated or paraphrased copy fails here.
     expect(systems[0]).toBe(FORGE_MD);
+    expect(systems[1]).toBe(DESIGN_GOD);
+    expect(systems[2]).toBe(FED);
     expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
-    expect(systems[0].length).toBe(FORGE_MD.length);
+    expect(systems.filter((s: string) => s === DESIGN_GOD).length).toBe(1);
+    expect(systems.filter((s: string) => s === FED).length).toBe(1);
 
-    // House rules + skill are one system message, then the contract.
-    expect(systems[1]).toContain("You are Forge, the website-building agent");
+    // House rules, custom design, skill, then the contract.
+    expect(systems[3]).toContain("You are Forge, the website-building agent");
     expect(systems.at(-1)).toContain("This is an onboarding BUILD");
 
     expect(systems[0]).toContain("What the site must cover");
-    expect(systems[0]).toContain("One typeface for the entire build");
-    expect(systems[0]).toContain("plan, review against the brief, build, critique");
+    expect(systems[1]).toContain("One typeface for the entire build");
+    expect(systems[2]).toContain("plan, review against the brief, build, critique");
   });
 
   test("the strategy passes behind the questions carry them too", async () => {
@@ -665,6 +670,8 @@ describe("what actually reaches the model", () => {
     expect(strategy).toBeDefined();
     const systems = systemsOf(strategy);
     expect(systems[0]).toBe(FORGE_MD);
+    expect(systems[1]).toBe(DESIGN_GOD);
+    expect(systems[2]).toBe(FED);
     expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
   });
 
@@ -682,10 +689,12 @@ describe("what actually reaches the model", () => {
 
     const systems = systemsOf(providers.chatCalls().at(-1)!);
     expect(systems[0]).toBe(FORGE_MD);
+    expect(systems[1]).toBe(DESIGN_GOD);
+    expect(systems[2]).toBe(FED);
     expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
-    // On a site with a saved brief, generate.begin splices that brief in at
-    // index 1. FORGE_MD (house rules + skill) is still the only forge prompt.
-    expect(systems[1]).toContain("Saved project context");
+    // On a site with a saved brief, generate.begin splices that brief in after
+    // the three prompt files.
+    expect(systems[3]).toContain("Saved project context");
     expect(systems.some((c: string) => c.includes("You are Forge, the website-building agent"))).toBe(true);
     // The turn reflects on itself after answering: drain it here rather than into the next test.
     await drain(t);
