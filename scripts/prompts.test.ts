@@ -36,7 +36,7 @@ describe("one instruction, in one place", () => {
 
   test("type is decided once: Satoshi or Switzer from Fontshare", () => {
     expect(FORGE_MD).toContain("One typeface for the entire build");
-    expect(FORGE_MD).toContain("Satoshi or **Switzer** from Fontshare only");
+    expect(FORGE_MD).toContain("Use **Satoshi** or **Switzer** from Fontshare only");
     expect(FORGE_MD).toContain("https://www.fontshare.com/fonts/satoshi");
     expect(FORGE_MD).toContain("https://www.fontshare.com/fonts/switzer");
     expect(FORGE_MD).toContain("No more than one font per site");
