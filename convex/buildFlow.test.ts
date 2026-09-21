@@ -3,6 +3,8 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { FORGE_MD } from "./forgeMd";
+import { FRONTEND_DESIGN } from "./frontendDesign";
 import { QUESTIONS } from "./onboardingQuestions";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -527,5 +529,84 @@ describe("a rebuild, start to finish", () => {
     expect(await versions(t)).toEqual([]);
     expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "released"]]);
     expect((await t.run((ctx) => ctx.db.get(siteId)))!.currentVersionId).toBeUndefined();
+  });
+});
+
+// Whether the standing rules and the design skill actually leave the server.
+// scripts/prompts.test.ts proves the embedded strings match their markdown
+// files; this proves those strings are in the request body of every turn that
+// writes or discusses a site, whole rather than summarised or truncated.
+describe("what actually reaches the model", () => {
+  const systemsOf = (call: any) =>
+    call.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content);
+
+  test("the build turn carries both files verbatim, in precedence order", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
+
+    const build = providers
+      .chatCalls()
+      .find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
+    const systems = systemsOf(build);
+
+    // Whole-string equality, so a truncated or paraphrased copy fails here.
+    expect(systems[0]).toBe(FORGE_MD);
+    expect(systems[1]).toBe(FRONTEND_DESIGN);
+    expect(systems[0].length).toBe(FORGE_MD.length);
+    expect(systems[1].length).toBe(FRONTEND_DESIGN.length);
+
+    // The order forge.md's own precedence note describes: house rules, then
+    // method, then the contract, with the onboarding order last.
+    expect(systems[2]).toContain("You are Forge, the website-building agent");
+    expect(systems.at(-1)).toContain("This is an onboarding BUILD");
+
+    // And the pieces that do the work are really in there, not just the title.
+    expect(systems[0]).toContain("What the site must cover");
+    expect(systems[0]).toContain("One typeface for the entire build");
+    expect(systems[1]).toContain("plan, review against the brief, build, critique");
+  });
+
+  test("the strategy passes behind the questions carry them too", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    await answerEverything(member);
+    await drain(t);
+
+    const strategy = providers
+      .chatCalls()
+      .find((call) => /private website strategist/.test(JSON.stringify(call.body.messages)))!;
+    expect(strategy).toBeDefined();
+    const systems = systemsOf(strategy);
+    expect(systems[0]).toBe(FORGE_MD);
+    expect(systems[1]).toBe(FRONTEND_DESIGN);
+  });
+
+  test("a thread turn after the build carries them as well", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+    const siteId = (await t.run((ctx) => ctx.db.get(id)))!.siteId!;
+    const site = (await t.run((ctx) => ctx.db.get(siteId)))!;
+
+    await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Make the hero bolder" });
+
+    const systems = systemsOf(providers.chatCalls().at(-1)!);
+    expect(systems[0]).toBe(FORGE_MD);
+    expect(systems).toContain(FRONTEND_DESIGN);
+    // On a site with a saved brief, generate.begin splices that brief in at
+    // index 1, so the skill sits behind it rather than immediately after
+    // forge.md. Both still arrive whole, which is what matters.
+    expect(systems[1]).toContain("Saved project context");
+    expect(systems.some((c: string) => c.includes("You are Forge, the website-building agent"))).toBe(true);
   });
 });
