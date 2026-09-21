@@ -415,13 +415,11 @@ describe("how a payment divides", () => {
       ["renewal", 6000, 3000, 3000],
     ]);
     expect(rows[0]).toMatchObject({ planKey: "starter", currency: "usd", stripeEventId: "evt_plan" });
-    // The budget those payments bought, counted in the unit the member sees.
-    expect(await t.query(internal.billing.funding, {})).toMatchObject({
+    expect(await t.query(internal.billing.funding, {})).toEqual({
       payments: 2,
       paidCents: 12000,
       apiCents: 6000,
       forgeCents: 6000,
-      apiCredits: 6000,
     });
   });
 
