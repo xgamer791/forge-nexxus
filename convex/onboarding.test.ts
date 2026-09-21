@@ -108,8 +108,10 @@ describe("onboarding rebuild", () => {
       attempt: 2,
       dismissed: false,
       siteId: seeded.siteId,
-      strategy: "Keep the brand tight.",
     });
+    // The plan for the scrapped page goes; the answers it was drawn from stay,
+    // so the next build works the shape out again from the business itself.
+    expect(brief?.strategy).toBeUndefined();
     expect(brief?.answers[0]).toBe("Harbor Roasters");
     expect(brief?.answers[1]).toBe("Small-batch coffee");
     expect(brief?.events).toEqual([
@@ -206,8 +208,10 @@ describe("onboarding cancel", () => {
       status: "failed",
       dismissed: true,
       answers: expect.arrayContaining(["Harbor Roasters", "Small-batch coffee"]),
-      strategy: "Keep the brand tight.",
     });
+    // Cancelling a rebuild leaves it as the rebuild left it: answers kept,
+    // and the scrapped page's plan already cleared.
+    expect(brief?.strategy).toBeUndefined();
     expect(brief?.error).toBeUndefined();
     expect(brief?.events).toEqual([]);
     const site = await t.run((ctx) => ctx.db.get(seeded.siteId));
