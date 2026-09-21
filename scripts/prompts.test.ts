@@ -66,3 +66,31 @@ describe("one instruction, in one place", () => {
     expect(FORGE_MD).toContain("Never invent a price");
   });
 });
+
+describe("the brief collects what a shop needs", () => {
+  // A products section cannot be built from nothing. The ten original
+  // questions never asked what the business sells or what it costs, and the
+  // agent is forbidden to invent either.
+  test("the last question asks for the catalogue, and prices come only from it", async () => {
+    const { QUESTIONS, FINAL_STEP } = await import("../convex/onboardingQuestions");
+    const catalogue = QUESTIONS[FINAL_STEP];
+    expect(catalogue.id).toBe("catalogue");
+    expect(catalogue.title).toBe("What do you sell, and what does it cost?");
+    expect(FINAL_STEP).toBe(QUESTIONS.length - 1);
+    // Appended, never inserted: answers are stored by position, so moving an
+    // existing question relabels every brief already saved.
+    expect(QUESTIONS[0].id).toBe("name");
+    expect(QUESTIONS[1].id).toBe("offer");
+    expect(QUESTIONS[9].id).toBe("content");
+    expect(FORGE_MD).toContain("What do you sell, and what does it cost?");
+  });
+
+  // Nine and ten were written into the flow in four places; adding a question
+  // used to strand Build on the second-to-last one.
+  test("no step index is hardcoded", () => {
+    const client = read("docs/onboarding.js");
+    expect(read("convex/onboarding.ts")).not.toMatch(/step [!=]== 9|, 9\)/);
+    expect(client).not.toMatch(/step [!=]== 9/);
+    expect(client).toContain("lastStep()");
+  });
+});

@@ -6,6 +6,9 @@ const ENABLED = true;
 (() => {
   const data = window.ForgeData;
   const questions = data?.onboardingQuestions ?? [];
+  // The last question is where Build sits. Read it from the list so adding a
+  // question moves the button rather than stranding it mid-way.
+  const lastStep = () => questions.length - 1;
   const screen = document.querySelector('#site-onboarding');
   const dashboard = document.querySelector('main.app');
   const checkout = new URL(location.href).searchParams.get('checkout');
@@ -160,12 +163,12 @@ const ENABLED = true;
     const choices = q.options ? `<div class="onboarding-choices" role="group" aria-labelledby="onboarding-question">${q.options.map(option => `<button type="button" class="onboarding-choice" data-choice="${escape(option)}" aria-pressed="${selected.includes(option)}">${escape(option)}<span aria-hidden="true"></span></button>`).join('')}</div>` : '';
     screen.innerHTML = shell(`<form class="onboarding-content onboarding-question-form">
       <div class="onboarding-count"><span>Question ${step + 1} of ${questions.length}</span><span data-save-status>Saved</span></div>
-      <div class="onboarding-question-progress" role="progressbar" aria-label="Questions completed" aria-valuemin="0" aria-valuemax="10" aria-valuenow="${step}"><span style="width:${step * 10}%"></span></div>
+      <div class="onboarding-question-progress" role="progressbar" aria-label="Questions completed" aria-valuemin="0" aria-valuemax="${questions.length}" aria-valuenow="${step}"><span style="width:${(step / questions.length) * 100}%"></span></div>
       <h1 id="onboarding-question" tabindex="-1">${escape(q.title)}</h1><p class="onboarding-hint">${escape(q.hint)}</p>
       ${choices}<div class="onboarding-field">${field}</div>
-      ${step === 9 ? '<label class="onboarding-upload"><svg aria-hidden="true"><use href="#clip"/></svg><span>Add files</span><input type="file" data-onboarding-files multiple accept="image/png,image/jpeg,image/webp,.txt,.md"></label><p class="onboarding-file-hint">Up to 8 images or text files. Images under 5 MB; text under 100 KB.</p><ul class="onboarding-assets" data-onboarding-assets></ul>' : ''}
+      ${q.id === 'content' ? '<label class="onboarding-upload"><svg aria-hidden="true"><use href="#clip"/></svg><span>Add files</span><input type="file" data-onboarding-files multiple accept="image/png,image/jpeg,image/webp,.txt,.md"></label><p class="onboarding-file-hint">Up to 8 images or text files. Images under 5 MB; text under 100 KB.</p><ul class="onboarding-assets" data-onboarding-assets></ul>' : ''}
       <p class="onboarding-error" role="alert" hidden></p>
-      <footer class="onboarding-actions"><button type="button" class="onboarding-quiet" data-onboarding-action="back" ${step === 0 ? 'hidden' : ''}>Back</button><div>${!q.required && step !== 9 ? `<button type="button" class="onboarding-quiet" data-onboarding-action="skip">${step === 7 ? 'You decide' : 'Skip'}</button>` : ''}<button type="submit" class="onboarding-primary">${step === 9 ? (state.isFree ? 'Choose a plan' : 'Build my website') : 'Continue'}</button></div></footer>
+      <footer class="onboarding-actions"><button type="button" class="onboarding-quiet" data-onboarding-action="back" ${step === 0 ? 'hidden' : ''}>Back</button><div>${!q.required && step !== lastStep() ? `<button type="button" class="onboarding-quiet" data-onboarding-action="skip">${step === 7 ? 'You decide' : 'Skip'}</button>` : ''}<button type="submit" class="onboarding-primary">${step === lastStep() ? (state.isFree ? 'Choose a plan' : 'Build my website') : 'Continue'}</button></div></footer>
       ${!state.required ? '<button class="onboarding-exit onboarding-quiet" type="button" data-onboarding-action="exit">Back to dashboard</button>' : ''}
     </form>`);
     renderAssets();
@@ -306,7 +309,7 @@ const ENABLED = true;
     try {
       await queueSave(step, answer, true);
       state.draft.answers[step] = answer;
-      if (step === 9) {
+      if (step === lastStep()) {
         if (state.isFree) {
           await data.onboarding.dismiss(state.draft.id);
           document.dispatchEvent(new CustomEvent('forge:choose-plan'));

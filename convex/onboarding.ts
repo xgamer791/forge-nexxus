@@ -11,7 +11,7 @@ import { BUILD_IMAGE_LIMIT, callProvider, chatRoute, describe, parseReply } from
 import { FORGE_MD } from "./forgeMd";
 import { FRONTEND_DESIGN } from "./frontendDesign";
 import { fulfilImages, wantsImages } from "./images";
-import { briefFile, QUESTIONS } from "./onboardingQuestions";
+import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
 
 // The words and the pictures share an action's ten minutes. The text gets the
 // larger part; the watchdog sits just inside the platform's own limit, so it
@@ -33,7 +33,7 @@ function isActiveBuild(status: string) {
 
 function briefReadyToBuild(row: { answers: string[]; step: number; status: string }) {
   return Boolean(row.answers[0]?.trim() && row.answers[1]?.trim()) &&
-    (row.step === 9 || row.status === "complete" || row.status === "failed");
+    (row.step >= FINAL_STEP || row.status === "complete" || row.status === "failed");
 }
 
 async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined, userId: Id<"users">) {
@@ -160,7 +160,7 @@ export const save = mutation({
     const strategyAnswers = row.strategyAnswers ?? QUESTIONS.map(() => null as string | null);
     const developStrategy = advance && strategyAnswers[index] !== value;
     if (advance) strategyAnswers[index] = value;
-    await ctx.db.patch(id, { answers, revision, strategyAnswers, step: advance ? Math.min(index + 1, 9) : index, updatedAt: Date.now(),
+    await ctx.db.patch(id, { answers, revision, strategyAnswers, step: advance ? Math.min(index + 1, FINAL_STEP) : index, updatedAt: Date.now(),
       ...(reopening ? { status: "questions" as const, error: undefined } : {}) });
     // Each submitted answer gives the agent an updated snapshot, even when a
     // later answer arrives before it finishes. Only the newest strategy wins.
@@ -215,7 +215,7 @@ export const submit = mutation({
     if (["queued", "building", "saving", "complete"].includes(row.status)) return;
     const plan = await currentPlan(ctx, row.userId);
     if (plan.key === "free") throw new ConvexError("Choose a paid plan to build your website. Your answers are saved.");
-    if (row.step !== 9 || !row.answers[0]?.trim() || !row.answers[1]?.trim()) throw new ConvexError("Finish your website questions first");
+    if (row.step < FINAL_STEP || !row.answers[0]?.trim() || !row.answers[1]?.trim()) throw new ConvexError("Finish your website questions first");
     // A retry builds into the site the first attempt made, as long as it is
     // still there; otherwise the build would fail on a site nobody can find.
     const kept = row.siteId ? await ctx.db.get(row.siteId) : null;
@@ -479,6 +479,7 @@ async function writePage(
         undefined,
         remaining,
         trace,
+        "build",
       );
       const parsed = parseReply(reply);
       if (parsed.html) return { html: parsed.html, summary: parsed.summary };
@@ -501,7 +502,7 @@ export const build = internalAction({
     // build -- the log as much as the model -- marks the attempt failed now
     // rather than leaving it queued for the watchdog to find.
     try {
-      const route = chatRoute();
+      const route = chatRoute("build");
       let providerHost = route.baseUrl;
       try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
       const existing = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });

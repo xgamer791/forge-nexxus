@@ -35,7 +35,14 @@ live — a claim that failed, or a site taken offline. It is one button with no
 field: the server assigns the address as the site goes live. Open it as a draft
 sits beside it, so publishing is never the only way on.
 
-Every new website uses the same ten questions in `convex/onboardingQuestions.ts`.
+Every new website uses the same eleven questions in `convex/onboardingQuestions.ts`.
+The last one — *What do you sell, and what does it cost?* — is what a products
+section is built from: one product or service per line, with a price where the
+member wants one shown. It is optional, and prices reach a site only through
+it, because the agent may not invent one. New questions are appended rather
+than slotted in beside a related one: answers are stored by position, so moving
+an existing question would relabel every brief already saved. `FINAL_STEP` is
+read from the list on both surfaces, so Build stays on the last question.
 Answers, current step, uploads and the build state belong to the signed-in user
 in `siteOnboarding`. Text autosaves; Continue waits for its write. Reloads and
 other devices can resume. Required answers are the name and offering. Other

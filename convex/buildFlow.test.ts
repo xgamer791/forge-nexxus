@@ -45,6 +45,7 @@ const ANSWERS = [
   "",
   "",
   "",
+  "Pier Roast 250g — £11\nDecaf Harbour 250g — £12\nSubscription, a bag a fortnight — £20 a month",
 ];
 
 const page = (title: string) =>
@@ -125,6 +126,7 @@ afterEach(() => {
   delete process.env.AI_BASE_URL;
   delete process.env.AI_API_KEY;
   delete process.env.AI_MODEL;
+  delete process.env.AI_BUILD_MODEL;
   delete process.env.AI_IMAGE_API_KEY;
   delete process.env.CONVEX_SITE_URL;
 });
@@ -167,6 +169,10 @@ describe("a brand new build, start to finish", () => {
     const briefText = buildCall.body.messages.at(-1).content;
     expect(briefText).toContain("Harbor Roasters");
     expect(briefText).toContain("Small-batch coffee roasted on the pier");
+    // The catalogue is what a products section is built from, so it has to
+    // survive the trip from the last question into the brief file.
+    expect(briefText).toContain("What do you sell, and what does it cost?");
+    expect(briefText).toContain("Pier Roast 250g — £11");
 
     // One version, with the picture made and stored in place of the request.
     const [version] = await versions(t);
@@ -263,6 +269,35 @@ describe("a brand new build, start to finish", () => {
     const runs = await t.run((ctx) => ctx.db.query("buildRuns").collect());
     expect(runs.map((row) => [row.attempt, row.status])).toEqual([[1, "failed"], [2, "complete"]]);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({ reserved: 0 });
+  });
+
+  test("a deployment can send builds to a stronger model than chat", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    process.env.AI_BUILD_MODEL = "forge-test-large";
+
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+
+    // Writing the site goes to the build model; the strategy passes behind the
+    // questions are conversation and stay on the cheaper one.
+    const calls = providers.chatCalls();
+    const build = calls.find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
+    expect(build.body.model).toBe("forge-test-large");
+    expect(build.body.max_tokens).toBe(24000);
+    const strategy = calls.find((call) => /private website strategist/.test(JSON.stringify(call.body.messages)))!;
+    expect(strategy.body.model).toBe("forge-test");
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
+
+    // Unset, a build runs on exactly the model chat does.
+    delete process.env.AI_BUILD_MODEL;
+    const plain = await createBuilder(t, "p@example.com");
+    const second = await answerEverything(plain);
+    await plain.as.mutation(api.onboarding.submit, { id: second });
+    await drain(t);
+    expect(providers.chatCalls().at(-1)!.body.model).toBe("forge-test");
   });
 
   test("a provider that refuses the model is not retried, and the refusal is readable without the key", async () => {

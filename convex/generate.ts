@@ -13,8 +13,12 @@ import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
 // How much of the thread the model sees, and how long a page it may write.
+// A whole site — a products section included — is a great deal more output
+// than a conversational reply, so a build is given its own ceiling. A
+// provider whose own cap is lower says so, and `complete` retries inside it.
 const HISTORY_LIMIT = 32;
 const DEFAULT_MAX_TOKENS = 16000;
+const BUILD_MAX_TOKENS = 24000;
 const REASON_LIMIT = 300;
 // A conversational reply is the message itself, so it gets far more room than
 // the one-line summary that rides along with a build.
@@ -28,8 +32,12 @@ const CHAT_BASE_URL = "https://api.deepseek.com/v1";
 const CHAT_MODEL = "deepseek-flash";
 const CHAT_MODEL_LABEL = "DeepSeek V4.1 Flash";
 
-// How many new pictures one reply may ask for.
-export const BUILD_IMAGE_LIMIT = 4;
+// How many new pictures one reply may ask for. A first build carries a hero
+// and then whatever the page is actually about — products need one each, and
+// a grid where only the first few resolved is what a half-finished site looks
+// like. Every picture is its own held-and-settled `image` request, so this is
+// a ceiling rather than a spend: a page that wants fewer costs less.
+export const BUILD_IMAGE_LIMIT = 6;
 const EDIT_IMAGE_LIMIT = 2;
 
 // One call may run long -- a whole site is a lot of tokens -- but a build as a
@@ -46,9 +54,17 @@ const RETRY_WAIT_MS = 1500;
 // for a build that is already gone.
 const RUN_WATCHDOG_MS = 610000;
 
-export function chatRoute() {
+// The route a turn takes. Writing a whole website is the hardest thing the
+// agent does and a conversational reply is the cheapest, so a deployment may
+// point builds at a stronger model with `AI_BUILD_MODEL` and leave chat on
+// `AI_MODEL`. Unset, a build runs on exactly the model chat does, so nothing
+// changes for a deployment that has not chosen.
+export function chatRoute(purpose: "chat" | "build" = "chat") {
   const baseUrl = (process.env.AI_BASE_URL?.trim() || CHAT_BASE_URL).replace(/\/+$/, "");
-  const model = process.env.AI_MODEL?.trim() || CHAT_MODEL;
+  const model =
+    (purpose === "build" ? process.env.AI_BUILD_MODEL?.trim() : "") ||
+    process.env.AI_MODEL?.trim() ||
+    CHAT_MODEL;
   return {
     baseUrl,
     model,
@@ -71,9 +87,11 @@ export const routing = internalQuery({
   args: {},
   handler: async () => {
     const chat = chatRoute();
+    const build = chatRoute("build");
     const image = imageRoute();
     return {
       chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), misrouted: chat.misrouted },
+      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -95,7 +113,7 @@ BUILD — when they describe a site to make, or ask for a change to the page.
 Return one self-contained HTML file:
 - A full document (<!doctype html> … </html>) with a lang, a <title>, a meta description, a meta viewport, and all CSS in one <style> block in the <head>.
 - Structure it as a real site, not a poster: a header with the name and a nav that links to every section; a hero that says what this is, who it is for and the one action to take; then the sections this business needs; then a closing call to action with whatever contact details were supplied, and a footer. Every nav link points at a section id that exists.
-- The sections in the middle are decided by what the brief says the site has to do, not by a running order. A business that sells products gets a products section — a block per product with its name, what it is, its price where the brief gives one, and an action — as surely as one that takes bookings gets a booking section. Cover every job the brief names; then add what this business needs to be understood: what it offers, why it is different, how it works, about.
+- The sections in the middle are decided by what the brief says the site has to do, not by a running order. A business that sells products gets a products section — one block per line of the catalogue the brief supplies, with its name, what it is, its price where that line carries one, and an action — as surely as one that takes bookings gets a booking section. Cover every job the brief names; then add what this business needs to be understood: what it offers, why it is different, how it works, about.
 - The main action a visitor should take appears in the hero, again after the offer, and in the closing section, always in the same words.
 - Design with intent: one palette built from their brand or the feel they asked for, with accessible contrast; one typeface for the whole site, with a clear scale built from its weights and sizes; generous whitespace; one radius and spacing rhythm; layouts that change from section to section rather than one card grid repeated.
 - Mobile-first and responsive from 320px to a wide desktop, with CSS grid and flexbox, fluid type through clamp(), and a nav that stays usable on a phone without JavaScript — let it wrap or scroll sideways, never hide it behind a script.
@@ -152,7 +170,8 @@ export const run = action({
       const job = await ctx.runMutation(internal.generate.begin, { userId, conversationId, prompt: text });
       assistantId = job.assistantId;
       holdId = job.holdId;
-      const route = chatRoute();
+      const purpose = job.requestKind === "chat" ? "chat" : "build";
+      const route = chatRoute(purpose);
       let providerHost = route.baseUrl;
       try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
       await ctx.runMutation(internal.diagnostics.attach, {
@@ -181,7 +200,7 @@ export const run = action({
           misrouted: route.misrouted,
         },
       });
-      const reply = await callProvider(job.messages, undefined, undefined, trace);
+      const reply = await callProvider(job.messages, undefined, undefined, trace, purpose);
       const parsed = parseReply(reply);
       // The pictures a page asked for are made before it is stored, so the
       // version that lands never points at anything that does not exist. A page
@@ -641,8 +660,9 @@ export async function callProvider(
   tokenLimit?: number,
   budgetMs = TEXT_BUDGET_MS,
   trace?: ProviderTrace,
+  purpose: "chat" | "build" = "chat",
 ) {
-  const route = chatRoute();
+  const route = chatRoute(purpose);
   if (!route.apiKey) {
     await trace?.note({
       phase: "provider_error",
@@ -665,7 +685,9 @@ export async function callProvider(
     });
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
-  const maxTokens = tokenLimit ?? (Number(process.env.AI_MAX_TOKENS) || DEFAULT_MAX_TOKENS);
+  const maxTokens =
+    tokenLimit ??
+    (Number(process.env.AI_MAX_TOKENS) || (purpose === "build" ? BUILD_MAX_TOKENS : DEFAULT_MAX_TOKENS));
   const deadline = Date.now() + Math.min(budgetMs, TEXT_BUDGET_MS);
   let reply = await complete(route, messages, maxTokens, deadline, trace);
   let content = reply.content;

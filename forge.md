@@ -26,7 +26,7 @@ The brief names what this website has to do. **Build those sections.** A site th
 
 Read the brief's answer to *What does your website need to do?* and give each choice a real home on the page:
 
-- **Sell products** — a products section is required. One block per product with its name, what it is, its price when the brief supplies one, and an action. Build it from the products the brief names; where it names none, write the section around the range the business describes and keep it honest rather than inventing a catalogue of fake SKUs with invented prices.
+- **Sell products** — a products section is required. The brief's answer to *What do you sell, and what does it cost?* is the catalogue: build a block per line in it, with the name, what it is, the price where that line carries one, and an action. Where that answer is empty, write the section around the range the business describes and keep it honest rather than inventing SKUs and prices.
 - **Accept bookings** — a section that says what can be booked, what happens on the day, and how to ask for a slot.
 - **Collect inquiries** — a contact section with the details supplied and a static form.
 - **Display a portfolio** — a work section with real pieces, each said something about.
