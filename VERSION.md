@@ -1,6 +1,6 @@
 # Forge Nexxus version
 
-Current version: **17**
+Current version: **18**
 
 That integer is what the user sees at the top-right of the prompt canvas
 (`[data-build-stamp]`). It is a plain number. Never show a hash, a `v` prefix,
@@ -9,7 +9,7 @@ or a padded label like `01`.
 ## Every agent, after every edit
 
 1. Read this file. The number here is the source of truth.
-2. If the user can see or do anything you changed, increment the number by 1.
+2. Increment the number by 1. Every change triggers a bump — prompt files, Convex functions, docs, copy, CSS, and client code. There is no skip.
 3. Write the new number in all of these places:
    - `VERSION.md` (this file)
    - `docs/version.json` → `build`
@@ -26,5 +26,6 @@ or a padded label like `01`.
    to Cloudways app `ghxskkxdmf` at
    `/home/master/applications/ghxskkxdmf/public_html/wp-content/themes/forge-nexxus`.
 
-Do this even for a one-line CSS or copy change. Skip the increment only when
-the commit touches no user-facing surface.
+Do this for every change. List the new number at the end of every completed
+task as `Latest version: N`. There is no exception for prompt-only or
+backend-only work.
