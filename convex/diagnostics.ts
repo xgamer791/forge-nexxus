@@ -227,7 +227,6 @@ export async function attachRun(
     providerModel?: string;
     providerLabel?: string;
     keySet?: boolean;
-    misrouted?: boolean;
     status?: OpenArgs["status"];
   },
 ) {
@@ -250,7 +249,6 @@ export async function attachRun(
     providerModel: args.providerModel ?? row.providerModel,
     providerLabel: args.providerLabel ?? row.providerLabel,
     keySet: args.keySet ?? row.keySet,
-    misrouted: args.misrouted ?? row.misrouted,
     creditsHeld,
     status: args.status ?? row.status,
     updatedAt: Date.now(),
@@ -426,7 +424,6 @@ export const attach = internalMutation({
     providerModel: v.optional(v.string()),
     providerLabel: v.optional(v.string()),
     keySet: v.optional(v.boolean()),
-    misrouted: v.optional(v.boolean()),
     status: v.optional(statusValidator),
   },
   returns: v.null(),

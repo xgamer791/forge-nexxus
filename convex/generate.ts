@@ -76,41 +76,7 @@ export function chatRoute(purpose: "chat" | "build" = "chat") {
     // one model id, so any other id reports itself rather than borrowing it:
     // `deepseek-chat` is not "V4.1 Flash", and saying so would be a guess.
     label: process.env.AI_MODEL_LABEL?.trim() || (model === CHAT_MODEL ? CHAT_MODEL_LABEL : model),
-    ...misrouting(baseUrl, model),
   };
-}
-
-// Whether this route can write a website, and why not when it cannot. Two
-// things are genuinely broken and both are refused rather than attempted,
-// because a build that quietly went to the wrong model is worse than one that
-// says why it did not run.
-//
-// An image model cannot write HTML, whoever makes it. And Google's native
-// endpoint does not speak the OpenAI chat shape this client sends, so
-// `${baseUrl}/chat/completions` is a 404 there that explains nothing.
-//
-// A Gemini text model on Google's OpenAI-compatible path is a supported chat
-// route and goes through: the provider, not the vendor, is what has to match.
-function misrouting(baseUrl: string, model: string) {
-  const googleHost = /generativelanguage\.googleapis\.com|aiplatform\.googleapis\.com/i.test(baseUrl);
-  const openAiShaped = /\/openai(\/|$)/i.test(baseUrl);
-  if (/imagen|banana|-image(?:-|$)/i.test(model)) {
-    return {
-      misrouted: true,
-      misroutedReason:
-        `AI_MODEL names an image model (${model}). Site building needs a text model; ` +
-        "pictures have their own route in AI_IMAGE_MODEL.",
-    };
-  }
-  if (googleHost && !openAiShaped) {
-    return {
-      misrouted: true,
-      misroutedReason:
-        `AI_BASE_URL (${baseUrl}) is Google's native API, which does not speak the OpenAI chat shape. ` +
-        "Use https://generativelanguage.googleapis.com/v1beta/openai instead.",
-    };
-  }
-  return { misrouted: false, misroutedReason: undefined as string | undefined };
 }
 
 // Which model each kind of work goes to, for whoever runs the deployment:
@@ -122,7 +88,7 @@ export const routing = internalQuery({
     const build = chatRoute("build");
     const image = imageRoute();
     return {
-      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), misrouted: chat.misrouted },
+      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey) },
       build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
@@ -217,7 +183,6 @@ export const run = action({
         providerModel: route.model,
         providerLabel: route.label,
         keySet: Boolean(route.apiKey),
-        misrouted: route.misrouted,
         status: "calling",
       });
       const trace = providerTrace(ctx, runId, userId);
@@ -229,8 +194,7 @@ export const run = action({
           host: providerHost,
           model: route.model,
           keySet: Boolean(route.apiKey),
-          misrouted: route.misrouted,
-        },
+          },
       });
       const reply = await callProvider(job.messages, undefined, undefined, trace, purpose);
       const parsed = parseReply(reply);
@@ -709,16 +673,6 @@ export async function callProvider(
       label: "Site generation isn't set up on this deployment yet",
       level: "error",
       detail: { keySet: false, errorClass: "unset" },
-    });
-    throw new ConvexError("Site generation isn't set up on this deployment yet");
-  }
-  if (route.misrouted) {
-    console.error(`Forge refused the chat route. ${route.misroutedReason}`);
-    await trace?.note({
-      phase: "provider_error",
-      label: "Site generation isn't set up on this deployment yet",
-      level: "error",
-      detail: { keySet: Boolean(route.apiKey), misrouted: true, model: route.model, errorClass: "unset" },
     });
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }

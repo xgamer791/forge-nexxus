@@ -300,6 +300,26 @@ describe("a brand new build, start to finish", () => {
     expect(providers.chatCalls().at(-1)!.body.model).toBe("forge-test");
   });
 
+  test("a deployment pointed at Gemini builds, and the request goes where it was told", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    process.env.AI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+    process.env.AI_MODEL = "gemini-3.8-flash";
+
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+
+    const build = providers.chatCalls().at(-1)!;
+    expect(build.url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+    expect(build.body.model).toBe("gemini-3.8-flash");
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
+    expect(await versions(t)).toHaveLength(1);
+    // The pictures went to their own route, not the chat one.
+    expect(providers.calls.some((call) => /generateContent/.test(call.url))).toBe(true);
+  });
+
   test("a provider that refuses the model is not retried, and the refusal is readable without the key", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");

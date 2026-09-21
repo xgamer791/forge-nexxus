@@ -525,8 +525,7 @@ export const build = internalAction({
         providerModel: route.model,
         providerLabel: route.label,
         keySet: Boolean(route.apiKey),
-        misrouted: route.misrouted,
-        status: "started",
+          status: "started",
       });
       const trace = providerTrace(ctx, runId, row.userId);
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
@@ -553,7 +552,7 @@ export const build = internalAction({
       await trace.note({
         phase: "held",
         label: "Credits held for a build",
-        detail: { requestKind: job.result.requestKind, host: providerHost, model: route.model, keySet: Boolean(route.apiKey), misrouted: route.misrouted },
+        detail: { requestKind: job.result.requestKind, host: providerHost, model: route.model, keySet: Boolean(route.apiKey) },
       });
       const page = await writePage([...job.messages,
         { role: "system", content: BUILD_ORDER },

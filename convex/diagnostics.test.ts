@@ -114,7 +114,6 @@ describe("building-agent diagnostics", () => {
       providerHost: "ai.example",
       providerModel: "forge-test",
       keySet: true,
-      misrouted: false,
       promptChars: "Add opening hours".length,
     });
     expect(mine?.latest?.creditsHeld).toBe(REQUEST_COSTS.edit);
