@@ -23,8 +23,10 @@ body:has(.reference){position:relative;inset:auto;width:430px;min-height:932px;h
    Only status-bar-style=default (read when the icon is added) removes it; no CSS can reach it. */
 .stage{position:absolute;inset:0;z-index:1}
 .chrome{position:absolute;top:0;left:0;right:0;height:var(--header);z-index:6;background:#fff;color:#1c1c1e;pointer-events:none}
-.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{color:#1c1c1e}
-.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button{top:calc((var(--header) - 40px) / 2);pointer-events:auto;z-index:0}
+.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button,.chrome .build-stamp{color:#1c1c1e}
+.chrome .hamburger,.chrome .globe-button,.chrome .website-preview-button,.chrome .build-stamp{top:calc((var(--header) - 40px) / 2);pointer-events:auto;z-index:0}
+.build-stamp{position:absolute;right:102px;height:40px;display:grid;place-items:center;color:#6e6e73;font-size:12px;line-height:16px;font-weight:500;letter-spacing:.04em;font-variant-numeric:tabular-nums;user-select:text}
+.chrome .build-stamp{color:#6e6e73;pointer-events:none}
 .composer-area{position:absolute;bottom:20px;left:16px;right:16px}
 .app.reference .composer-area{left:16px;right:16px;bottom:var(--composer-bottom)}
 
@@ -354,7 +356,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .website-preview-button{position:absolute;right:14px;top:calc((var(--header) - 40px) / 2);width:40px;height:40px;display:grid;place-items:center;color:var(--text);z-index:1}
 .website-preview-button svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2}
 .app.reference{--header:calc(var(--status-strip,0px) + var(--chrome))}
-.app.reference .chrome .hamburger,.app.reference .chrome .globe-button,.app.reference .chrome .website-preview-button{top:var(--status-strip,0px)}
+.app.reference .chrome .hamburger,.app.reference .chrome .globe-button,.app.reference .chrome .website-preview-button,.app.reference .chrome .build-stamp{top:var(--status-strip,0px)}
 .sheet:focus{outline:none}
 .dismiss,.dismiss:focus,.dismiss:focus-visible,.dismiss:active{-webkit-appearance:none;appearance:none;background:transparent!important;border:0!important;border-radius:0!important;outline:none!important;box-shadow:none!important}
 
