@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { FORGE_MD } from "./forgeMd";
-import { FRONTEND_DESIGN } from "./frontendDesign";
 import { QUESTIONS } from "./onboardingQuestions";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -614,19 +613,16 @@ describe("what actually reaches the model", () => {
 
     // Whole-string equality, so a truncated or paraphrased copy fails here.
     expect(systems[0]).toBe(FORGE_MD);
-    expect(systems[1]).toBe(FRONTEND_DESIGN);
+    expect(systems.filter((s) => s === FORGE_MD).length).toBe(1);
     expect(systems[0].length).toBe(FORGE_MD.length);
-    expect(systems[1].length).toBe(FRONTEND_DESIGN.length);
 
-    // The order forge.md's own precedence note describes: house rules, then
-    // method, then the contract, with the onboarding order last.
-    expect(systems[2]).toContain("You are Forge, the website-building agent");
+    // House rules + skill are one system message, then the contract.
+    expect(systems[1]).toContain("You are Forge, the website-building agent");
     expect(systems.at(-1)).toContain("This is an onboarding BUILD");
 
-    // And the pieces that do the work are really in there, not just the title.
     expect(systems[0]).toContain("What the site must cover");
     expect(systems[0]).toContain("One typeface for the entire build");
-    expect(systems[1]).toContain("plan, review against the brief, build, critique");
+    expect(systems[0]).toContain("plan, review against the brief, build, critique");
   });
 
   test("the strategy passes behind the questions carry them too", async () => {
@@ -642,7 +638,7 @@ describe("what actually reaches the model", () => {
     expect(strategy).toBeDefined();
     const systems = systemsOf(strategy);
     expect(systems[0]).toBe(FORGE_MD);
-    expect(systems[1]).toBe(FRONTEND_DESIGN);
+    expect(systems.filter((s) => s === FORGE_MD).length).toBe(1);
   });
 
   test("a thread turn after the build carries them as well", async () => {
@@ -659,10 +655,9 @@ describe("what actually reaches the model", () => {
 
     const systems = systemsOf(providers.chatCalls().at(-1)!);
     expect(systems[0]).toBe(FORGE_MD);
-    expect(systems).toContain(FRONTEND_DESIGN);
+    expect(systems.filter((s) => s === FORGE_MD).length).toBe(1);
     // On a site with a saved brief, generate.begin splices that brief in at
-    // index 1, so the skill sits behind it rather than immediately after
-    // forge.md. Both still arrive whole, which is what matters.
+    // index 1. FORGE_MD (house rules + skill) is still the only forge prompt.
     expect(systems[1]).toContain("Saved project context");
     expect(systems.some((c: string) => c.includes("You are Forge, the website-building agent"))).toBe(true);
   });
