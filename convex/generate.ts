@@ -106,6 +106,24 @@ export const routing = internalQuery({
 // forge-image markers. How a page looks is not decided here: that belongs to
 // FORGE_MD and the design files it carries, so nothing in this file can
 // outrank them.
+// What a build turn actually carries, for whoever runs the deployment:
+// `npx convex run generate:promptCheck`. `routing` says where a turn is sent
+// and `probe:chat` says what answers; this says what the agent was told. It
+// reports each system message's size and opening line -- never the text, which
+// would put the whole prompt in a terminal.
+export const promptCheck = internalQuery({
+  args: {},
+  handler: async () => {
+    const turn = buildMessages("Example Co", null, [], "Build the site.", null, BUILD_IMAGE_LIMIT, "build", null);
+    return turn
+      .filter((message) => message.role === "system")
+      .map((message) => ({
+        chars: message.content.length,
+        opens: message.content.split("\n").find((line) => line.trim())?.slice(0, 64) ?? "",
+      }));
+  },
+});
+
 function systemPrompt(imageLimit: number, purpose: "chat" | "build") {
   const pictures = imageRoute().apiKey
     ? `IMAGES — pictures are made for you by an image model after you reply.
