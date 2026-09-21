@@ -28,12 +28,13 @@ const TALK_LIMIT = 4000;
 
 // Where conversation and site building go when the deployment says nothing.
 // `AI_BASE_URL`, `AI_MODEL`, `AI_BUILD_MODEL` and `AI_API_KEY` name the real
-// route; any provider that speaks the OpenAI chat shape works, Google's
-// `/v1beta/openai` path included. Pictures have a route of their own in
-// `images.ts`, and text never goes to it.
-const CHAT_BASE_URL = "https://api.deepseek.com/v1";
-const CHAT_MODEL = "deepseek-flash";
-const CHAT_MODEL_LABEL = "DeepSeek V4.1 Flash";
+// route, and any provider that speaks the OpenAI chat shape serves it. These
+// are only the fallbacks, so an unset variable lands on the model this
+// deployment actually runs rather than nowhere. Pictures have a route of their
+// own in `images.ts`, and text never goes to it.
+const CHAT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+const CHAT_MODEL = "gemini-3.8-flash";
+const CHAT_MODEL_LABEL = "Gemini 3.8 Flash";
 
 // How many new pictures one reply may ask for. A first build carries a hero
 // and then whatever the page is actually about — products need one each, and
@@ -74,7 +75,8 @@ export function chatRoute(purpose: "chat" | "build" = "chat") {
     apiKey: process.env.AI_API_KEY,
     // What the agent says it runs on. The marketing name belongs to exactly
     // one model id, so any other id reports itself rather than borrowing it:
-    // `deepseek-chat` is not "V4.1 Flash", and saying so would be a guess.
+    // a sibling release is not the model this name belongs to, and saying so
+    // would be a guess.
     label: process.env.AI_MODEL_LABEL?.trim() || (model === CHAT_MODEL ? CHAT_MODEL_LABEL : model),
   };
 }
@@ -577,8 +579,8 @@ async function complete(
     }
     if (!response.ok) {
       // A provider whose output cap is lower than what was asked for says so
-      // in its own words. DeepSeek names the range, and that exact number is
-      // used when it is there; anything else that refuses over the length just
+      // in its own words. Some name the range, and that exact number is used
+      // when it is there; anything else that refuses over the length just
       // gets one more go inside a cap every chat model clears, rather than
       // failing a build over a number.
       const named = response.status === 400 ? bodyText.match(/max_tokens[^[\]]*\[\s*\d+\s*,\s*(\d+)\s*\]/i) : null;

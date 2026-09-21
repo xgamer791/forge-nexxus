@@ -33,9 +33,13 @@ describe("the route is whatever the deployment names", () => {
       baseUrl: GOOGLE_OPENAI,
       model: "gemini-3.8-flash",
       apiKey: "sk-test",
-      // No marketing name is borrowed: the agent reports the id it runs on.
-      label: "gemini-3.8-flash",
+      // The pretty name belongs to this exact id, so the route reports it.
+      label: "Gemini 3.8 Flash",
     });
+    // Any other id reports itself rather than borrowing that name.
+    process.env.AI_MODEL = "gemini-3.8-pro";
+    expect(chatRoute().label).toBe("gemini-3.8-pro");
+    process.env.AI_MODEL = "gemini-3.8-flash";
     // A trailing slash is the same route; the request appends its own path.
     process.env.AI_BASE_URL = `${GOOGLE_OPENAI}/`;
     expect(chatRoute().baseUrl).toBe(GOOGLE_OPENAI);
@@ -75,9 +79,9 @@ describe("the route is whatever the deployment names", () => {
   test("an unset deployment still lands somewhere valid", () => {
     for (const key of ["AI_BASE_URL", "AI_MODEL"]) delete process.env[key];
     expect(chatRoute()).toMatchObject({
-      baseUrl: "https://api.deepseek.com/v1",
-      model: "deepseek-flash",
-      label: "DeepSeek V4.1 Flash",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+      model: "gemini-3.8-flash",
+      label: "Gemini 3.8 Flash",
     });
   });
 });

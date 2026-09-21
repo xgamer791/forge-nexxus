@@ -97,10 +97,10 @@ describe("the brief collects what a shop needs", () => {
 
 describe("nothing claims to know which model is running", () => {
   // The models are deployment settings: AI_MODEL, AI_BUILD_MODEL and
-  // AI_IMAGE_MODEL all move them. forge.md used to hardcode "DeepSeek V4.1
-  // Flash" and "You are not Claude, GPT, or Gemini", so a deployment that
-  // pointed builds anywhere else had an agent instructed to deny what it was
-  // while the build contract, in the same turn, named it correctly.
+  // AI_IMAGE_MODEL all move them, and they have moved twice already. Each
+  // time, a forge.md that named the old vendor left the agent under orders to
+  // deny what it was while the build contract, in the same turn, named it
+  // correctly. So forge.md names none of them and reads the label instead.
   test("forge.md names no model or vendor", () => {
     expect(FORGE_MD).not.toMatch(/deepseek|gemini|openai|anthropic|\bGPT\b|\bClaude\b|nano banana/i);
   });
