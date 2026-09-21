@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
-import { providerTrace, type ProviderTrace } from "./diagnostics";
+import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
 import { FORGE_MD } from "./forgeMd";
@@ -40,6 +40,11 @@ const CONTINUE_FLOOR_MS = 45000;
 const MAX_CONTINUATIONS = 2;
 const MAX_COMPLETE_LOOPS = 5;
 const RETRY_WAIT_MS = 1500;
+// A thread build that the platform stops -- past ten minutes, out of memory --
+// never reaches its own catch, so this is what gives its credits back and
+// tells the thread. It sits past the action's limit so it can only ever speak
+// for a build that is already gone.
+const RUN_WATCHDOG_MS = 610000;
 
 export function chatRoute() {
   const baseUrl = (process.env.AI_BASE_URL?.trim() || CHAT_BASE_URL).replace(/\/+$/, "");
@@ -290,6 +295,7 @@ export const begin = internalMutation({
     });
     await ctx.db.patch(conversationId, { updatedAt: now });
     await ctx.db.patch(site._id, { updatedAt: now });
+    await ctx.scheduler.runAfter(RUN_WATCHDOG_MS, internal.generate.expire, { assistantId, holdId });
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const imageLimit = current ? EDIT_IMAGE_LIMIT : BUILD_IMAGE_LIMIT;
     const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit);
@@ -423,6 +429,28 @@ export const fail = internalMutation({
   },
 });
 
+// The watchdog for a thread build. A turn that finished, failed or was
+// cancelled has nothing left for it to do: the hold is no longer held and the
+// reply is no longer pending, and both checks are what make it safe to fire.
+export const expire = internalMutation({
+  args: { assistantId: v.id("messages"), holdId: v.id("creditHolds") },
+  returns: v.null(),
+  handler: async (ctx, { assistantId, holdId }) => {
+    const reason = "The build stopped responding. Try again.";
+    const message = await ctx.db.get(assistantId);
+    if (message?.status === "pending") {
+      await ctx.db.patch(assistantId, { body: reason, status: "failed" });
+      const run = await ctx.db
+        .query("buildRuns")
+        .withIndex("by_message", (q) => q.eq("messageId", assistantId))
+        .first();
+      if (run) await closeRun(ctx, { runId: run._id, status: "failed", error: reason });
+    }
+    await releaseHold(ctx, holdId);
+    return null;
+  },
+});
+
 function buildMessages(
   siteName: string,
   currentHtml: string | null,
@@ -502,26 +530,34 @@ async function complete(
       },
     });
     let response: Response;
+    let bodyText: string;
+    // The clock covers the whole exchange, the reply's body included. It is a
+    // plain controller and timer because those are what every runtime has.
+    const clock = new AbortController();
+    const timer = setTimeout(() => clock.abort(), timeout);
     try {
       response = await fetch(`${route.baseUrl}/chat/completions`, {
         method: "POST",
-        signal: AbortSignal.timeout(timeout),
+        signal: clock.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${route.apiKey}` },
         body: JSON.stringify({ model: route.model, messages, temperature: 0.7, max_tokens: limit }),
       });
+      bodyText = await response.text();
     } catch (error) {
-      const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      const timedOut =
+        clock.signal.aborted || (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"));
       await trace?.note({
         phase: "provider_error",
         label: timedOut ? "The model took too long to answer" : "The model provider could not be reached",
         level: "error",
         detail: { attempt, continuation: meta?.continuation, durationMs: Date.now() - started, timedOut, host, model: route.model, errorClass: timedOut ? "timeout" : "unreachable" },
       });
-      if (timedOut) throw new Error("The model took too long to answer. Try again, or ask for a smaller change.");
+      if (timedOut) throw new Error("The model took too long to answer. Try again.");
       if (attempt === 0) { await wait(RETRY_WAIT_MS); continue; }
       throw new Error("The model provider could not be reached. Try again in a moment.");
+    } finally {
+      clearTimeout(timer);
     }
-    const bodyText = await response.text();
     if (!response.ok) {
       const cap = response.status === 400 ? bodyText.match(/max_tokens[^[\]]*\[\s*\d+\s*,\s*(\d+)\s*\]/i) : null;
       if (cap && Number(cap[1]) > 0 && Number(cap[1]) < limit) {
@@ -705,8 +741,17 @@ export function parseReply(content: string) {
   return { html, summary };
 }
 
+// What the provider said, as one line. An OpenAI-style error body is read for
+// its message -- "Model Not Exist" says more on a screen than the JSON around
+// it -- and anything else is quoted as it came.
 function excerpt(text: string) {
-  const line = text.replace(/\s+/g, " ").trim().slice(0, 160);
+  let line = text;
+  try {
+    const parsed = JSON.parse(text);
+    const message = parsed?.error?.message ?? parsed?.message ?? parsed?.error;
+    if (typeof message === "string" && message.trim()) line = message;
+  } catch { /* Not JSON: the body is the excerpt. */ }
+  line = line.replace(/\s+/g, " ").trim().slice(0, 160);
   return line ? `: ${line}` : "";
 }
 

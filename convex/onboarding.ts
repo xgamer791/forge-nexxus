@@ -49,11 +49,14 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
   for (const version of versions) await ctx.db.delete(version._id);
   const messages = await ctx.db.query("messages").withIndex("by_conversation", q => q.eq("conversationId", site.conversationId)).collect();
   for (const message of messages) await ctx.db.delete(message._id);
+  // A page still on its way from before the scrap belongs to the old site,
+  // never to the fresh one; the epoch is what its finish checks.
   await ctx.db.patch(siteId, {
     currentVersionId: undefined,
     publishedVersionId: undefined,
     publishedAt: undefined,
     status: "draft",
+    buildEpoch: (site.buildEpoch ?? 0) + 1,
     updatedAt: Date.now(),
   });
 }
@@ -493,35 +496,38 @@ export const build = internalAction({
   handler: async (ctx, { id, attempt }): Promise<void> => {
     const row = await ctx.runQuery(internal.onboarding.load, { id });
     if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
-    const existing = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
-    const runId = existing ?? await ctx.runMutation(internal.diagnostics.open, {
-      userId: row.userId,
-      source: "onboarding",
-      status: "started",
-      siteId: row.siteId,
-      onboardingId: id,
-      attempt,
-      requestKind: "generate",
-    });
-    const route = chatRoute();
-    let providerHost = route.baseUrl;
-    try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
-    await ctx.runMutation(internal.diagnostics.attach, {
-      runId,
-      siteId: row.siteId,
-      onboardingId: id,
-      attempt,
-      requestKind: "generate",
-      providerHost,
-      providerModel: route.model,
-      providerLabel: route.label,
-      keySet: Boolean(route.apiKey),
-      misrouted: route.misrouted,
-      status: "started",
-    });
-    const trace = providerTrace(ctx, runId, row.userId);
     const deadline = Date.now() + TEXT_BUDGET_MS;
+    // Everything from here on is inside the one catch, so whatever stops the
+    // build -- the log as much as the model -- marks the attempt failed now
+    // rather than leaving it queued for the watchdog to find.
     try {
+      const route = chatRoute();
+      let providerHost = route.baseUrl;
+      try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
+      const existing = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
+      const runId = existing ?? await ctx.runMutation(internal.diagnostics.open, {
+        userId: row.userId,
+        source: "onboarding",
+        status: "started",
+        siteId: row.siteId,
+        onboardingId: id,
+        attempt,
+        requestKind: "generate",
+      });
+      await ctx.runMutation(internal.diagnostics.attach, {
+        runId,
+        siteId: row.siteId,
+        onboardingId: id,
+        attempt,
+        requestKind: "generate",
+        providerHost,
+        providerModel: route.model,
+        providerLabel: route.label,
+        keySet: Boolean(route.apiKey),
+        misrouted: route.misrouted,
+        status: "started",
+      });
+      const trace = providerTrace(ctx, runId, row.userId);
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
         url: await ctx.storage.getUrl(asset.storageId), text: asset.type.startsWith("text/") ? (await (await ctx.storage.get(asset.storageId))?.text())?.slice(0, 12000) : undefined })));
       const contents = briefFile(row.answers, row.strategy ?? "", assets);
@@ -589,11 +595,12 @@ export const build = internalAction({
         imageMade,
       });
     } catch (error) {
+      // What stopped the build is what the member reads, in the same words the
+      // thread would use: a provider's answer, a clock that ran out, a balance.
+      // `describe` has already scrubbed keys and cut it to a line.
       const reason = describe(error);
       console.error("Forge onboarding build failed:", reason);
-      // What the member can act on is theirs to read; the rest stays in the log.
-      const theirs = error instanceof ConvexError && /credit|plan|limit/i.test(reason) ? reason : undefined;
-      await ctx.runMutation(internal.onboarding.expire, { id, attempt, failed: true, reason: theirs });
+      await ctx.runMutation(internal.onboarding.expire, { id, attempt, failed: true, reason });
     }
   },
 });
@@ -607,7 +614,7 @@ export const expire = internalMutation({
     const error = reason ? `${reason.replace(/[.!?]?\s*$/, ".")} Your answers are saved.`
       : failed ? "Your website couldn’t be completed. Your answers are saved. Try building again." : "The build stopped responding. Your answers are saved. Try building again.";
     if (row.assistantId && await ctx.db.get(row.assistantId)) await ctx.db.patch(row.assistantId, { status: "failed", body: error });
-    await ctx.db.patch(id, { status: "failed", error, updatedAt: Date.now() });
+    await ctx.db.patch(id, { status: "failed", error, holdId: undefined, updatedAt: Date.now() });
     await failOpenRun(ctx, { onboardingId: id, attempt, error });
   },
 });

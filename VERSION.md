@@ -1,6 +1,6 @@
 # Forge Nexxus version
 
-Current version: **1**
+Current version: **2**
 
 That integer is what the user sees at the top-right of the prompt canvas
 (`[data-build-stamp]`). It is a plain number. Never show a hash, a `v` prefix,
@@ -18,7 +18,8 @@ or a padded label like `01`.
 4. Cache-bust the Pages assets: new 40-character hex in
    `docs/version.json` → `version`, `meta[name="app-version"]`, and every `?v=`
    query. Do not display that hex.
-5. Copy `docs/app.js` → `wordpress/assets/js/forge-app.js` and
+5. Copy `docs/app.js` → `wordpress/assets/js/forge-app.js`,
+   `docs/onboarding.js` → `wordpress/assets/js/onboarding.js` and
    `docs/styles.css` → `wordpress/assets/css/app.css` when those change.
 6. Say the new number in your summary: `Latest version: N`
 7. Push to `main`. GitHub Pages deploys `docs/`. Copy the WordPress theme files

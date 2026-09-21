@@ -24,23 +24,22 @@ const ENABLED = true;
   // What the hand-off shows about the finished site: whether it is live, and
   // the address Forge gave it. It comes from Convex, like everything else.
   let sitesList = [];
-  let localBuild = null;
   let trace = null;
-  let cancelRequested = false;
-  const REBUILD_PROMPT = 'Rebuild this website from scratch. Discard the current design. Use only real business facts already known. Return one complete new HTML document, not an edit of the old page.';
-  function missingRebuild(error) {
-    return /Could not find public function|onboarding:rebuild/i.test(String(error?.data || error?.message || ''));
-  }
-  function missingCancel(error) {
-    return /Could not find public function|onboarding:cancel/i.test(String(error?.data || error?.message || ''));
+  // A build only ever runs on the server. When the deployment does not have
+  // the function a press needs, the press says so instead of doing something
+  // else: a rebuild that edits the old page is not a rebuild.
+  function notDeployed(error, name) {
+    const text = String(error?.data || error?.message || '');
+    return /Could not find public function/i.test(text)
+      ? `${name} isn’t on this deployment yet. Deploy the latest Convex functions, then try again.`
+      : null;
   }
   function currentDraft() {
-    return localBuild || state?.draft || null;
+    return state?.draft ?? null;
   }
   function belongsToDraft(draft) {
     const latest = trace?.latest;
     if (!latest) return false;
-    if (draft.local) return true;
     if (latest.onboardingId && draft.id === latest.onboardingId) return true;
     return Boolean(latest.siteId && draft.siteId && latest.siteId === draft.siteId);
   }
@@ -248,57 +247,7 @@ const ENABLED = true;
     } finally { setBusy(false); render(); }
   }
   function canRebuild() {
-    if (localBuild) return false;
     return Boolean(state?.canRebuild || (member && state && !state.isFree && state.hasWebsite));
-  }
-  function markLocal(status, label) {
-    if (!localBuild) return;
-    localBuild = {
-      ...localBuild,
-      status,
-      events: label ? [...localBuild.events, { label, at: Date.now() }] : localBuild.events,
-      error: status === 'failed' ? label : undefined,
-    };
-    rendered = '';
-    render();
-  }
-  async function rebuildWithoutServer() {
-    const site = sitesList.find(row => row.currentVersionId) || sitesList[0];
-    if (!site?.conversationId) throw new Error('Open a site to rebuild it.');
-    localBuild = {
-      id: site._id,
-      siteId: site._id,
-      answers: [],
-      step: 9,
-      status: 'queued',
-      events: [{ label: 'Rebuilding from your answers', at: Date.now() }],
-      assets: [],
-      local: true,
-    };
-    rendered = '';
-    render();
-    if (site.status === 'published') {
-      try { await data.sites.unpublish(site._id); } catch { /* The rebuild still runs. */ }
-    }
-    markLocal('building', 'Agent started building your website');
-    if (cancelRequested) return;
-    await data.generate(site.conversationId, REBUILD_PROMPT);
-    if (cancelRequested || !localBuild) return;
-    markLocal('complete', 'Website saved and ready');
-  }
-  async function leaveCancelled() {
-    cancelRequested = true;
-    localBuild = null;
-    rendered = '';
-    try {
-      await data.onboarding.cancel();
-    } catch (caught) {
-      if (!missingCancel(caught)) throw caught;
-    }
-    if (state?.draft && /queued|building|saving/.test(state.draft.status)) {
-      state = { ...state, draft: null, required: false, canRebuild: !state.isFree };
-    }
-    render();
   }
   function paintRebuild() {
     document.querySelectorAll('.rebuild-site,.site-bar-rebuild').forEach(button => {
@@ -315,19 +264,19 @@ const ENABLED = true;
       return;
     }
     if (!member) { screen.hidden = true; revealDashboard(false); return; }
-    if (!localBuild && (state?.userId !== member._id || subscriptionError)) {
+    if (state?.userId !== member._id || subscriptionError) {
       revealDashboard(false); screen.hidden = false;
       showWaiting(subscriptionError ? 'Your workspace couldn’t load.' : 'Opening your workspace…', subscriptionError ? 'Reload to reconnect. Your saved answers will be here.' : 'Getting your websites and plan.', subscriptionError);
       return;
     }
-    if (!localBuild && paymentPending()) {
+    if (paymentPending()) {
       revealDashboard(false); screen.hidden = false;
       showWaiting('Confirming your plan…', 'Waiting for payment confirmation. Your website setup will open as soon as your plan is active.', true);
       return;
     }
     if (state && !state.isFree) awaitingPayment = false;
     const row = currentDraft();
-    const show = Boolean(localBuild) || Boolean(state?.required) || Boolean(row);
+    const show = Boolean(state?.required) || Boolean(row);
     revealDashboard(!show); screen.hidden = !show;
     if (!show) { rendered = ''; return; }
     if (!row) {
@@ -400,8 +349,8 @@ const ENABLED = true;
     if (action === 'reload') return location.reload();
     if (action === 'cancel') {
       error('');
-      try { await leaveCancelled(); }
-      catch (caught) { error(caught?.data || caught?.message || 'The build couldn’t be cancelled. Try again.'); }
+      try { await data.onboarding.cancel(); }
+      catch (caught) { error(notDeployed(caught, 'Cancel') || caught?.data || caught?.message || 'The build couldn’t be cancelled. Try again.'); }
       return;
     }
     if (busy && action !== 'signout') return;
@@ -420,11 +369,7 @@ const ENABLED = true;
         step = previous; renderQuestion(true); screen.querySelector('h1')?.focus({preventScroll:true});
       }
       if (button.dataset.removeAsset) await data.onboarding.detach(state.draft.id, button.dataset.removeAsset);
-      if (action === 'retry') {
-        cancelRequested = false;
-        if (localBuild) await rebuildWithoutServer();
-        else await data.onboarding.submit(state.draft.id);
-      }
+      if (action === 'retry') await data.onboarding.submit(state.draft.id);
       if (action === 'billing') { const {url} = await data.billing.portal(); location.assign(url); }
       // Saving an answer is what reopens a brief whose build failed; the last
       // question comes back with Back leading through the rest.
@@ -435,14 +380,6 @@ const ENABLED = true;
       }
       if (action === 'finish' || action === 'exit' || action === 'domain') {
         clearTimeout(saveTimer);
-        if (localBuild) {
-          const siteId = localBuild.siteId;
-          localBuild = null;
-          rendered = '';
-          if (siteId) document.dispatchEvent(new CustomEvent('forge:onboarding-complete', {detail: {siteId}}));
-          if (action === 'domain') openDomains();
-          return;
-        }
         if (state.draft.status === 'questions') await queueSave(step, value());
         const siteId = state.draft.siteId;
         await data.onboarding.dismiss(state.draft.id);
@@ -502,18 +439,11 @@ const ENABLED = true;
     },
     async rebuild() {
       if (!ENABLED || !member) return;
-      cancelRequested = false;
       try {
         await data.onboarding.rebuild();
       } catch (caught) {
-        if (!missingRebuild(caught)) throw caught;
-        try {
-          await rebuildWithoutServer();
-        } catch (failed) {
-          if (cancelRequested || !localBuild) return;
-          markLocal('failed', failed?.data || failed?.message || 'Your website couldn’t be completed. Try building again.');
-          throw failed;
-        }
+        const missing = notDeployed(caught, 'Rebuild');
+        throw missing ? new Error(missing) : caught;
       }
     },
   };

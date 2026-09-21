@@ -211,7 +211,9 @@ describe("onboarding cancel", () => {
     expect(brief?.error).toBeUndefined();
     expect(brief?.events).toEqual([]);
     const site = await t.run((ctx) => ctx.db.get(seeded.siteId));
-    expect(site).toMatchObject({ status: "draft", buildEpoch: 1 });
+    // The scrap bumped the epoch once and the cancel bumped it again, so a
+    // page from before either press cannot land.
+    expect(site).toMatchObject({ status: "draft", buildEpoch: 2 });
     expect(site?.currentVersionId).toBeUndefined();
     expect(site?.publishedVersionId).toBeUndefined();
     expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);

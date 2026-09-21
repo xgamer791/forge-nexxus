@@ -68,8 +68,17 @@ rate limit, a 5xx) is asked once more; a provider whose output cap is lower than
 the request says so and is asked again inside it; a page cut off at the cap is
 continued where it stopped instead of failed; and a reply that talked instead
 of building is asked for once more while there is time. What stopped a build is
-written to the Convex log, and a member reads the reason only when it is theirs
-to act on — out of credits, or a plan that ended.
+written to the Convex log and, in the same words, to the failed screen — the
+provider's answer, a clock that ran out, a balance that fell short — with keys
+scrubbed and the line cut short, so nobody has to open the logs to learn why.
+Every attempt ends on `complete` or `failed`: a log that cannot be written or
+a model that never answers fails the attempt at once rather than leaving it
+queued for the watchdog to find, a press on Try building again
+queues exactly one more attempt, and a rebuild scraps the old page, its
+pictures and its thread and bumps the site's build epoch before it queues, so a
+page still arriving from before the press cannot land on the fresh site. Thread
+builds have a watchdog of their own past the action's ten minutes, which fails
+a reply the platform stopped and gives its hold back.
 
 Pictures never decide whether a site gets built. Each one is its own `image`
 request with its own hold, so a thin balance makes fewer pictures rather than
@@ -83,10 +92,13 @@ integrations until those services are implemented.
 
 ## Deployment
 
-The `main` workflow deploys Convex before GitHub Pages. Set the repository
-Actions secret `CONVEX_DEPLOY_KEY` to the production deployment used by the
-`convex-url` meta tag. A missing key stops publication and preserves the existing
-live frontend. Tests and typechecking are not run in this release workflow.
+The `main` workflow deploys Convex before GitHub Pages only when the repository
+Actions secret `CONVEX_DEPLOY_KEY` holds a deploy key for the deployment named
+by the `convex-url` meta tag. Without it the step prints `Skipping Convex
+deploy` and the frontend still ships, so the app on Pages runs ahead of the
+functions it calls: a press that needs a function the deployment lacks fails
+with `Could not find public function`, and the building screen says which one.
+Tests and typechecking are not run in this release workflow.
 
 The frontend bundle is a required shipping artifact, generated with
 `npm run build`; this command bundles the client and does not run tests.

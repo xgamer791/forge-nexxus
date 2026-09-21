@@ -49,13 +49,22 @@ type GeminiReply = {
   candidates?: { content?: { parts?: { inlineData?: Inline; inline_data?: Inline }[] } }[];
 };
 
+// One request, read to the end inside its clock, so a provider that answers
+// and then stalls cannot hold a build past the time a picture is worth.
 async function post(url: string, apiKey: string, body: unknown) {
-  return await fetch(url, {
-    method: "POST",
-    signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
-    headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-    body: JSON.stringify(body),
-  });
+  const clock = new AbortController();
+  const timer = setTimeout(() => clock.abort(), IMAGE_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      signal: clock.signal,
+      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, ok: response.ok, text: await response.text() };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // One prompt in, one picture out, as bytes. The aspect ratio is asked for the
@@ -74,11 +83,10 @@ async function requestImage(prompt: string, aspect: string) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     response = await post(url, route.apiKey, shaped);
   }
-  const text = await response.text();
   if (!response.ok) {
-    throw new Error(`The image provider answered ${response.status}: ${text.replace(/\s+/g, " ").slice(0, 160)}`);
+    throw new Error(`The image provider answered ${response.status}: ${response.text.replace(/\s+/g, " ").slice(0, 160)}`);
   }
-  const reply = JSON.parse(text) as GeminiReply;
+  const reply = JSON.parse(response.text) as GeminiReply;
   for (const part of reply.candidates?.[0]?.content?.parts ?? []) {
     const inline = part.inlineData ?? part.inline_data;
     if (inline?.data) {
