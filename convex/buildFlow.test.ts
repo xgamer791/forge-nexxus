@@ -544,6 +544,8 @@ describe("a rebuild, start to finish", () => {
     expect(await versions(t)).toEqual([]);
     expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "released"]]);
     expect((await t.run((ctx) => ctx.db.get(siteId)))!.currentVersionId).toBeUndefined();
+    // Finish the queued rebuild so it cannot reuse this test's fetch stub.
+    await drain(t);
   });
 
   test("an identical design is retried without sending the discarded page to the model", async () => {
@@ -588,10 +590,9 @@ describe("a rebuild, start to finish", () => {
   });
 });
 
-// Whether the standing rules and the design skill actually leave the server.
-// scripts/prompts.test.ts proves the embedded strings match their markdown
-// files; this proves those strings are in the request body of every turn that
-// writes or discusses a site, whole rather than summarised or truncated.
+// Whether the standing rules actually leave the server. This proves FORGE_MD
+// is in the request body of every turn that writes or discusses a site, whole
+// rather than summarised or truncated.
 describe("what actually reaches the model", () => {
   const systemsOf = (call: any) =>
     call.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content);
@@ -616,13 +617,13 @@ describe("what actually reaches the model", () => {
     expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
     expect(systems[0].length).toBe(FORGE_MD.length);
 
-    // House rules + skill are one system message, then the contract.
+    // House rules are one system message, then the contract.
     expect(systems[1]).toContain("You are Forge, the website-building agent");
     expect(systems.at(-1)).toContain("This is an onboarding BUILD");
 
     expect(systems[0]).toContain("What the site must cover");
-    expect(systems[0]).toContain("One typeface for the entire build");
-    expect(systems[0]).toContain("plan, review against the brief, build, critique");
+    expect(systems[0]).toContain("Rebuild means a different design");
+    expect(systems[0]).toContain("A rebuild rejects the preceding design, not the onboarding answers");
   });
 
   test("the strategy passes behind the questions carry them too", async () => {
@@ -657,7 +658,7 @@ describe("what actually reaches the model", () => {
     expect(systems[0]).toBe(FORGE_MD);
     expect(systems.filter((s: string) => s === FORGE_MD).length).toBe(1);
     // On a site with a saved brief, generate.begin splices that brief in at
-    // index 1. FORGE_MD (house rules + skill) is still the only forge prompt.
+    // index 1. FORGE_MD (house rules) is still the only forge prompt.
     expect(systems[1]).toContain("Saved project context");
     expect(systems.some((c: string) => c.includes("You are Forge, the website-building agent"))).toBe(true);
   });

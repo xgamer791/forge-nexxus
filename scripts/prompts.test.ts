@@ -8,21 +8,21 @@ import { FORGE_MD } from "../convex/forgeMd";
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const generate = read("convex/generate.ts");
 const onboarding = read("convex/onboarding.ts");
-// What the build turn actually sends: FORGE_MD (house rules + skill) and the
+// What the build turn actually sends: FORGE_MD (house rules) and the
 // build contract inside systemPrompt().
 const contract = generate.slice(
   generate.indexOf("You are Forge, the website-building agent"),
   generate.indexOf("Never ask the user questions or append"),
 );
 const stack = `${FORGE_MD}\n${contract}`;
-const houseRulesOnly = FORGE_MD.slice(0, FORGE_MD.indexOf("## Design quality (mandatory)"));
 
 describe("FORGE_MD is the sole Convex prompt document", () => {
-  test("house rules and the frontend-design skill live in FORGE_MD", () => {
+  test("house rules live in FORGE_MD and carry no design-method skill", () => {
     expect(contract.length).toBeGreaterThan(500);
     expect(FORGE_MD).toContain("standing instructions for the website agent");
-    expect(FORGE_MD).toContain("All design work must follow the frontend-design skill");
-    expect(FORGE_MD).toContain("Approach this as the design lead at a design studio");
+    expect(FORGE_MD).not.toContain("All design work must follow the frontend-design skill");
+    expect(FORGE_MD).not.toContain("Approach this as the design lead at a design studio");
+    expect(FORGE_MD).not.toMatch(/frontend-design skill/i);
     expect(generate).toContain("content: FORGE_MD");
     expect(generate).not.toMatch(/FRONTEND_DESIGN/);
     expect(generate).not.toMatch(/frontendDesign/);
@@ -34,8 +34,9 @@ describe("one instruction, in one place", () => {
     expect(stack.length).toBeLessThan(35000);
   });
 
-  test("type is decided once: one family, from either permitted host", () => {
-    expect(FORGE_MD).toContain("One typeface for the entire build");
+  test("type is decided in the contract, not in FORGE_MD", () => {
+    expect(FORGE_MD).not.toContain("One typeface for the entire build");
+    expect(FORGE_MD).not.toMatch(/typeface|typography|Fontshare/i);
     expect(contract).toContain("one typeface for the whole site");
     expect(stack).not.toMatch(/at most two (Google Fonts )?families/i);
     expect(contract).toContain("Google Fonts and Fontshare are the only external stylesheets");
@@ -80,7 +81,7 @@ describe("the brief collects what a shop needs", () => {
 
 describe("nothing claims to know which model is running", () => {
   test("house rules name no model or vendor", () => {
-    expect(houseRulesOnly).not.toMatch(/deepseek|gemini|openai|anthropic|\bGPT\b|\bClaude\b|nano banana/i);
+    expect(FORGE_MD).not.toMatch(/deepseek|gemini|openai|anthropic|\bGPT\b|\bClaude\b|nano banana/i);
   });
 
   test("the contract reads the label off the turn's own route", () => {
@@ -95,18 +96,24 @@ describe("nothing claims to know which model is running", () => {
   });
 });
 
-describe("the injected skill fits the reply Forge is allowed to give", () => {
-  test("it never invites a question, a narrated plan, or a memory Forge lacks", () => {
+describe("FORGE_MD carries no design-method rules", () => {
+  test("the rewritten frontend-design skill is gone", () => {
     expect(FORGE_MD).not.toMatch(/confirm with the client|as a proposal/i);
     expect(FORGE_MD).not.toMatch(/say what you changed and why/i);
     expect(FORGE_MD).not.toMatch(/information in your memory|jot down notes/i);
-    expect(FORGE_MD).toContain("you never put the question to the member");
-    expect(FORGE_MD).toContain("Do this silently");
+    expect(FORGE_MD).not.toContain("you never put the question to the member");
+    expect(FORGE_MD).not.toContain("Do this silently");
+    expect(FORGE_MD).not.toMatch(/use one family or two/i);
+    expect(FORGE_MD).not.toContain("Forge uses one family for the whole site");
+    expect(FORGE_MD).not.toContain("## Design quality");
+    expect(FORGE_MD).not.toContain("# Frontend Design");
   });
 
-  test("it does not offer a typeface pairing the house rule forbids", () => {
-    expect(FORGE_MD).not.toMatch(/use one family or two/i);
-    expect(FORGE_MD).toContain("Forge uses one family for the whole site");
+  test("a rebuild must still look new when the answers stay the same", () => {
+    expect(FORGE_MD).toContain("Rebuild means a different design");
+    expect(FORGE_MD).toContain("The same business facts do not require the same visual answer");
+    expect(FORGE_MD).toContain("A rebuild rejects the preceding design, not the onboarding answers");
+    expect(FORGE_MD).toContain("Do not reproduce a familiar site kit");
   });
 });
 
@@ -125,10 +132,5 @@ describe("the contract sets a floor, not a mould", () => {
     expect(contract).toContain("Mobile-first and responsive from 320px");
     expect(contract).toContain("Cover every job the brief says the site has to do");
     expect(contract).toContain("a products section");
-  });
-
-  test("forgeMd gives the skeleton to the skill", () => {
-    expect(FORGE_MD).toContain("the skeleton is the skill's to invent for this business");
-    expect(FORGE_MD).not.toMatch(/decide those two things/);
   });
 });

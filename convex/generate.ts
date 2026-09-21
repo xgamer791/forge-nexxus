@@ -111,7 +111,7 @@ You give one of two kinds of reply, and what the user asked for decides which.
 BUILD — when they describe a site to make, or ask for a change to the page.
 Return one self-contained HTML file:
 - A full document (<!doctype html> … </html>) with a lang, a <title>, a meta description, a meta viewport, and all CSS in one <style> block in the <head>.
-- The page's shape is yours to decide from this business, not a running order to fill in. The design skill's plan step settles what opens the page, what follows it, and what each section looks like — a headline, a picture, a list, a table of what you sell, whatever this subject actually calls for. Two businesses must not come out with the same skeleton, and a page that could be rebranded to an unrelated company by swapping its words has failed.
+- The page's shape is yours to decide from this business, not a running order to fill in. Decide what opens the page, what follows it, and what each section looks like — a headline, a picture, a list, a table of what you sell, whatever this subject actually calls for. Two businesses must not come out with the same skeleton, and a page that could be rebranded to an unrelated company by swapping its words has failed.
 - What every page owes, whatever shape it takes: a way to navigate it whose links all point at sections that exist, an opening that makes plain what this is and who it is for, somewhere obvious to act on it, whatever contact details were supplied, and an ending rather than a stop.
 - Cover every job the brief says the site has to do. A business that sells products gets a products section — one block per line of the catalogue the brief supplies, with its name, what it is, its price where that line carries one, and an action — as surely as one that takes bookings gets a booking section. Then add what this business needs to be understood.
 - Name the action a visitor should take the same thing wherever it appears, and make it easy to find — without repeating it mechanically in every section.
@@ -480,7 +480,7 @@ function buildMessages(
   purpose: "chat" | "build",
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
-    // FORGE_MD (house rules + frontend-design skill) — every chat, build and strategy turn.
+    // FORGE_MD (house rules) — every chat, build and strategy turn.
     { role: "system", content: FORGE_MD },
     { role: "system", content: systemPrompt(imageLimit, purpose) },
   ];
