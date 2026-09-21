@@ -12,5 +12,4 @@ It is checked in rather than relied on as an installed plugin so that it loads
 in every session in this repository, for anyone working on it, without setup.
 `CLAUDE.md` Rule 4 makes using it mandatory for UI work. Re-fetch from the URL
 above to update it, and keep the vendored body unmodified so the two can be
-compared. A Forge `## Fonts` addendum may follow that body; do not edit the
-text above it.
+compared. Forge's custom type rules live in `convex/designgod.ts`, not here.

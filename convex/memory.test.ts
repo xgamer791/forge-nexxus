@@ -3,6 +3,8 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { DESIGN_GOD } from "./designgod";
+import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
 import { MEMORY_CHARS, MEMORY_LIMIT, formatMemoryNote, parseReflection, reflectionMessages } from "./memory";
 import { REQUEST_COSTS, planFor } from "./plans";
@@ -270,6 +272,8 @@ describe("a turn", () => {
 
     const systems = systemsOf(calls[0]);
     expect(systems[0]).toBe(FORGE_MD);
+    expect(systems[1]).toBe(DESIGN_GOD);
+    expect(systems[2]).toBe(FED);
     expect(memoryNoteIn(calls[0])).toContain("- Runs a bakery in Leeds");
     await drain(t);
     expect(calls).toHaveLength(2);
@@ -316,5 +320,7 @@ describe("a turn", () => {
     const note = job.messages.find((m) => m.role === "system" && m.content.startsWith("MEMORY —"));
     expect(note?.content).toContain("- Runs a bakery in Leeds");
     expect(job.messages[0].content).toBe(FORGE_MD);
+    expect(job.messages[1].content).toBe(DESIGN_GOD);
+    expect(job.messages[2].content).toBe(FED);
   });
 });

@@ -355,8 +355,9 @@ describe("generate.run", () => {
     ]);
     // The model is told it may not build, and what standing in the way costs.
     const system = calls[0].body.messages.filter((m: any) => m.role === "system");
-    expect(system[1].content).toContain("This turn is TALK");
-    expect(system[1].content).toContain(`${REQUEST_COSTS.generate} credits and they have ${FREE_OPENING}`);
+    const talk = system.find((m: any) => /This turn is TALK/.test(m.content));
+    expect(talk?.content).toContain("This turn is TALK");
+    expect(talk?.content).toContain(`${REQUEST_COSTS.generate} credits and they have ${FREE_OPENING}`);
     // Held and settled as a chat, so the welcome credits are not eaten by one hello.
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       credits: FREE_OPENING - REQUEST_COSTS.chat,
