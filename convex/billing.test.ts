@@ -208,6 +208,42 @@ describe("billing", () => {
     expect(holds.map((hold) => hold.status).sort()).toEqual(["released", "settled"]);
   });
 
+  test("what a request cost the providers is recorded without changing what it charges", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
+    const balance = OPENING + starter.monthlyCredits!;
+    const { holdId } = await t.mutation(internal.billing.reserve, {
+      userId: member.userId,
+      requestKind: "generate",
+    });
+    // A build that cost the deployment 9.4¢ still charges the flat 40 credits:
+    // the two numbers are a record and a price, not a conversion.
+    await t.mutation(internal.billing.settle, { holdId, costCents: 9.4132 });
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
+      balance - REQUEST_COSTS.generate,
+    );
+    const [hold] = await t.run((ctx) => ctx.db.query("creditHolds").collect());
+    // Kept to the hundredth of a cent, because one chat is worth a fraction.
+    expect(hold).toMatchObject({ status: "settled", amount: REQUEST_COSTS.generate, costCents: 9.41 });
+    // Nothing a browser can call reports it.
+    const history = await member.as.query(api.billing.history, {});
+    expect(JSON.stringify(history)).not.toContain("costCents");
+    expect(await member.as.query(api.billing.summary, {})).not.toHaveProperty("spentCents");
+  });
+
+  test("a request the provider never priced is unmetered, not free", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    const { holdId } = await t.mutation(internal.billing.reserve, {
+      userId: member.userId,
+      requestKind: "chat",
+    });
+    await t.mutation(internal.billing.settle, { holdId });
+    const funding = await t.query(internal.billing.funding, {});
+    expect(funding).toMatchObject({ spentCents: 0, metered: 0, unmetered: 1 });
+  });
+
   test("a request never settles for more than it held", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });

@@ -1529,6 +1529,27 @@ let catalog = null;
 // gates every offer to buy them, so nothing promises a purchase that checkout
 // would refuse. Unanswered catalog reads as open, which is the steady state.
 const topUpsOpen = () => catalog?.topUpsOpen !== false;
+const plural = (count, one, many) => `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`;
+// What an allowance buys, said in the work a member recognises rather than a
+// bare count. The per-request costs come from the catalog, so this never
+// carries its own idea of what a build costs. A balance too thin for either
+// returns nothing, so the line hides rather than offering "about 0 builds".
+function workFor(credits) {
+  const costs = catalog?.requestCosts;
+  if (!costs || !Number.isFinite(credits) || credits <= 0) return null;
+  const builds = costs.generate > 0 ? Math.floor(credits / costs.generate) : 0;
+  const images = costs.image > 0 ? Math.floor(credits / costs.image) : 0;
+  if (builds >= 1) return `About ${plural(builds, 'site build', 'site builds')}, or ${plural(images, 'image', 'images')}.`;
+  if (images >= 1) return `About ${plural(images, 'image', 'images')}.`;
+  return null;
+}
+// The same thing on a plan card, where the allowance is what is being sold.
+function allowanceBullet(credits) {
+  const perBuild = catalog?.requestCosts?.generate ?? 0;
+  const builds = perBuild > 0 ? Math.floor(credits / perBuild) : 0;
+  const monthly = `${credits.toLocaleString('en-US')} credits a month`;
+  return builds >= 1 ? `${monthly}, about ${plural(builds, 'site build', 'site builds')}` : monthly;
+}
 function setText(selector, text) {
   document.querySelectorAll(selector).forEach(element => { element.textContent = text; });
 }
@@ -1565,6 +1586,11 @@ function renderCredits() {
     setText('[data-plan-resets]', unlimited
       ? `No credit limit on ${plan.name} · renews ${when}`
       : `${used} used · resets ${when} · unused credits don't roll over`);
+    const worth = unlimited ? null : workFor(available);
+    document.querySelectorAll('[data-plan-worth]').forEach(line => {
+      line.hidden = !worth;
+      line.textContent = worth ?? '';
+    });
     setText('[data-plan-end]', when);
     setText('[data-usage-headline]', unlimited ? `Unlimited credits on ${plan.name}` : `${used} of ${granted} credits used`);
     setText('[data-usage-sub]', unlimited ? `Renews ${when}` : `${available} left · resets ${when}`);
@@ -1639,7 +1665,7 @@ function renderPlanCards() {
     [
       plan.monthlyCredits === null
         ? 'Unlimited credits'
-        : plan.monthlyCredits > 0 ? `${plan.monthlyCredits} credits a month` : `${plan.signupCredits} credits to start`,
+        : plan.monthlyCredits > 0 ? allowanceBullet(plan.monthlyCredits) : `${plan.signupCredits} credits to start`,
       plan.maxSites === null ? 'Unlimited sites' : plan.maxSites === 1 ? '1 site' : `Up to ${plan.maxSites} sites`,
       plan.visitorsPerMonth ? `Up to ${plan.visitorsPerMonth.toLocaleString('en-US')} visitors a month` : null,
       plan.publicAddress ? 'Publish to an address of your own' : null,

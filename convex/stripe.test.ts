@@ -423,6 +423,10 @@ describe("how a payment divides", () => {
       paidCents: 12000,
       apiCents: 6000,
       forgeCents: 6000,
+      spentCents: 0,
+      metered: 0,
+      unmetered: 0,
+      budgetLeftCents: 6000,
     });
   });
 

@@ -154,7 +154,8 @@ export const PLANS: readonly Plan[] = [
     topUps: true,
     features: [
       "Everything in Pro",
-      "12,000 credits every month",
+      // The monthly allowance is a derived bullet on every card; repeating it
+      // here put the same sentence on the Ultra card twice.
       "Unlimited pages and visitors",
       "Custom domains and SSL",
       "Google Analytics",

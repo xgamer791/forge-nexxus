@@ -8,6 +8,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation, type ActionCtx } from "./_generated/server";
 import { holdCredits } from "./billing";
+import { imageCostCents } from "./pricing";
 
 export const IMAGE_MODEL = "gemini-3.1-flash-lite-image";
 export const IMAGE_MODEL_LABEL = "Gemini Nano Banana 2 Lite";
@@ -169,7 +170,9 @@ export async function fulfilImages(
           return null;
         }
         storageId = null; // The site's asset row now owns cleanup.
-        await ctx.runMutation(internal.billing.settle, { holdId });
+        // A picture is billed per image rather than per token, so its cost
+        // comes from the deployment's stated rate; unset leaves it unmetered.
+        await ctx.runMutation(internal.billing.settle, { holdId, costCents: imageCostCents() ?? undefined });
         return url;
       } catch (error) {
         console.error("Forge image failed:", scrub(error));

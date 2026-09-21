@@ -183,6 +183,11 @@ export default defineSchema({
     requestKind: v.string(),
     amount: v.number(),
     status: v.union(v.literal("held"), v.literal("settled"), v.literal("released")),
+    // What the providers actually billed for this request, in real cents to
+    // the hundredth. It is measurement, never what the member is charged:
+    // `amount` is the credits they paid, and the two are not a conversion of
+    // each other. Absent when the provider reported no usage to price.
+    costCents: v.optional(v.number()),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
   // One row per building-agent turn. The member can subscribe to it, and an

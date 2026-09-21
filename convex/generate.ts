@@ -10,6 +10,7 @@ import { briefFile } from "./onboardingQuestions";
 import { FORGE_MD } from "./forgeMd";
 import { FRONTEND_DESIGN } from "./frontendDesign";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
+import { createMeter, readUsage, type Meter } from "./pricing";
 import { publishBuild } from "./sites";
 
 // How much of the thread the model sees, and how long a page it may write.
@@ -199,7 +200,8 @@ export const run = action({
           keySet: Boolean(route.apiKey),
           },
       });
-      const reply = await callProvider(job.messages, undefined, undefined, trace, purpose);
+      const meter = createMeter();
+      const reply = await callProvider(job.messages, undefined, undefined, trace, purpose, meter);
       const parsed = parseReply(reply);
       // The pictures a page asked for are made before it is stored, so the
       // version that lands never points at anything that does not exist. A page
@@ -238,6 +240,7 @@ export const run = action({
         summary: parsed.summary,
         blockedNote: job.blockedNote,
         epoch: job.epoch,
+        costCents: meter.metered() ? meter.cents() : undefined,
       });
       if (finished === "cancelled") {
         await ctx.runMutation(internal.diagnostics.close, {
@@ -370,8 +373,11 @@ export const finish = internalMutation({
     onboardingId: v.optional(v.id("siteOnboarding")),
     attempt: v.optional(v.number()),
     epoch: v.optional(v.number()),
+    // What the provider billed for this turn. Recorded against the hold, never
+    // charged: the member pays the flat per-kind credit cost either way.
+    costCents: v.optional(v.number()),
   },
-  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary, blockedNote, onboardingId, attempt, epoch }) => {
+  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary, blockedNote, onboardingId, attempt, epoch, costCents }) => {
     const now = Date.now();
     const site = await ctx.db.get(siteId);
     if (epoch !== undefined && (site?.buildEpoch ?? 0) !== epoch) {
@@ -393,7 +399,7 @@ export const finish = internalMutation({
       if (await ctx.db.get(assistantId)) {
         await ctx.db.patch(assistantId, { body, status: undefined });
       }
-      await settleHold(ctx, holdId, REQUEST_COSTS.chat, now, "chat");
+      await settleHold(ctx, holdId, { amount: REQUEST_COSTS.chat, now, kind: "chat", costCents });
       return "ok" as const;
     }
     // The site was deleted while the build ran: nothing to attach it to, and
@@ -433,7 +439,7 @@ export const finish = internalMutation({
         versionId,
       });
     }
-    await settleHold(ctx, holdId, undefined, now);
+    await settleHold(ctx, holdId, { now, costCents });
     return "ok" as const;
   },
 });
@@ -524,7 +530,7 @@ async function complete(
   maxTokens: number,
   deadline: number,
   trace?: ProviderTrace,
-  meta?: { continuation?: number },
+  meta?: { continuation?: number; meter?: Meter },
 ) {
   let limit = maxTokens;
   let host = route.baseUrl;
@@ -627,6 +633,9 @@ async function complete(
       });
       throw new Error("The model provider sent an unreadable reply");
     }
+    // Counted before the reply is judged: a call that came back empty or
+    // unusable was still billed by the provider, so it belongs on the meter.
+    meta?.meter?.add(readUsage(data));
     const choice = data?.choices?.[0];
     const content = choice?.message?.content;
     if (typeof content !== "string" || !content.trim()) {
@@ -668,6 +677,10 @@ export async function callProvider(
   budgetMs = TEXT_BUDGET_MS,
   trace?: ProviderTrace,
   purpose: "chat" | "build" = "chat",
+  // Every call this turn makes -- the first, a retry, each continuation --
+  // adds what the provider billed for it, so the caller settles knowing the
+  // real cost rather than the number of requests.
+  meter?: Meter,
 ) {
   const route = chatRoute(purpose);
   if (!route.apiKey) {
@@ -683,7 +696,7 @@ export async function callProvider(
     tokenLimit ??
     (Number(process.env.AI_MAX_TOKENS) || (purpose === "build" ? BUILD_MAX_TOKENS : DEFAULT_MAX_TOKENS));
   const deadline = Date.now() + Math.min(budgetMs, TEXT_BUDGET_MS);
-  let reply = await complete(route, messages, maxTokens, deadline, trace);
+  let reply = await complete(route, messages, maxTokens, deadline, trace, { meter });
   let content = reply.content;
   for (
     let round = 0;
@@ -706,7 +719,7 @@ export async function callProvider(
       maxTokens,
       deadline,
       trace,
-      { continuation: round + 1 },
+      { continuation: round + 1, meter },
     );
     // A continuation that opens its own fence anyway would split the page in two.
     content += reply.content.replace(/^\s*```(?:html)?[ \t]*\r?\n/i, "");

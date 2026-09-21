@@ -6,6 +6,7 @@ import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { storedCents } from "./pricing";
 import { createCheckoutSession, createPortalSession, stripeRequest } from "./stripe";
 import {
   PLANS,
@@ -295,7 +296,24 @@ export const funding = internalQuery({
       }),
       { paidCents: 0, apiCents: 0, forgeCents: 0 },
     );
-    return { payments: rows.length, ...total };
+    // What the providers actually billed against that budget. Every settled
+    // request carries its own cost; one that the provider never priced is
+    // counted as unmetered rather than as free, so a small spend figure next
+    // to a large unmetered count means the meter is not reaching, not that
+    // the month was cheap.
+    const holds = await ctx.db.query("creditHolds").collect();
+    const settled = holds.filter((hold) => hold.status === "settled");
+    const spentCents = settled.reduce((sum, hold) => sum + (hold.costCents ?? 0), 0);
+    return {
+      payments: rows.length,
+      ...total,
+      spentCents: storedCents(spentCents),
+      metered: settled.filter((hold) => hold.costCents !== undefined).length,
+      unmetered: settled.filter((hold) => hold.costCents === undefined).length,
+      // What is left of the budget those payments funded. Negative means the
+      // providers have been paid more than the plans set aside for them.
+      budgetLeftCents: storedCents(total.apiCents - spentCents),
+    };
   },
 });
 
@@ -486,10 +504,10 @@ export async function holdCredits(
 export async function settleHold(
   ctx: MutationCtx,
   holdId: Id<"creditHolds">,
-  amount?: number,
-  now = Date.now(),
-  kind?: RequestKind,
+  options: { amount?: number; now?: number; kind?: RequestKind; costCents?: number } = {},
 ) {
+  const { amount, kind, costCents } = options;
+  const now = options.now ?? Date.now();
   const hold = await ctx.db.get(holdId);
   if (!hold || hold.status !== "held") return;
   const sub = await ensureCurrent(ctx, hold.userId, now);
@@ -505,7 +523,10 @@ export async function settleHold(
       updatedAt: now,
     });
   }
-  await ctx.db.patch(holdId, { status: "settled" });
+  await ctx.db.patch(holdId, {
+    status: "settled",
+    ...(costCents === undefined ? {} : { costCents: storedCents(costCents) }),
+  });
   if (spent > 0) {
     const label = REQUEST_LABELS[kind ?? (hold.requestKind as RequestKind)] ?? hold.requestKind;
     await record(ctx, hold.userId, "spend", -spent, credits, label, now);
@@ -536,9 +557,10 @@ export const settle = internalMutation({
     holdId: v.id("creditHolds"),
     amount: v.optional(v.number()),
     requestKind: v.optional(requestKind),
+    costCents: v.optional(v.number()),
   },
-  handler: async (ctx, { holdId, amount, requestKind: kind }) => {
-    await settleHold(ctx, holdId, amount, undefined, kind);
+  handler: async (ctx, { holdId, amount, requestKind: kind, costCents }) => {
+    await settleHold(ctx, holdId, { amount, kind, costCents });
   },
 });
 
