@@ -1,0 +1,28 @@
+Forge Nexxus GitHub app backup
+Taken: 2026-09-21T00:00:50Z
+Reason: Snapshot the current GitHub Pages mobile app (docs/ + src/) before copying the dashboard onto the Cloudways WordPress site.
+
+Source: origin/main @ 3494c0e2f7b0d2acc8ea01cfd8dec5b9799e0d5a
+Commit: Assign every site's first Forge address; nobody picks one to get online.
+Pages URL: https://xgamer791.github.io/forge-nexxus/
+Convex URL (from docs/index.html): https://polished-ram-883.convex.cloud
+docs/version.json: f2298d73ddb7c70eacdc2e303d3fa25517387c29
+
+This backup is the GitHub app only:
+- docs/ — the Pages client (HTML, CSS, JS, login video)
+- src/ — the data layer that builds docs/forge-data.js
+
+It does not include:
+- wordpress/ or any Cloudways theme files
+- convex/ (schema and functions stay in the repo; they are not this snapshot)
+- wp-config.php, database dumps, or credentials
+- .env files or provider keys
+
+Do not copy this over the Cloudways theme, and do not copy the Cloudways theme over docs/.
+
+To restore the app on GitHub Pages:
+  tar -xzf forge-app-2026-09-21.tgz
+  cp -a forge-app-2026-09-21/docs/. <repo>/docs/
+  cp -a forge-app-2026-09-21/src/. <repo>/src/
+  npm run build
+  commit and push main (Pages publishes docs/)
