@@ -24,6 +24,14 @@ const ENABLED = true;
   // What the hand-off shows about the finished site: whether it is live, and
   // the address Forge gave it. It comes from Convex, like everything else.
   let sitesList = [];
+  let localBuild = null;
+  const REBUILD_PROMPT = 'Rebuild this website from scratch. Discard the current design. Use only real business facts already known. Return one complete new HTML document, not an edit of the old page.';
+  function missingRebuild(error) {
+    return /Could not find public function|onboarding:rebuild/i.test(String(error?.data || error?.message || ''));
+  }
+  function currentDraft() {
+    return localBuild || state?.draft || null;
+  }
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const mark = '<svg class="onboarding-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" stroke="none" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg>';
   const shell = content => `<header class="onboarding-header"><span class="onboarding-brand">${mark}Forge Nexxus</span><button type="button" class="onboarding-quiet" data-onboarding-action="signout">Sign out</button></header><div class="onboarding-body">${content}</div>`;
@@ -128,7 +136,7 @@ const ENABLED = true;
     renderAssets();
   }
   function builtSite() {
-    const id = state?.draft?.siteId;
+    const id = currentDraft()?.siteId;
     return id ? sitesList.find(site => site._id === id) ?? null : null;
   }
   // The finished site is handed over with the address Forge gave it. Nobody is
@@ -150,7 +158,7 @@ const ENABLED = true;
       <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="finish">Open it as a draft</button></div>`;
   }
   function renderBuild() {
-    const draft = state.draft;
+    const draft = currentDraft();
     const done = draft.status === 'complete';
     const failed = draft.status === 'failed';
     const site = done ? builtSite() : null;
@@ -203,10 +211,44 @@ const ENABLED = true;
     } finally { setBusy(false); render(); }
   }
   function canRebuild() {
+    if (localBuild) return false;
     return Boolean(state?.canRebuild || (member && state && !state.isFree && state.hasWebsite));
   }
+  function markLocal(status, label) {
+    if (!localBuild) return;
+    localBuild = {
+      ...localBuild,
+      status,
+      events: label ? [...localBuild.events, { label, at: Date.now() }] : localBuild.events,
+      error: status === 'failed' ? label : undefined,
+    };
+    rendered = '';
+    render();
+  }
+  async function rebuildWithoutServer() {
+    const site = sitesList.find(row => row.currentVersionId) || sitesList[0];
+    if (!site?.conversationId) throw new Error('Open a site to rebuild it.');
+    localBuild = {
+      id: site._id,
+      siteId: site._id,
+      answers: [],
+      step: 9,
+      status: 'queued',
+      events: [{ label: 'Rebuilding from your answers', at: Date.now() }],
+      assets: [],
+      local: true,
+    };
+    rendered = '';
+    render();
+    if (site.status === 'published') {
+      try { await data.sites.unpublish(site._id); } catch { /* The rebuild still runs. */ }
+    }
+    markLocal('building', 'Agent started building your website');
+    await data.generate(site.conversationId, REBUILD_PROMPT);
+    markLocal('complete', 'Website saved and ready');
+  }
   function paintRebuild() {
-    document.querySelectorAll('.rebuild-site').forEach(button => {
+    document.querySelectorAll('.rebuild-site,.site-bar-rebuild').forEach(button => {
       button.hidden = !canRebuild();
     });
   }
@@ -220,21 +262,22 @@ const ENABLED = true;
       return;
     }
     if (!member) { screen.hidden = true; revealDashboard(false); return; }
-    if (state?.userId !== member._id || subscriptionError) {
+    if (!localBuild && (state?.userId !== member._id || subscriptionError)) {
       revealDashboard(false); screen.hidden = false;
       showWaiting(subscriptionError ? 'Your workspace couldn’t load.' : 'Opening your workspace…', subscriptionError ? 'Reload to reconnect. Your saved answers will be here.' : 'Getting your websites and plan.', subscriptionError);
       return;
     }
-    if (paymentPending()) {
+    if (!localBuild && paymentPending()) {
       revealDashboard(false); screen.hidden = false;
       showWaiting('Confirming your plan…', 'Waiting for payment confirmation. Your website setup will open as soon as your plan is active.', true);
       return;
     }
-    if (!state.isFree) awaitingPayment = false;
-    const show = state.required || Boolean(state.draft);
+    if (state && !state.isFree) awaitingPayment = false;
+    const row = currentDraft();
+    const show = Boolean(localBuild) || Boolean(state?.required) || Boolean(row);
     revealDashboard(!show); screen.hidden = !show;
     if (!show) { rendered = ''; return; }
-    if (!state.draft) {
+    if (!row) {
       showWaiting('Let’s make your first website.', 'Ten simple questions. One at a time.');
       if (!starting && !subscriptionError) {
         starting = true;
@@ -244,11 +287,11 @@ const ENABLED = true;
       }
       return;
     }
-    if (activeDraft !== state.draft.id) {
-      activeDraft = state.draft.id; step = state.draft.step; rendered = '';
+    if (activeDraft !== row.id) {
+      activeDraft = row.id; step = row.step; rendered = '';
     }
     if (busy) return;
-    if (state.draft.status === 'questions') renderQuestion();
+    if (row.status === 'questions') renderQuestion();
     else renderBuild();
   }
   async function next(skip = false) {
@@ -318,7 +361,10 @@ const ENABLED = true;
         step = previous; renderQuestion(true); screen.querySelector('h1')?.focus({preventScroll:true});
       }
       if (button.dataset.removeAsset) await data.onboarding.detach(state.draft.id, button.dataset.removeAsset);
-      if (action === 'retry') await data.onboarding.submit(state.draft.id);
+      if (action === 'retry') {
+        if (localBuild) await rebuildWithoutServer();
+        else await data.onboarding.submit(state.draft.id);
+      }
       if (action === 'billing') { const {url} = await data.billing.portal(); location.assign(url); }
       // Saving an answer is what reopens a brief whose build failed; the last
       // question comes back with Back leading through the rest.
@@ -329,6 +375,14 @@ const ENABLED = true;
       }
       if (action === 'finish' || action === 'exit' || action === 'domain') {
         clearTimeout(saveTimer);
+        if (localBuild) {
+          const siteId = localBuild.siteId;
+          localBuild = null;
+          rendered = '';
+          if (siteId) document.dispatchEvent(new CustomEvent('forge:onboarding-complete', {detail: {siteId}}));
+          if (action === 'domain') openDomains();
+          return;
+        }
         if (state.draft.status === 'questions') await queueSave(step, value());
         const siteId = state.draft.siteId;
         await data.onboarding.dismiss(state.draft.id);
@@ -388,7 +442,17 @@ const ENABLED = true;
     },
     async rebuild() {
       if (!ENABLED || !member) return;
-      await data.onboarding.rebuild();
+      try {
+        await data.onboarding.rebuild();
+      } catch (caught) {
+        if (!missingRebuild(caught)) throw caught;
+        try {
+          await rebuildWithoutServer();
+        } catch (failed) {
+          markLocal('failed', failed?.data || failed?.message || 'Your website couldn’t be completed. Try building again.');
+          throw failed;
+        }
+      }
     },
   };
   data?.onboarding.subscribe(nextState => {
@@ -398,6 +462,6 @@ const ENABLED = true;
   // The hand-off redraws when the finished site's address or status changes.
   data?.sites?.subscribe?.(list => {
     sitesList = Array.isArray(list) ? list : [];
-    if (state?.draft?.status === 'complete') render();
+    if (currentDraft()?.status === 'complete') render();
   });
 })();
