@@ -3,29 +3,42 @@
 // Convex test glob never tries to load a module that reads the filesystem.
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { FORGE_MD } from "../convex/forgeMd";
+import { FED, FORGE_MD } from "../convex/agentRules";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const generate = read("convex/generate.ts");
 const onboarding = read("convex/onboarding.ts");
-// What the build turn actually sends: FORGE_MD (house rules) and the
-// build contract inside systemPrompt().
+const officialSkill = read(".claude/skills/frontend-design/SKILL.md");
+// What the build turn actually sends: FORGE_MD (house rules), FED (official
+// frontend-design skill), and the build contract inside systemPrompt().
 const contract = generate.slice(
   generate.indexOf("You are Forge, the website-building agent"),
   generate.indexOf("Never ask the user questions or append"),
 );
-const stack = `${FORGE_MD}\n${contract}`;
+const stack = `${FORGE_MD}\n${FED}\n${contract}`;
 
-describe("FORGE_MD is the sole Convex prompt document", () => {
-  test("house rules live in FORGE_MD and carry no design-method skill", () => {
+describe("FORGE_MD and FED always travel together", () => {
+  test("FED is the official frontend-design skill, verbatim", () => {
+    expect(FED).toBe(officialSkill);
+  });
+
+  test("house rules live in FORGE_MD and the official skill lives in FED", () => {
     expect(contract.length).toBeGreaterThan(500);
     expect(FORGE_MD).toContain("standing instructions for the website agent");
     expect(FORGE_MD).not.toContain("All design work must follow the frontend-design skill");
     expect(FORGE_MD).not.toContain("Approach this as the design lead at a design studio");
     expect(FORGE_MD).not.toMatch(/frontend-design skill/i);
-    expect(generate).toContain("content: FORGE_MD");
+    expect(FED).toContain("Approach this as the design lead at a design studio");
+    expect(generate).toContain("standingSystemMessages()");
+    expect(generate).not.toMatch(/content: FORGE_MD/);
     expect(generate).not.toMatch(/FRONTEND_DESIGN/);
     expect(generate).not.toMatch(/frontendDesign/);
+    expect(onboarding).toContain("standingSystemMessages()");
+    expect(onboarding).not.toMatch(/content: FORGE_MD/);
+    expect(generate).not.toMatch(/from \"\.\/forgeMd\"/);
+    expect(generate).not.toMatch(/from \"\.\/fed\"/);
+    expect(onboarding).not.toMatch(/from \"\.\/forgeMd\"/);
+    expect(onboarding).not.toMatch(/from \"\.\/fed\"/);
   });
 });
 

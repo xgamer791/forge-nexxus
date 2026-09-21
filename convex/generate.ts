@@ -7,7 +7,7 @@ import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "
 import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
-import { FORGE_MD } from "./forgeMd";
+import { standingSystemMessages } from "./agentRules";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
@@ -317,7 +317,12 @@ export const begin = internalMutation({
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const imageLimit = current ? EDIT_IMAGE_LIMIT : BUILD_IMAGE_LIMIT;
     const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit, kind === "chat" ? "chat" : "build");
-    if (setup) messages.splice(1, 0, { role: "system", content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
+    if (setup) {
+      messages.splice(standingSystemMessages().length, 0, {
+        role: "system",
+        content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}`,
+      });
+    }
     return {
       siteId: site._id,
       holdId,
@@ -480,8 +485,8 @@ function buildMessages(
   purpose: "chat" | "build",
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
-    // FORGE_MD (house rules) — every chat, build and strategy turn.
-    { role: "system", content: FORGE_MD },
+    // FORGE_MD and FED always travel together — every chat, build and strategy turn.
+    ...standingSystemMessages(),
     { role: "system", content: systemPrompt(imageLimit, purpose) },
   ];
   if (currentHtml) {
