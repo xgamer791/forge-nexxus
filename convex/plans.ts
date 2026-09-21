@@ -165,6 +165,15 @@ export const PLANS: readonly Plan[] = [
 
 export type TopUp = { key: string; credits: number; priceCents: number };
 
+// Whether extra credits are on sale. They are off unless the deployment says
+// otherwise: the packs stay in the plan sheet, greyed out, so a member can see
+// what is coming back and at what price, and checkout refuses them so nothing
+// can be bought by calling the API directly. `npx convex env set TOP_UPS_OPEN
+// true` puts them back on sale without a code change.
+export function topUpsOpen() {
+  return process.env.TOP_UPS_OPEN === "true";
+}
+
 // Extra credits bought inside a period, on plans that allow it. They expire
 // with the period, like the monthly allowance does. $30 per 1,000 through
 // 5,000 is 3¢ a credit — above Starter (2.4¢) and Pro (2¢). The 10,000 pack

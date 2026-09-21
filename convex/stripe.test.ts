@@ -43,6 +43,9 @@ const ENV = {
   STRIPE_PRICE_PREMIUM_MONTH: "price_premium_m",
   STRIPE_PRICE_PREMIUM_YEAR: "price_premium_y",
   STRIPE_PRICE_TOPUP_1000: "price_topup_1000",
+  // These tests are about what a purchase does, so packs are on sale here.
+  // Their being off by default is covered in billing.test.ts.
+  TOP_UPS_OPEN: "true",
 };
 
 beforeEach(() => Object.assign(process.env, ENV));

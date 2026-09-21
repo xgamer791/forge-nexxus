@@ -18,6 +18,7 @@ import {
   requestKind,
   topPlan,
   topUpFor,
+  topUpsOpen,
   type PlanKey,
   type RequestKind,
 } from "./plans";
@@ -257,7 +258,12 @@ export const summary = query({
 // The pricing page reads this, so the client never carries its own copy.
 export const catalog = query({
   args: {},
-  handler: async () => ({ plans: PLANS, topUps: TOP_UPS, requestCosts: REQUEST_COSTS }),
+  handler: async () => ({
+    plans: PLANS,
+    topUps: TOP_UPS,
+    topUpsOpen: topUpsOpen(),
+    requestCosts: REQUEST_COSTS,
+  }),
 });
 
 export const history = query({
@@ -377,6 +383,12 @@ export const checkout = action({
     const chosen = plan ? normalizePlanKey(plan) : undefined;
     if (plan === "free") throw new ConvexError("Cancelling happens from Plan & credits");
     if (!chosen && !topUpFor(topUp ?? "")) throw new ConvexError("Choose a plan or a credit pack");
+    // Checked before the plan's own entitlement, so a member on a plan that
+    // carries top-ups is told the true reason rather than pointed at an
+    // upgrade that would not let them buy one either.
+    if (!chosen && topUp && !topUpsOpen()) {
+      throw new ConvexError("Extra credits aren't on sale right now");
+    }
     if (!chosen && topUp && !me.plan.topUps) {
       throw new ConvexError(`Extra credits come with the ${cheapestWith("topUps")} plan`);
     }

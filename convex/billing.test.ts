@@ -105,6 +105,9 @@ describe("billing", () => {
       [10000, 20000],
     ]);
     expect(catalog.requestCosts).toEqual(REQUEST_COSTS);
+    // The packs are listed while they are off sale, so the sheet can show
+    // what is coming back; this is what greys them out.
+    expect(catalog.topUpsOpen).toBe(false);
   });
 
   test("a stored Premium row is Pro, and granting premium writes pro", async () => {
@@ -430,13 +433,14 @@ describe("billing", () => {
     await expect(member.as.action(api.billing.checkout, { plan: "starter", interval: "year" })).rejects.toThrow(
       "Payments aren't open yet",
     );
-    // Packs are refused on plans without them before payments are even considered.
+    // Packs are off sale, so neither a plan that carries them nor open
+    // payments gets one: the refusal comes before either is considered.
     await expect(member.as.action(api.billing.checkout, { topUp: "topup-1000" })).rejects.toThrow(
-      "Extra credits come with the Pro plan",
+      "Extra credits aren't on sale right now",
     );
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     await expect(member.as.action(api.billing.checkout, { topUp: "topup-1000" })).rejects.toThrow(
-      "Payments aren't open yet",
+      "Extra credits aren't on sale right now",
     );
     await expect(member.as.action(api.billing.checkout, {})).rejects.toThrow("Choose a plan");
     await expect(member.as.action(api.billing.checkout, { plan: "free" })).rejects.toThrow(

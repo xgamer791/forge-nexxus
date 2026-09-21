@@ -1525,6 +1525,10 @@ const creditsCard = document.querySelector('.credits-card');
 const planScreen = document.querySelector('.overlay.plan');
 let summary = null;
 let catalog = null;
+// Whether extra credits are on sale at all, which the deployment decides. It
+// gates every offer to buy them, so nothing promises a purchase that checkout
+// would refuse. Unanswered catalog reads as open, which is the steady state.
+const topUpsOpen = () => catalog?.topUpsOpen !== false;
 function setText(selector, text) {
   document.querySelectorAll(selector).forEach(element => { element.textContent = text; });
 }
@@ -1549,7 +1553,7 @@ function renderCredits() {
     setText('[data-credits-resets]', cancelAtPeriodEnd
       ? `Ending ${when}`
       : plan.monthlyPriceCents ? `Renews ${when}` : granted > 0 ? `Expires ${when}` : 'Choose a plan to start building');
-    setText('[data-credits-cta]', plan.key === top ? (plan.topUps && !unlimited ? 'Top up' : 'Manage') : 'Upgrade');
+    setText('[data-credits-cta]', plan.key === top ? (plan.topUps && !unlimited && topUpsOpen() ? 'Top up' : 'Manage') : 'Upgrade');
     setText('[data-plan-name]', `${plan.name} plan`);
     setText('[data-plan-renews]', cancelAtPeriodEnd
       ? `Ends ${when}`
@@ -1641,7 +1645,7 @@ function renderPlanCards() {
       plan.publicAddress ? 'Publish to an address of your own' : null,
       plan.customDomains ? 'Custom domain' : null,
       plan.removeBadge ? 'No Forge badge' : null,
-      plan.topUps ? 'Buy extra credits any time' : null,
+      plan.topUps && topUpsOpen() ? 'Buy extra credits any time' : null,
       ...(plan.features ?? []),
     ].filter(Boolean).forEach(text => {
       const item = document.createElement('li');
@@ -1669,6 +1673,14 @@ function renderPlanCards() {
   // Extra credits are a plan entitlement, and pointless on an unlimited plan.
   const showTopUps = Boolean(summary?.plan.topUps) && !summary?.unlimited;
   planScreen.querySelectorAll('.topup-heading,[data-topup-list],.topup-note').forEach(element => { element.hidden = !showTopUps; });
+  // Packs stay on show while they are off sale, so the sheet says what is
+  // coming back and at what price rather than losing a section.
+  const note = planScreen.querySelector('.topup-note');
+  if (note) {
+    note.textContent = topUpsOpen()
+      ? "Top-up credits join this period's balance and expire with it."
+      : "You can't buy extra credits right now. Your plan's monthly credits arrive as usual.";
+  }
   topUps.replaceChildren(...catalog.topUps.map(pack => {
     const row = document.createElement('button');
     row.type = 'button';
@@ -1683,7 +1695,10 @@ function renderPlanCards() {
     price.className = 'topup-price';
     price.textContent = money(pack.priceCents);
     row.append(copy, price);
-    row.addEventListener('click', () => startCheckout({topUp: pack.key}, row));
+    // Disabled rather than guarded in the handler: the button leaves the tab
+    // order and cannot be clicked, which is the honest state to expose.
+    if (topUpsOpen()) row.addEventListener('click', () => startCheckout({topUp: pack.key}, row));
+    else row.disabled = true;
     return row;
   }));
 }
