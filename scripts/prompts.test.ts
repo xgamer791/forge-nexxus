@@ -57,6 +57,15 @@ describe("one instruction, in one place", () => {
     expect(stack).not.toMatch(/at most two (Google Fonts )?families/i);
   });
 
+  test("layout and color live in DESIGN_GOD: no cards, no accent text, full width", () => {
+    expect(DESIGN_GOD).toContain("No card-style layouts");
+    expect(DESIGN_GOD).toContain("No accent color on text");
+    expect(DESIGN_GOD).toContain("Always use full page width layouts");
+    expect(DESIGN_GOD).toContain("even a SaaS brief does not get the card kit");
+    expect(FED).not.toContain("No card-style layouts");
+    expect(FORGE_MD).not.toContain("No card-style layouts");
+  });
+
   test("the site covers the job the brief names, including selling", () => {
     expect(FORGE_MD).toContain("What the site must cover");
     expect(FORGE_MD).toContain("a products section is required");

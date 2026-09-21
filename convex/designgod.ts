@@ -25,4 +25,12 @@ export const DESIGN_GOD = [
   "Do **not** default to Inter, Roboto, Open Sans, Google Fonts, or system-ui stacks unless the brief names them.",
   "",
   "Always provide a readable generic fallback matching the selected family, and size the layout so it holds before the webfont arrives.",
+  "",
+  "## Layout and color",
+  "",
+  "**No card-style layouts.** Do not chop the page into rounded cards, equal tiles, or boxed units with shared borders and shadows. Stack, split and bleed the content across the canvas. Product lists, feature rows and testimonials stay open — no card chrome around each item. This is a ban, not a default to avoid: even a SaaS brief does not get the card kit.",
+  "",
+  "**No accent color on text.** Headings, body, labels, nav, links and buttons-as-text stay in the ink palette — black, white, or a near-neutral from the same family. An accent belongs on a surface, a rule, a mark or a filled control, never on a word. Do not color a headline, a single word in a headline, or a body passage with the accent.",
+  "",
+  "**Always use full page width layouts.** The composition spans the viewport. No skinny centered column with empty side margins. Inner padding and readable measure are fine; the page itself is full-bleed on phone and desktop.",
 ].join("\n");
