@@ -2,7 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-import { storedPlanKey } from "./plans";
+import { requestKind, storedPlanKey } from "./plans";
 
 export default defineSchema({
   ...authTables,
@@ -174,6 +174,10 @@ export default defineSchema({
     amount: v.number(),
     balanceAfter: v.number(),
     note: v.optional(v.string()),
+    // What kind of request spent it, on a `spend` row. The note carries the
+    // same thing as a label, but a label is for reading and this is for
+    // counting: it is what a period's usage is grouped by.
+    requestKind: v.optional(requestKind),
     createdAt: v.number(),
   }).index("by_user_created", ["userId", "createdAt"]),
   // Credits held by a request that has started but not finished. Settling

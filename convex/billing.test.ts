@@ -232,6 +232,43 @@ describe("billing", () => {
     expect(await member.as.query(api.billing.summary, {})).not.toHaveProperty("spentCents");
   });
 
+  test("the period's spend is grouped by what it went on, dearest first", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
+    const spend = async (kind: "generate" | "image" | "chat", settleAs?: "chat") => {
+      const { holdId } = await t.mutation(internal.billing.reserve, { userId: member.userId, requestKind: kind });
+      await t.mutation(internal.billing.settle, {
+        holdId,
+        ...(settleAs ? { amount: REQUEST_COSTS.chat, requestKind: settleAs } : {}),
+      });
+    };
+    await spend("generate");
+    await spend("image");
+    await spend("image");
+    // A build that turned out to be a conversation counts as the chat it
+    // settled as, not the build it was held for.
+    await spend("generate", "chat");
+
+    expect(await member.as.query(api.billing.usage, {})).toEqual([
+      { kind: "generate", label: "Site build", requests: 1, credits: REQUEST_COSTS.generate },
+      { kind: "image", label: "Image", requests: 2, credits: REQUEST_COSTS.image * 2 },
+      { kind: "chat", label: "Chat", requests: 1, credits: REQUEST_COSTS.chat },
+    ]);
+    // Grants and expiries are movements, not usage, so they are left out.
+    const history = await member.as.query(api.billing.history, {});
+    expect(history.some((entry) => entry.kind === "grant")).toBe(true);
+  });
+
+  test("a period with nothing spent has nothing to break down", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
+    expect(await member.as.query(api.billing.usage, {})).toEqual([]);
+    const guest = await createUser(t, { isAnonymous: true });
+    expect(await guest.as.query(api.billing.usage, {})).toEqual([]);
+  });
+
   test("a request the provider never priced is unmetered, not free", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });

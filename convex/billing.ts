@@ -145,8 +145,9 @@ async function record(
   balanceAfter: number,
   note: string,
   createdAt: number,
+  spentOn?: RequestKind,
 ) {
-  await ctx.db.insert("creditLedger", { userId, kind, amount, balanceAfter, note, createdAt });
+  await ctx.db.insert("creditLedger", { userId, kind, amount, balanceAfter, note, createdAt, requestKind: spentOn });
 }
 
 // Brings a member's row up to date and returns it: creates an unpaid
@@ -278,6 +279,40 @@ export const history = query({
       .order("desc")
       .take(HISTORY_LIMIT);
     return entries.map(({ userId: _owner, ...entry }) => entry);
+  },
+});
+
+// Where this period's credits went, by the kind of request that spent them.
+// The ledger holds every movement; this is what the spends add up to. It is
+// grouped from the stored request kind rather than the note, because a note is
+// for reading and a kind is for counting, and it covers the whole period
+// rather than the fifty entries `history` shows.
+export const usage = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await memberOrNull(ctx);
+    if (!user) return [];
+    const now = Date.now();
+    const stored = await subscriptionFor(ctx, user._id);
+    const { periodStart } = stored ? projected(stored, now) : opening("free", now);
+    const entries = await ctx.db
+      .query("creditLedger")
+      .withIndex("by_user_created", (q) => q.eq("userId", user._id).gte("createdAt", periodStart))
+      .collect();
+    const totals = new Map<RequestKind, { requests: number; credits: number }>();
+    for (const entry of entries) {
+      if (entry.kind !== "spend" || !entry.requestKind) continue;
+      const row = totals.get(entry.requestKind) ?? { requests: 0, credits: 0 };
+      row.requests += 1;
+      row.credits += Math.abs(entry.amount);
+      totals.set(entry.requestKind, row);
+    }
+    // Dearest first: what a period went on is the question being asked. A kind
+    // that spent nothing is left out rather than listed at zero.
+    return [...totals.entries()]
+      .map(([kind, row]) => ({ kind, label: REQUEST_LABELS[kind], ...row }))
+      .filter((row) => row.credits > 0)
+      .sort((a, b) => b.credits - a.credits);
   },
 });
 
@@ -528,8 +563,9 @@ export async function settleHold(
     ...(costCents === undefined ? {} : { costCents: storedCents(costCents) }),
   });
   if (spent > 0) {
-    const label = REQUEST_LABELS[kind ?? (hold.requestKind as RequestKind)] ?? hold.requestKind;
-    await record(ctx, hold.userId, "spend", -spent, credits, label, now);
+    const settledAs = kind ?? (hold.requestKind as RequestKind);
+    const label = REQUEST_LABELS[settledAs] ?? hold.requestKind;
+    await record(ctx, hold.userId, "spend", -spent, credits, label, now, REQUEST_COSTS[settledAs] === undefined ? undefined : settledAs);
   }
 }
 

@@ -449,6 +449,8 @@ export function createForgeData({
       subscribe: (callback) => client.onUpdate(api.billing.summary, {}, callback),
       catalog: (callback) => client.onUpdate(api.billing.catalog, {}, callback),
       history: (callback) => client.onUpdate(api.billing.history, {}, callback),
+      // What this period's credits went on, grouped by request kind.
+      usage: (callback) => client.onUpdate(api.billing.usage, {}, callback),
       // Cancelling and resuming tell Stripe too when it is billing the plan.
       cancel: () => client.action(api.billing.cancel, {}),
       resume: () => client.action(api.billing.resume, {}),

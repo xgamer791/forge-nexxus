@@ -1776,6 +1776,33 @@ const usageScreen = document.querySelector('.overlay.usage');
 if (forge?.billing && usageScreen) {
   const ledger = usageScreen.querySelector('[data-ledger]');
   const empty = usageScreen.querySelector('[data-ledger-empty]');
+  // What this period went on, dearest first. The server groups it, so a busy
+  // month is summed whole rather than from the fifty rows Activity shows.
+  // Rule 2: a period that has spent nothing shows no section at all.
+  const breakdown = usageScreen.querySelector('[data-breakdown]');
+  const breakdownHeading = usageScreen.querySelector('[data-breakdown-heading]');
+  forge.billing.usage(list => {
+    const rows = Array.isArray(list) ? list : [];
+    breakdown.hidden = rows.length === 0;
+    if (breakdownHeading) breakdownHeading.hidden = rows.length === 0;
+    breakdown.replaceChildren(...rows.map(entry => {
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      const copy = document.createElement('span');
+      copy.className = 'ledger-copy';
+      const label = document.createElement('strong');
+      label.textContent = entry.label || entry.kind;
+      const count = document.createElement('small');
+      count.textContent = plural(entry.requests, 'request', 'requests');
+      copy.append(label, count);
+      // A total, not a movement: no sign and no plus/minus colour.
+      const total = document.createElement('span');
+      total.className = 'ledger-amount';
+      total.textContent = entry.credits.toLocaleString('en-US');
+      row.append(copy, total);
+      return row;
+    }));
+  });
   const KIND_LABELS = {grant: 'Monthly credits', topup: 'Top-up', spend: 'Build request', refund: 'Refund', expire: 'Credits expired', adjust: 'Adjustment'};
   forge.billing.history(list => {
     const entries = Array.isArray(list) ? list : [];
