@@ -440,10 +440,10 @@ const ENABLED = true;
       if (!ENABLED || !member) return;
       await data.onboarding.start();
     },
-    async rebuild() {
+    async rebuild(siteId) {
       if (!ENABLED || !member) return;
       try {
-        await data.onboarding.rebuild();
+        await data.onboarding.rebuild(siteId);
       } catch (caught) {
         const missing = notDeployed(caught, 'Rebuild');
         throw missing ? new Error(missing) : caught;

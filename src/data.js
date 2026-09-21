@@ -417,7 +417,7 @@ export function createForgeData({
       start: () => client.mutation(api.onboarding.start, {}),
       save: (id, index, answer, advance = false) => client.mutation(api.onboarding.save, { id, index, answer, advance }),
       submit: (id) => client.mutation(api.onboarding.submit, { id }),
-      rebuild: () => client.mutation(api.onboarding.rebuild, {}),
+      rebuild: (siteId) => client.mutation(api.onboarding.rebuild, siteId ? { siteId } : {}),
       cancel: () => client.mutation(api.onboarding.cancel, {}),
       dismiss: (id) => client.mutation(api.onboarding.dismiss, { id }),
       uploadUrl: (id) => client.mutation(api.onboarding.uploadUrl, { id }),

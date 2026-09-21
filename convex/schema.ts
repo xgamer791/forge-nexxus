@@ -29,6 +29,8 @@ export default defineSchema({
     strategyAnswers: v.optional(v.array(v.union(v.string(), v.null()))),
     strategy: v.optional(v.string()),
     strategyRevision: v.optional(v.number()),
+    // One-way duplicate checks only. Never include these in a provider prompt.
+    discardedDesignHashes: v.optional(v.array(v.string())),
     briefStorageId: v.optional(v.id("_storage")),
     assets: v.array(v.object({ storageId: v.id("_storage"), name: v.string(), type: v.string() })),
     status: v.union(v.literal("questions"), v.literal("queued"), v.literal("building"), v.literal("saving"), v.literal("complete"), v.literal("failed")),

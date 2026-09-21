@@ -7,6 +7,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation, type ActionCtx } from "./_generated/server";
+import { holdCredits } from "./billing";
 
 export const IMAGE_MODEL = "gemini-3.1-flash-lite-image";
 export const IMAGE_MODEL_LABEL = "Gemini Nano Banana 2 Lite";
@@ -134,7 +135,7 @@ export function wantsImages(html: string) {
 // that comes back never points at anything that does not exist.
 export async function fulfilImages(
   ctx: ActionCtx,
-  { html, userId, siteId, limit }: { html: string; userId: Id<"users">; siteId: Id<"sites">; limit: number },
+  { html, userId, siteId, epoch, limit }: { html: string; userId: Id<"users">; siteId: Id<"sites">; epoch: number; limit: number },
 ) {
   if (!wantsImages(html)) return { html, wanted: 0, made: 0 };
   const tags = [...new Set(html.match(IMG_TAG) ?? [])].filter(
@@ -149,20 +150,30 @@ export async function fulfilImages(
     jobs.map(async (job) => {
       if (!job.run) return null;
       let holdId: Id<"creditHolds"> | null = null;
+      let storageId: Id<"_storage"> | null = null;
       try {
-        ({ holdId } = await ctx.runMutation(internal.billing.reserve, { userId, requestKind: "image" }));
+        const held = await ctx.runMutation(internal.images.reserve, { userId, siteId, epoch });
+        if (!held) return null;
+        holdId = held.holdId;
         const picture = await requestImage(
           `${job.prompt}\n\nA photograph or illustration for a website. No text, captions, watermarks, logos or borders in the picture.`,
           job.aspect,
         );
-        const storageId = await ctx.storage.store(new Blob([picture.bytes], { type: picture.type }));
+        storageId = await ctx.storage.store(new Blob([picture.bytes], { type: picture.type }));
         const url = await ctx.storage.getUrl(storageId);
         if (!url) throw new Error("The stored picture has no address");
-        await ctx.runMutation(internal.images.record, { userId, siteId, storageId, prompt: job.prompt });
+        const recorded = await ctx.runMutation(internal.images.record, { userId, siteId, epoch, storageId, prompt: job.prompt });
+        if (!recorded) {
+          storageId = null; // record deleted the stale file in its transaction.
+          await ctx.runMutation(internal.billing.release, { holdId });
+          return null;
+        }
+        storageId = null; // The site's asset row now owns cleanup.
         await ctx.runMutation(internal.billing.settle, { holdId });
         return url;
       } catch (error) {
         console.error("Forge image failed:", scrub(error));
+        if (storageId) await ctx.storage.delete(storageId);
         if (holdId) await ctx.runMutation(internal.billing.release, { holdId });
         return null;
       }
@@ -187,13 +198,28 @@ function scrub(error: unknown) {
 // A generated picture is the member's, like the site it sits on: recorded so it
 // goes when the site or the account does.
 export const record = internalMutation({
-  args: { userId: v.id("users"), siteId: v.id("sites"), storageId: v.id("_storage"), prompt: v.string() },
-  handler: async (ctx, { userId, siteId, storageId, prompt }) => {
-    // The site was deleted while its picture was being made: keep nothing.
-    if (!(await ctx.db.get(siteId))) {
+  args: { userId: v.id("users"), siteId: v.id("sites"), epoch: v.optional(v.number()), storageId: v.id("_storage"), prompt: v.string() },
+  handler: async (ctx, { userId, siteId, epoch, storageId, prompt }) => {
+    // A rebuilt site keeps its ID. Existence alone therefore let pictures
+    // from the discarded build reappear after the cleanup had finished.
+    const site = await ctx.db.get(siteId);
+    // Pre-deploy workers omit epoch. Accept them only on never-reset sites;
+    // reject and delete their blobs rather than failing argument validation
+    // before cleanup can run.
+    if (!site || site.userId !== userId || (site.buildEpoch ?? 0) !== (epoch ?? 0)) {
       await ctx.storage.delete(storageId);
-      return;
+      return false;
     }
     await ctx.db.insert("siteImages", { userId, siteId, storageId, prompt, createdAt: Date.now() });
+    return true;
+  },
+});
+
+export const reserve = internalMutation({
+  args: { userId: v.id("users"), siteId: v.id("sites"), epoch: v.number() },
+  handler: async (ctx, { userId, siteId, epoch }) => {
+    const site = await ctx.db.get(siteId);
+    if (!site || site.userId !== userId || (site.buildEpoch ?? 0) !== epoch) return null;
+    return await holdCredits(ctx, userId, "image");
   },
 });

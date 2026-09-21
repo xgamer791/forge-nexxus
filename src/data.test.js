@@ -34,6 +34,7 @@ const api = {
   },
   settings: { get: "settings:get", update: "settings:update" },
   diagnostics: { mine: "diagnostics:mine" },
+  onboarding: { rebuild: "onboarding:rebuild" },
 };
 
 const tokens = (label) => ({ token: `${label}-token`, refreshToken: `${label}-refresh` });
@@ -109,6 +110,17 @@ function harness({ storage = memoryStorage(), handler = defaultHandler, authCode
   });
   return { client, http, storage, data, navigate };
 }
+
+describe("rebuild target", () => {
+  test("the selected site reaches the server instead of silently choosing the latest brief", async () => {
+    const { data, client } = harness();
+    await data.ready;
+    await data.onboarding.rebuild("selected-site");
+    expect(client.mutation).toHaveBeenLastCalledWith("onboarding:rebuild", { siteId: "selected-site" });
+    await data.onboarding.rebuild();
+    expect(client.mutation).toHaveBeenLastCalledWith("onboarding:rebuild", {});
+  });
+});
 
 describe("session bootstrap", () => {
   test("a first visit becomes a guest and authenticates the live client", async () => {

@@ -163,6 +163,95 @@ describe("onboarding rebuild", () => {
     expect(await t.run((ctx) => ctx.db.query("sites").collect())).toHaveLength(1);
   });
 
+  test("the selected site is rebuilt without changing another site's answers, pages or assets", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const selected = await seedReadySite(t, member.userId);
+    const other = await seedReadySite(t, member.userId);
+    await t.run(ctx => ctx.db.patch(other.briefId, { updatedAt: Date.now() + 1000 }));
+    const saved = await t.run(ctx => ctx.db.get(selected.briefId));
+    await member.as.mutation(api.onboarding.rebuild, { siteId: selected.siteId });
+    expect(await t.run(ctx => ctx.db.get(selected.briefId))).toMatchObject({
+      status: "queued", answers: saved!.answers, step: saved!.step, siteId: selected.siteId,
+    });
+    expect(await t.run(ctx => ctx.db.get(selected.versionId))).toBeNull();
+    expect(await t.run(ctx => ctx.db.get(other.versionId))).toMatchObject({ html: PAGE });
+    expect(await t.run(ctx => ctx.db.get(other.briefId))).toMatchObject({ strategy: "Keep the brand tight.", status: "complete" });
+  });
+
+  test("ambiguous old clients and another member's site cannot delete any build", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const first = await seedReadySite(t, member.userId);
+    await seedReadySite(t, member.userId);
+    await expect(member.as.mutation(api.onboarding.rebuild, {})).rejects.toThrow("Select the website");
+    const stranger = await createBuilder(t, "other@example.com");
+    await expect(stranger.as.mutation(api.onboarding.rebuild, { siteId: first.siteId })).rejects.toThrow("Website not found");
+    expect(await t.run(ctx => ctx.db.get(first.versionId))).not.toBeNull();
+  });
+
+  test("all build files and legacy plans are deleted but every saved answer stays", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const selected = await seedReadySite(t, member.userId);
+    const saved = (await t.run(ctx => ctx.db.get(selected.briefId)))!;
+    const fileIds = await t.run(async ctx => {
+      const briefStorageId = await ctx.storage.store(new Blob(["Old private design blueprint"]));
+      const uploadId = await ctx.storage.store(new Blob(["Old attached design"]));
+      const orphanId = await ctx.storage.store(new Blob(["Old unlisted upload"]));
+      const imageId = await ctx.storage.store(new Blob(["Old generated picture"]));
+      await ctx.db.patch(selected.briefId, { briefStorageId, assets: [{ storageId: uploadId, name: "old.txt", type: "text/plain" }] });
+      for (const storageId of [uploadId, orphanId]) await ctx.db.insert("siteUploads", { userId: member.userId, onboardingId: selected.briefId, storageId });
+      await ctx.db.insert("siteImages", { userId: member.userId, siteId: selected.siteId, storageId: imageId, prompt: "Old art direction", createdAt: Date.now() });
+      const { _id, _creationTime, ...copy } = saved;
+      const legacyId = await ctx.db.insert("siteOnboarding", { ...copy, updatedAt: saved.updatedAt - 1, strategy: "Legacy design memory" });
+      return { storageIds: [briefStorageId, uploadId, orphanId, imageId], legacyId };
+    });
+    await member.as.mutation(api.onboarding.rebuild, { siteId: selected.siteId });
+    const reset = (await t.run(ctx => ctx.db.get(selected.briefId)))!;
+    expect(reset.answers).toEqual(saved.answers);
+    expect(reset.step).toBe(saved.step);
+    expect(reset.assets).toEqual([]);
+    expect(reset.briefStorageId).toBeUndefined();
+    expect(reset.strategy).toBeUndefined();
+    expect(reset.discardedDesignHashes).toEqual([expect.stringMatching(/^[a-f0-9]{64}$/)]);
+    expect((await t.run(ctx => ctx.db.get(fileIds.legacyId)))!.strategy).toBeUndefined();
+    expect(await t.run(ctx => ctx.db.query("siteUploads").collect())).toEqual([]);
+    expect(await t.run(ctx => ctx.db.query("siteImages").collect())).toEqual([]);
+    for (const storageId of fileIds.storageIds) expect(await t.run(ctx => ctx.storage.getUrl(storageId))).toBeNull();
+  });
+
+  test("a strategy already in flight cannot restore the scrapped plan or spend its hold", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const selected = await seedReadySite(t, member.userId, { dismissed: false });
+    const old = (await t.run(ctx => ctx.db.get(selected.briefId)))!;
+    const hold = (await t.mutation(internal.onboarding.strategyHold, { id: old._id, revision: old.revision }))!;
+    await member.as.mutation(api.onboarding.rebuild, { siteId: selected.siteId });
+    await t.mutation(internal.onboarding.strategySaved, { id: old._id, revision: old.revision, strategy: "Delayed old design", holdId: hold.holdId });
+    expect((await t.run(ctx => ctx.db.get(old._id)))!.strategy).toBeUndefined();
+    expect(await t.run(ctx => ctx.db.get(hold.holdId))).toMatchObject({ status: "released" });
+    expect(await t.mutation(internal.onboarding.strategyHold, { id: old._id, revision: old.revision })).toBeNull();
+  });
+
+  test("an old image arriving after rebuild is deleted and cannot reserve more credits", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const selected = await seedReadySite(t, member.userId);
+    await member.as.mutation(api.onboarding.rebuild, { siteId: selected.siteId });
+    const storageId = await t.run(ctx => ctx.storage.store(new Blob(["Late old image"])));
+    expect(await t.mutation(internal.images.record, { userId: member.userId, siteId: selected.siteId, epoch: 0, storageId, prompt: "Old image prompt" })).toBe(false);
+    expect(await t.run(ctx => ctx.storage.getUrl(storageId))).toBeNull();
+    expect(await t.run(ctx => ctx.db.query("siteImages").collect())).toEqual([]);
+    expect(await t.mutation(internal.images.reserve, { userId: member.userId, siteId: selected.siteId, epoch: 0 })).toBeNull();
+    const legacyImage = await t.run(ctx => ctx.storage.store(new Blob(["Image from a pre-deploy worker"])));
+    expect(await t.mutation(internal.images.record, { userId: member.userId, siteId: selected.siteId, storageId: legacyImage, prompt: "Old worker" })).toBe(false);
+    expect(await t.run(ctx => ctx.storage.getUrl(legacyImage))).toBeNull();
+    const freshImage = await t.run(ctx => ctx.storage.store(new Blob(["Fresh image"])));
+    expect(await t.mutation(internal.images.record, { userId: member.userId, siteId: selected.siteId, epoch: 1, storageId: freshImage, prompt: "Fresh image prompt" })).toBe(true);
+    expect(await t.run(ctx => ctx.db.query("siteImages").collect())).toHaveLength(1);
+  });
+
   test("free members and guests cannot rebuild", async () => {
     const t = fresh();
     const free = await createUser(t, { email: "free@example.com" });

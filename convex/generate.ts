@@ -211,7 +211,7 @@ export const run = action({
         if (wantsImages(parsed.html)) {
           await trace.note({ phase: "images", label: "Making pictures", status: "images" });
         }
-        const pictures = await fulfilImages(ctx, { html: parsed.html, userId, siteId: job.siteId, limit: job.imageLimit });
+        const pictures = await fulfilImages(ctx, { html: parsed.html, userId, siteId: job.siteId, epoch: job.epoch, limit: job.imageLimit });
         html = pictures.html;
         imageWanted = pictures.wanted;
         imageMade = pictures.made;

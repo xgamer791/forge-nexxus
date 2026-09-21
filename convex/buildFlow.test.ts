@@ -196,11 +196,13 @@ describe("a brand new build, start to finish", () => {
     expect(messages[0].status).toBeUndefined();
     expect(messages[0].body).toBe(`Built a warm page for Harbor Roasters. It's published at forge-test.convex.site/sites/${site.slug}.`);
 
-    // Every hold settled: the build, the picture, and each strategy pass.
+    // Superseded answer snapshots never reserve credits. The newest strategy,
+    // the build and the picture are the only work that runs after this drain.
     expect((await holds(t)).every(([, status]) => status === "settled")).toBe(true);
+    expect((await holds(t)).filter(([kind]) => kind === "chat")).toHaveLength(1);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       reserved: 0,
-      credits: OPENING - REQUEST_COSTS.generate - REQUEST_COSTS.image - QUESTIONS.length * REQUEST_COSTS.chat,
+      credits: OPENING - REQUEST_COSTS.generate - REQUEST_COSTS.image - REQUEST_COSTS.chat,
     });
 
     // The run is closed, and the log reads as a finished build.
@@ -390,6 +392,7 @@ describe("a rebuild, start to finish", () => {
     const before = (await t.run((ctx) => ctx.db.get(siteId)))!;
     const [oldVersion] = await versions(t);
     const [oldImage] = await t.run((ctx) => ctx.db.query("siteImages").collect());
+    const oldBriefStorageId = first.briefStorageId!;
     const balance = (await member.as.query(api.billing.summary, {}))!.credits;
 
     const briefId = await member.as.mutation(api.onboarding.rebuild, {});
@@ -406,6 +409,7 @@ describe("a rebuild, start to finish", () => {
     expect(await versions(t)).toEqual([]);
     expect(await t.run((ctx) => ctx.db.query("siteImages").collect())).toEqual([]);
     expect(await t.run((ctx) => ctx.storage.getUrl(oldImage.storageId))).toBeNull();
+    expect(await t.run((ctx) => ctx.storage.getUrl(oldBriefStorageId))).toBeNull();
     expect(await t.run((ctx) => ctx.db.query("messages").collect())).toEqual([]);
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "queued", attempt: 2, siteId });
     expect(await member.as.query(api.onboarding.state, {})).toMatchObject({
@@ -420,9 +424,20 @@ describe("a rebuild, start to finish", () => {
     // A fresh build, not an edit: the model never saw the old page.
     expect(providers.builds()).toBe(2);
     const rebuildCall = providers.chatCalls().at(-1)!;
-    expect(rebuildCall.body.messages.map((m: any) => m.content).join("\n")).not.toContain("Harbor Roasters</h1>");
+    const rebuiltContext = rebuildCall.body.messages.map((m: any) => m.content).join("\n");
+    expect(rebuiltContext).not.toContain("Harbor Roasters</h1>");
+    expect(rebuiltContext).not.toContain(oldImage.storageId);
+    expect(rebuiltContext).not.toContain(oldBriefStorageId);
+    expect(rebuiltContext).toContain("clean-slate REBUILD, not an edit");
+    expect(rebuiltContext).toContain("Fresh-build identifier:");
+    expect(rebuildCall.body.messages.some((m: any) => m.role === "assistant")).toBe(false);
+    expect(rebuildCall.body).not.toHaveProperty("previous_response_id");
+    expect(rebuildCall.body).not.toHaveProperty("cachedContent");
     const after = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(after).toMatchObject({ status: "complete", attempt: 2, siteId });
+    expect(after.answers).toEqual(first.answers);
+    expect(after.step).toBe(first.step);
+    for (const hash of after.discardedDesignHashes ?? []) expect(rebuiltContext).not.toContain(hash);
     expect(after.events.map((event) => event.label)).toEqual([
       "Rebuilding from your answers",
       "Build brief saved and read",
@@ -531,6 +546,47 @@ describe("a rebuild, start to finish", () => {
     expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "released"]]);
     expect((await t.run((ctx) => ctx.db.get(siteId)))!.currentVersionId).toBeUndefined();
   });
+
+  test("an identical design is retried without sending the discarded page to the model", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(call => built(call < 3 ? "Harbor Roasters" : "A fresh Harbor"));
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+    await member.as.mutation(api.onboarding.rebuild, {});
+    await drain(t);
+    expect(providers.builds()).toBe(3);
+    expect(await t.run(ctx => ctx.db.get(id))).toMatchObject({ status: "complete", answers: ANSWERS });
+    expect(await versions(t)).toHaveLength(1);
+    expect((await versions(t))[0].html).toContain("A fresh Harbor");
+    const request = providers.chatCalls().at(-1)!.body.messages;
+    expect(JSON.stringify(request)).toContain("matched a discarded design");
+    expect(JSON.stringify(request)).not.toContain("Harbor Roasters</h1>");
+    expect(request.some((m: any) => m.role === "assistant")).toBe(false);
+    // Only the first build and the accepted rebuild made images.
+    expect(providers.calls.filter(call => /generateContent/.test(call.url))).toHaveLength(2);
+  });
+
+  test("a provider repeating the old page twice fails without restoring it or spending build credits", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+    const before = (await member.as.query(api.billing.summary, {}))!;
+    await member.as.mutation(api.onboarding.rebuild, {});
+    await drain(t);
+    expect(providers.builds()).toBe(3);
+    const failed = (await t.run(ctx => ctx.db.get(id)))!;
+    expect(failed.status).toBe("failed");
+    expect(failed.error).toContain("repeated the discarded design");
+    expect(failed.answers).toEqual(ANSWERS);
+    expect(await versions(t)).toEqual([]);
+    expect(await t.run(ctx => ctx.db.query("siteImages").collect())).toEqual([]);
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({ credits: before.credits, reserved: 0 });
+  });
 });
 
 // Whether the standing rules and the design skill actually leave the server.
@@ -621,7 +677,7 @@ describe("a rebuild starts the plan over, not just the page", () => {
   test("the scrapped page's strategy is not handed back to the next build", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const providers = stubProviders(() => built("Harbor Roasters"));
+    const providers = stubProviders(call => built(call === 1 ? "Harbor Roasters" : "A new Harbor"));
     const id = await answerEverything(member);
     await drain(t);
 

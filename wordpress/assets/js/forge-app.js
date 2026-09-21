@@ -1196,8 +1196,7 @@ if (forge?.sites && siteList && thread) {
         const items = [menuItem('Preview', () => { selectConversation(site.conversationId); openPreview(); })];
         if (mayRebuild(site)) {
           items.push(menuItem('Rebuild website', () => {
-            if (!confirm('Scrap this website and rebuild it from your saved answers? The address is kept.')) return;
-            runRebuild();
+            runRebuild(site);
           }));
         }
         if (built && summary?.plan.codeDownload) {
@@ -1333,11 +1332,12 @@ if (forge?.sites && siteList && thread) {
     if (!summary?.plan.key || summary.plan.key === 'free') return false;
     return Boolean(site?.currentVersionId) || Boolean(window.ForgeOnboarding?.canRebuild?.());
   }
-  function runRebuild() {
+  function runRebuild(site = activeSite) {
+    if (!confirm('Rebuild this website from scratch? This permanently deletes its pages, history, design plans, generated images and uploaded build files. Your answers and website address stay.')) return Promise.resolve();
     showNote(sitesError, '');
     const begin = window.ForgeOnboarding?.rebuild
-      ? window.ForgeOnboarding.rebuild()
-      : forge.onboarding.rebuild();
+      ? window.ForgeOnboarding.rebuild(site?._id)
+      : forge.onboarding.rebuild(site?._id);
     return Promise.resolve(begin).then(() => {
       closeMenu();
     }).catch(error => {
@@ -1353,7 +1353,6 @@ if (forge?.sites && siteList && thread) {
   });
   siteBarRebuild?.addEventListener('click', () => {
     if (!mayRebuild(activeSite)) return;
-    if (!confirm('Scrap this website and rebuild it from your saved answers? The address is kept.')) return;
     siteBarRebuild.disabled = true;
     runRebuild().finally(() => {
       siteBarRebuild.disabled = !mayRebuild(activeSite);
