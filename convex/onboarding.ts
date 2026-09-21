@@ -272,6 +272,108 @@ export const rebuild = mutation({
   },
 });
 
+async function wipeBuildProgress(
+  ctx: MutationCtx,
+  siteId: Id<"sites">,
+  userId: Id<"users">,
+  since: number,
+) {
+  const site = await ctx.db.get(siteId);
+  if (!site || site.userId !== userId) return;
+  const versions = await ctx.db
+    .query("siteVersions")
+    .withIndex("by_site", (q) => q.eq("siteId", siteId))
+    .collect();
+  const kept = versions.filter((version) => version.createdAt < since).sort((a, b) => a.createdAt - b.createdAt);
+  for (const version of versions) {
+    if (version.createdAt >= since) await ctx.db.delete(version._id);
+  }
+  const images = await ctx.db.query("siteImages").withIndex("by_site", (q) => q.eq("siteId", siteId)).collect();
+  for (const image of images) {
+    if (image.createdAt >= since) {
+      await ctx.storage.delete(image.storageId);
+      await ctx.db.delete(image._id);
+    }
+  }
+  const messages = await ctx.db
+    .query("messages")
+    .withIndex("by_conversation", (q) => q.eq("conversationId", site.conversationId))
+    .collect();
+  if (!site.currentVersionId || kept.length === 0) {
+    for (const message of messages) await ctx.db.delete(message._id);
+  } else {
+    const pending = messages.filter((message) => message.status === "pending");
+    for (const message of pending) await ctx.db.delete(message._id);
+    const users = messages
+      .filter((message) => message.role === "user")
+      .sort((a, b) => b._creationTime - a._creationTime);
+    if (users[0] && users[0]._creationTime >= since) await ctx.db.delete(users[0]._id);
+  }
+  const latest = kept.at(-1);
+  await ctx.db.patch(siteId, {
+    currentVersionId: latest?._id,
+    publishedVersionId: site.publishedVersionId && kept.some((version) => version._id === site.publishedVersionId)
+      ? site.publishedVersionId
+      : undefined,
+    publishedAt: latest && site.publishedVersionId && kept.some((version) => version._id === site.publishedVersionId)
+      ? site.publishedAt
+      : undefined,
+    status: latest && site.publishedVersionId && kept.some((version) => version._id === site.publishedVersionId)
+      ? site.status
+      : "draft",
+    buildEpoch: (site.buildEpoch ?? 0) + 1,
+    updatedAt: Date.now(),
+  });
+}
+
+// Stops an in-flight build, discards the page it was writing, and opens the
+// dashboard. The brief stays so they can rebuild; the half-finished work does not.
+export const cancel = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const userId = await requireMemberId(ctx);
+    const now = Date.now();
+    const rows = await ctx.db.query("siteOnboarding").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+    const active = rows.filter((row) => isActiveBuild(row.status));
+    const sites = await ctx.db.query("sites").withIndex("by_user_updated", (q) => q.eq("userId", userId)).collect();
+    const targets = new Map<Id<"sites">, number>();
+    for (const row of active) {
+      if (row.siteId) targets.set(row.siteId, row.events[0]?.at ?? now);
+    }
+    for (const site of sites) {
+      const thread = await ctx.db
+        .query("messages")
+        .withIndex("by_conversation", (q) => q.eq("conversationId", site.conversationId))
+        .collect();
+      const pending = thread.filter((message) => message.status === "pending");
+      if (pending.length === 0) continue;
+      const started = Math.min(...pending.map((message) => message._creationTime));
+      const previous = targets.get(site._id);
+      targets.set(site._id, previous === undefined ? started : Math.min(previous, started));
+    }
+    if (targets.size === 0 && sites[0]) targets.set(sites[0]._id, now);
+    for (const [siteId, since] of targets) {
+      await wipeBuildProgress(ctx, siteId, userId, since);
+    }
+    for (const row of active) {
+      if (row.holdId) await releaseHold(ctx, row.holdId);
+      if (row.assistantId && (await ctx.db.get(row.assistantId))) await ctx.db.delete(row.assistantId);
+      await failOpenRun(ctx, { onboardingId: row._id, attempt: row.attempt, error: "Build cancelled" });
+      await ctx.db.patch(row._id, {
+        status: "failed",
+        dismissed: true,
+        error: undefined,
+        holdId: undefined,
+        assistantId: undefined,
+        events: [],
+        updatedAt: now,
+      });
+    }
+    return null;
+  },
+});
+
 export const dismiss = mutation({
   args: { id: v.id("siteOnboarding") },
   handler: async (ctx, { id }) => {
@@ -474,7 +576,11 @@ export const build = internalAction({
         return;
       }
       await trace.note({ phase: "saving", label: "Saving your website", status: "saving", detail: { htmlChars: html.length } });
-      await ctx.runMutation(internal.generate.finish, { ...job.result, html, summary: page.summary || "Your first website is ready.", onboardingId: id, attempt });
+      const finished = await ctx.runMutation(internal.generate.finish, { ...job.result, html, summary: page.summary || "Your first website is ready.", onboardingId: id, attempt });
+      if (finished === "cancelled") {
+        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "Build cancelled" });
+        return;
+      }
       await ctx.runMutation(internal.diagnostics.close, {
         runId,
         status: "complete",

@@ -205,7 +205,7 @@ export const run = action({
         status: "saving",
         detail: { htmlChars: html?.length, requestKind: job.requestKind },
       });
-      await ctx.runMutation(internal.generate.finish, {
+      const finished = await ctx.runMutation(internal.generate.finish, {
         assistantId: job.assistantId,
         siteId: job.siteId,
         holdId: job.holdId,
@@ -213,7 +213,16 @@ export const run = action({
         html,
         summary: parsed.summary,
         blockedNote: job.blockedNote,
+        epoch: job.epoch,
       });
+      if (finished === "cancelled") {
+        await ctx.runMutation(internal.diagnostics.close, {
+          runId,
+          status: "failed",
+          error: "Build cancelled",
+        });
+        return { messageId: job.assistantId };
+      }
       await ctx.runMutation(internal.diagnostics.close, {
         runId,
         status: "complete",
@@ -290,6 +299,7 @@ export const begin = internalMutation({
       holdId,
       assistantId,
       requestKind: kind,
+      epoch: site.buildEpoch ?? 0,
       imageLimit,
       // What the thread says if the model builds anyway on a talk-only turn.
       blockedNote: talkOnly
@@ -316,7 +326,7 @@ export const beginOnboarding = internalMutation({
     await ctx.db.patch(id, { holdId, assistantId, events: [...row.events, { label: "Agent started building your website", at: Date.now() }] });
     return {
       messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null, BUILD_IMAGE_LIMIT),
-      result: { siteId: site._id, holdId, assistantId, requestKind: "generate" as const },
+      result: { siteId: site._id, holdId, assistantId, requestKind: "generate" as const, epoch: site.buildEpoch ?? 0 },
     };
   },
 });
@@ -334,13 +344,20 @@ export const finish = internalMutation({
     blockedNote: v.optional(v.string()),
     onboardingId: v.optional(v.id("siteOnboarding")),
     attempt: v.optional(v.number()),
+    epoch: v.optional(v.number()),
   },
-  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary, blockedNote, onboardingId, attempt }) => {
+  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary, blockedNote, onboardingId, attempt, epoch }) => {
     const now = Date.now();
+    const site = await ctx.db.get(siteId);
+    if (epoch !== undefined && (site?.buildEpoch ?? 0) !== epoch) {
+      if (await ctx.db.get(assistantId)) await ctx.db.delete(assistantId);
+      await releaseHold(ctx, holdId);
+      return "cancelled" as const;
+    }
     const setup = onboardingId ? await ctx.db.get(onboardingId) : null;
     if (onboardingId && (!setup || setup.attempt !== attempt || setup.status !== "saving")) {
       await releaseHold(ctx, holdId);
-      return;
+      return "cancelled" as const;
     }
     // Nothing to store: either no page came back, or the turn was held at the
     // chat rate because a build was unaffordable, in which case a page that
@@ -352,14 +369,13 @@ export const finish = internalMutation({
         await ctx.db.patch(assistantId, { body, status: undefined });
       }
       await settleHold(ctx, holdId, REQUEST_COSTS.chat, now, "chat");
-      return;
+      return "ok" as const;
     }
-    const site = await ctx.db.get(siteId);
     // The site was deleted while the build ran: nothing to attach it to, and
     // the user is not charged for a page they can never see.
     if (!site) {
       await releaseHold(ctx, holdId, now);
-      return;
+      return "cancelled" as const;
     }
     const versionId = await ctx.db.insert("siteVersions", {
       userId: site.userId,
@@ -393,6 +409,7 @@ export const finish = internalMutation({
       });
     }
     await settleHold(ctx, holdId, undefined, now);
+    return "ok" as const;
   },
 });
 

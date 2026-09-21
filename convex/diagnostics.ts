@@ -138,6 +138,7 @@ export function classifyError(reason: string) {
   if (/kept refusing/i.test(reason)) return "provider_loop";
   if (/answered \d+/i.test(reason)) return "provider_http";
   if (/could not be reached/i.test(reason)) return "unreachable";
+  if (/cancelled/i.test(reason)) return "cancelled";
   if (/isn't set up/i.test(reason)) return "unset";
   if (/credit|plan|limit/i.test(reason)) return "credits";
   if (/questions/i.test(reason)) return "questions";

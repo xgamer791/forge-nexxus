@@ -191,3 +191,84 @@ describe("onboarding rebuild", () => {
     );
   });
 });
+
+describe("onboarding cancel", () => {
+  test("cancelling a queued rebuild wipes the in-flight work and opens the dashboard", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const seeded = await seedReadySite(t, member.userId);
+    await member.as.mutation(api.onboarding.rebuild, {});
+
+    await member.as.mutation(api.onboarding.cancel, {});
+
+    const brief = await t.run((ctx) => ctx.db.get(seeded.briefId));
+    expect(brief).toMatchObject({
+      status: "failed",
+      dismissed: true,
+      answers: expect.arrayContaining(["Harbor Roasters", "Small-batch coffee"]),
+      strategy: "Keep the brand tight.",
+    });
+    expect(brief?.error).toBeUndefined();
+    expect(brief?.events).toEqual([]);
+    const site = await t.run((ctx) => ctx.db.get(seeded.siteId));
+    expect(site).toMatchObject({ status: "draft", buildEpoch: 1 });
+    expect(site?.currentVersionId).toBeUndefined();
+    expect(site?.publishedVersionId).toBeUndefined();
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("messages").collect())).toEqual([]);
+    expect(await member.as.query(api.onboarding.state, {})).toMatchObject({
+      required: false,
+      hasWebsite: false,
+      draft: null,
+      canRebuild: true,
+    });
+    const run = await t.run((ctx) => ctx.db.query("buildRuns").first());
+    expect(run).toMatchObject({ status: "failed", errorClass: "cancelled" });
+  });
+
+  test("a later finish cannot save a page after cancel bumps the site epoch", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const seeded = await seedReadySite(t, member.userId);
+    const holdId = await t.run(async (ctx) => {
+      return await ctx.db.insert("creditHolds", {
+        userId: member.userId,
+        requestKind: "generate",
+        amount: 20,
+        status: "held",
+        createdAt: Date.now(),
+      });
+    });
+    const assistantId = await t.run(async (ctx) => {
+      return await ctx.db.insert("messages", {
+        conversationId: seeded.conversationId,
+        role: "assistant",
+        body: "Building your site…",
+        status: "pending",
+      });
+    });
+
+    await member.as.mutation(api.onboarding.cancel, {});
+    const result = await t.mutation(internal.generate.finish, {
+      assistantId,
+      siteId: seeded.siteId,
+      holdId,
+      requestKind: "generate",
+      html: PAGE,
+      summary: "Should not land",
+      epoch: 0,
+    });
+    expect(result).toBe("cancelled");
+    expect(await t.run((ctx) => ctx.db.get(assistantId))).toBeNull();
+    const site = await t.run((ctx) => ctx.db.get(seeded.siteId));
+    expect(site?.currentVersionId).toBe(seeded.versionId);
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toHaveLength(1);
+  });
+
+  test("guests cannot cancel a build", async () => {
+    const t = fresh();
+    const guest = await createUser(t, { isAnonymous: true });
+    await expect(guest.as.mutation(api.onboarding.cancel, {})).rejects.toThrow("Sign in to build");
+    await expect(t.mutation(api.onboarding.cancel, {})).rejects.toThrow("Not signed in");
+  });
+});

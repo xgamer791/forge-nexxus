@@ -60,6 +60,9 @@ export default defineSchema({
     // address moves, this records that the site's one rename has been used.
     slugChangedAt: v.optional(v.number()),
     publishedAt: v.optional(v.number()),
+    // Bumped when a member cancels an in-flight build, so a provider call
+    // that finishes later cannot save a page they already discarded.
+    buildEpoch: v.optional(v.number()),
   })
     .index("by_user_updated", ["userId", "updatedAt"])
     .index("by_conversation", ["conversationId"])

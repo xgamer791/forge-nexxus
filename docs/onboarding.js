@@ -26,9 +26,13 @@ const ENABLED = true;
   let sitesList = [];
   let localBuild = null;
   let trace = null;
+  let cancelRequested = false;
   const REBUILD_PROMPT = 'Rebuild this website from scratch. Discard the current design. Use only real business facts already known. Return one complete new HTML document, not an edit of the old page.';
   function missingRebuild(error) {
     return /Could not find public function|onboarding:rebuild/i.test(String(error?.data || error?.message || ''));
+  }
+  function missingCancel(error) {
+    return /Could not find public function|onboarding:cancel/i.test(String(error?.data || error?.message || ''));
   }
   function currentDraft() {
     return localBuild || state?.draft || null;
@@ -73,7 +77,7 @@ const ENABLED = true;
   }
   function setBusy(value) {
     busy = value;
-    screen.querySelectorAll('button:not([data-onboarding-action="signout"]),input,textarea').forEach(e => { e.disabled = value; });
+    screen.querySelectorAll('button:not([data-onboarding-action="signout"]):not([data-onboarding-action="cancel"]),input,textarea').forEach(e => { e.disabled = value; });
   }
   function revealDashboard(show) {
     const changed = dashboard.hidden === show;
@@ -214,7 +218,8 @@ const ENABLED = true;
     screen.innerHTML = shell(`<div class="onboarding-content onboarding-loading ${done || failed ? 'is-settled' : ''}">
       <div class="build-emblem" aria-hidden="true">${mark}</div><h1 tabindex="-1">${title}</h1><p class="onboarding-hint">${escape(detail)}</p>
       ${done || !events.length ? '' : `<div class="onboarding-build-log" role="log" aria-live="polite" aria-label="Website build progress">${log}</div>`}
-      ${!done && !failed ? `<p class="onboarding-live" role="status"><span class="onboarding-spinner" aria-hidden="true"></span>${progress}</p>` : ''}
+      ${!done && !failed ? `<p class="onboarding-live" role="status"><span class="onboarding-spinner" aria-hidden="true"></span>${progress}</p>
+      <button type="button" class="onboarding-exit onboarding-quiet onboarding-cancel" data-onboarding-action="cancel">Cancel</button>` : ''}
       <p class="onboarding-connection" role="status" ${offline ? '' : 'hidden'}>Connection lost. Reconnecting to live progress…</p>
       ${done ? handoff(site) : failed ? `<button type="button" class="onboarding-primary" data-onboarding-action="retry">Try building again</button>
         <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="${aboutBilling ? 'billing' : 'edit'}">${aboutBilling ? 'Manage billing' : 'Edit my answers'}</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="exit">Back to dashboard</button></div>` : ''}
@@ -276,8 +281,24 @@ const ENABLED = true;
       try { await data.sites.unpublish(site._id); } catch { /* The rebuild still runs. */ }
     }
     markLocal('building', 'Agent started building your website');
+    if (cancelRequested) return;
     await data.generate(site.conversationId, REBUILD_PROMPT);
+    if (cancelRequested || !localBuild) return;
     markLocal('complete', 'Website saved and ready');
+  }
+  async function leaveCancelled() {
+    cancelRequested = true;
+    localBuild = null;
+    rendered = '';
+    try {
+      await data.onboarding.cancel();
+    } catch (caught) {
+      if (!missingCancel(caught)) throw caught;
+    }
+    if (state?.draft && /queued|building|saving/.test(state.draft.status)) {
+      state = { ...state, draft: null, required: false, canRebuild: !state.isFree };
+    }
+    render();
   }
   function paintRebuild() {
     document.querySelectorAll('.rebuild-site,.site-bar-rebuild').forEach(button => {
@@ -377,6 +398,12 @@ const ENABLED = true;
     if (action === 'skip') return void next(true);
     if (action === 'publish') return void publishSite();
     if (action === 'reload') return location.reload();
+    if (action === 'cancel') {
+      error('');
+      try { await leaveCancelled(); }
+      catch (caught) { error(caught?.data || caught?.message || 'The build couldn’t be cancelled. Try again.'); }
+      return;
+    }
     if (busy && action !== 'signout') return;
     setBusy(true); error('');
     try {
@@ -394,6 +421,7 @@ const ENABLED = true;
       }
       if (button.dataset.removeAsset) await data.onboarding.detach(state.draft.id, button.dataset.removeAsset);
       if (action === 'retry') {
+        cancelRequested = false;
         if (localBuild) await rebuildWithoutServer();
         else await data.onboarding.submit(state.draft.id);
       }
@@ -474,6 +502,7 @@ const ENABLED = true;
     },
     async rebuild() {
       if (!ENABLED || !member) return;
+      cancelRequested = false;
       try {
         await data.onboarding.rebuild();
       } catch (caught) {
@@ -481,6 +510,7 @@ const ENABLED = true;
         try {
           await rebuildWithoutServer();
         } catch (failed) {
+          if (cancelRequested || !localBuild) return;
           markLocal('failed', failed?.data || failed?.message || 'Your website couldn’t be completed. Try building again.');
           throw failed;
         }
