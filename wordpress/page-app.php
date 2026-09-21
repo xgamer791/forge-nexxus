@@ -8,8 +8,8 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
-<meta name="app-version" content="2ccba07457ea937dbd4d94167c3f30662e0ff134">
-<meta name="app-build" content="14">
+<meta name="app-version" content="026d51bc24762543dc49dc620b939d943cfefdf6">
+<meta name="app-build" content="15">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">

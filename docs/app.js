@@ -1980,38 +1980,35 @@ if (forge?.sites && previewScreen) {
       renderPreview();
     });
   }
-  // Once a build is live, Preview is the real thing: the site's own address in
-  // a tab of its own, serving the whole page exactly as a visitor gets it. The
-  // frame below is only for a site that is not on its address right now -- one
-  // its owner took offline, or whose address still has an older build on it --
-  // and it is where that site gets published.
+  // Preview / View website always opens in the member's browser — never the
+  // in-app frame. Live address when published; otherwise the latest build as a
+  // blob tab. Publish / unpublish stay on the overlay for when they open it.
   openPreview = () => {
     if (!window.ForgeOnboarding?.canPreview()) return;
+    if (!previewScreen.hidden) closeMenu();
+    closePopovers();
     const live = liveUrl();
     if (live) {
-      if (!previewScreen.hidden) closeMenu();
-      closePopovers();
       openInNewTab(live);
       return;
     }
-    if (!previewScreen.hidden) {
-      closeMenu();
+    const site = activeSite;
+    if (site?.publishedUrl) {
+      const stamp = site.currentVersionId || site.publishedVersionId || site.publishedAt || Date.now();
+      const join = site.publishedUrl.includes("?") ? "&" : "?";
+      openInNewTab(site.publishedUrl + join + "v=" + encodeURIComponent(String(stamp)));
       return;
     }
-    closePopovers();
-    panels.forEach(item => { if (!item.hidden) hideOverlay(item, {keepDim: true}); });
-    const drawer = document.querySelector('.navigation');
-    if (drawer?.classList.contains('is-open') && !drawer.classList.contains('is-closing')) {
-      closeDrawer({keepDim: true});
-    }
-    showNote(error, '');
-    showOverlay(previewScreen);
-    lockMenu();
-    document.querySelector('.website-preview-button')?.setAttribute('aria-expanded', 'true');
-    navigation.setAttribute('aria-label', 'Site preview');
-    watch();
-    renderPreview();
+    if (!site?.currentVersionId) return;
+    fetchSiteHtml(site, (page) => {
+      const html = typeof page === "string" ? page : page?.html;
+      if (!html) return;
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+      openInNewTab(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    });
   };
+
   previewScreen.querySelector('.preview-back').addEventListener('click', closeMenu);
   publishButton.addEventListener('click', async () => {
     if (!activeSite || publishButton.disabled) return;
