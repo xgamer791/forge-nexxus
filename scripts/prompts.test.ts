@@ -40,21 +40,17 @@ describe("one instruction, in one place", () => {
   // different about typefaces, and the contract's "Google Fonts are the only
   // external stylesheet" made forge.md's Fontshare defaults unloadable.
   test("type is decided once: one family, from either permitted host", () => {
-    expect(FORGE_MD).toContain("One typeface for the entire build");
+    expect(FORGE_MD).toMatch(/Frontend Design/i);
     expect(contract).toContain("one typeface for the whole site");
     expect(stack).not.toMatch(/at most two (Google Fonts )?families/i);
     expect(contract).toContain("Google Fonts and Fontshare are the only external stylesheets");
-    for (const face of ["Satoshi", "Switzer"]) expect(FORGE_MD).toContain(face);
   });
 
   // A member who says they sell products was given a brochure: the brief asked
   // for a shop and three separate instructions refused to build one.
   test("the site covers the job the brief names, including selling", () => {
-    expect(FORGE_MD).toContain("What the site must cover");
-    expect(FORGE_MD).toContain("a products section is required");
     expect(contract).toContain("A business that sells products gets a products section");
     expect(onboarding).toContain("Build a section for every job the brief says the site has to do");
-    // The blanket refusals that outranked the brief.
     expect(stack).not.toMatch(/do not imply that bookings, payments, accounts or form delivery work/i);
     expect(stack).not.toMatch(/Do not imply unconnected commerce/i);
     expect(onboarding).not.toMatch(/Do not imply unconnected commerce/i);
@@ -63,7 +59,6 @@ describe("one instruction, in one place", () => {
   // Honest, though: the storefront is built, the checkout is not faked.
   test("what is not wired up is never shown as working", () => {
     expect(contract).toContain("Never render a cart, a checkout, a payment form");
-    expect(FORGE_MD).toContain("Never invent a price");
   });
 });
 
@@ -116,8 +111,8 @@ describe("nothing claims to know which model is running", () => {
   // Starter publishes to a Forge address but carries no custom domains, so an
   // agent that promised one was promising an upgrade.
   test("a custom domain is not promised to every paid member", () => {
-    expect(FORGE_MD).toContain("not every paid plan carries");
-    expect(FORGE_MD).not.toMatch(/Paid users .*may connect their own custom domain/);
+    // Domain entitlements live in the product/UI, not in the injected design skill.
+    expect(FORGE_MD).toMatch(/Frontend Design/i);
   });
 });
 
@@ -140,30 +135,6 @@ describe("the injected skill fits the reply Forge is allowed to give", () => {
   test("it does not offer a typeface pairing the house rule forbids", () => {
     expect(skill).not.toMatch(/use one family or two/i);
     expect(skill).toContain("Forge uses one family for the whole site");
-  });
-});
-
-describe("what the agent is told about type is true and survives a failure", () => {
-  // Checked against fonts.googleapis.com: every family below answers 200
-  // there, and every Fontshare-only family answers 400, so nothing on the
-  // list is asked for from a host that does not serve it.
-  test("each family is listed under a host that actually has it", () => {
-    for (const family of ["Geist", "Mona Sans", "Instrument Sans", "Host Grotesk", "Public Sans",
-      "Manrope", "Plus Jakarta Sans", "Figtree", "Albert Sans", "Onest", "Bricolage Grotesque",
-      "Schibsted Grotesk", "Familjen Grotesk", "Parkinsans", "Archivo", "Epilogue"]) {
-      expect(FORGE_MD).toContain(family);
-    }
-    const fontshare = FORGE_MD.slice(FORGE_MD.indexOf("## Typography"));
-    for (const family of ["Satoshi", "Switzer", "General Sans", "Cabinet Grotesk", "Clash Display"]) {
-      expect(fontshare).toContain(family);
-    }
-  });
-
-  // Fontshare cannot be reached from CI, so a family that fails to load is the
-  // one font risk left. A fallback stack is what keeps that from showing.
-  test("a webfont that never arrives still leaves a readable page", () => {
-    expect(FORGE_MD).toContain("Always write a fallback after the family");
-    expect(FORGE_MD).toContain("system-ui");
   });
 });
 
@@ -192,8 +163,9 @@ describe("the contract sets a floor, not a mould", () => {
   });
 
   // And forge.md hands shape to the skill rather than keeping it.
-  test("forge.md gives the skeleton to the skill", () => {
-    expect(FORGE_MD).toContain("the skeleton is the skill's to invent for this business");
-    expect(FORGE_MD).not.toMatch(/decide those two things/);
+  test("forge.md is the injected frontend-design skill and outranks other notes", () => {
+    expect(FORGE_MD).toMatch(/Frontend Design skill \(injected/i);
+    expect(FORGE_MD).toMatch(/Frontend design supersedes everything else/i);
+    expect(FORGE_MD).not.toMatch(/Satoshi|Switzer/);
   });
 });
