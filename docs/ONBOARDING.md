@@ -86,9 +86,26 @@ no site, and one that cannot be made is replaced with a quiet placeholder.
 
 The underlying generator still creates a single-file static website: one page
 whose sections are the site's pages, with a nav that links to each. Separate
-URLs per page are not part of this build. Requested commerce, memberships and
-booking features guide the layout but must not be represented as working
-integrations until those services are implemented.
+URLs per page are not part of this build.
+
+What those sections are is decided by the brief, not by a fixed running order.
+Every job the member picks in *What does your website need to do?* gets a real
+home on the page: someone who sells products gets a products section, one who
+takes bookings gets a booking section. The surface is built even though no
+payment, calendar or form delivery sits behind it yet — a shop with no checkout
+is still a shop — and its actions lead somewhere true, an anchor to the contact
+section or a store link the brief supplies. What is not wired up is never drawn
+as though it worked: no cart, no checkout, no confirmed order or signed-in
+account, and no invented price, stock count or review.
+
+The instructions that produce all this are split so nothing contradicts: the
+build contract in `convex/generate.ts` owns output format and page structure,
+`forge.md` owns Forge's house rules (identity, what the site must cover,
+typography, images, safety), and the injected `frontend-design.md` skill owns
+method. `forge.md` used to restate the skill for three hundred lines and
+disagree with the contract about typefaces; `scripts/prompts.test.ts` now keeps
+the three in their lanes, holds the whole stack under a size budget, and fails
+if the markdown files and their embedded copies in `convex/` drift apart.
 
 ## Deployment
 

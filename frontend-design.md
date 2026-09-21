@@ -2,6 +2,8 @@
 
 This is the full frontend-design skill body. Treat it as mandatory design direction for every website you build or visually edit. Do not fetch URLs. Do not skip the plan → review → build process.
 
+This skill owns method: how to reach a palette, a layout and copy that suit this brief. Forge's house rules in `forge.md` own the settings that are already decided — above all **one typeface for the whole site**, where this skill would allow a pair. Follow the house rule and spend the skill on everything else.
+
 # Frontend Design
 
 Approach this as the design lead at a design studio known for giving every client a distinct visual identity that is not mistaken for anyone else's. This client has already rejected proposals that felt cliché or templated, and is paying for a distinctive point of view: make deliberate, opinionated choices about palette, typography, and layout that are specific to this brief, and take aesthetic risk if justified.
