@@ -365,6 +365,35 @@ describe("data access", () => {
     ]);
   });
 
+  // The onboarding screen's fallback rebuild calls data.generate directly.
+  // It was never exported, so that path threw before it reached Convex.
+  test("building is reachable both as sites.generate and on its own", async () => {
+    const { client, data } = harness();
+    await data.ready;
+    expect(data.generate).toBe(data.sites.generate);
+    await data.generate("c1", "rebuild it");
+    expect(client.action.mock.calls).toEqual([
+      ["generate:run", { conversationId: "c1", prompt: "rebuild it" }],
+    ]);
+  });
+
+  // An action is stopped at ten minutes, so waiting past that waits on
+  // nothing. The screen has to be able to say what happened.
+  test("a build that never answers gives up rather than waiting for good", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, data } = harness();
+      await data.ready;
+      client.action.mockReturnValue(new Promise(() => {}));
+      const building = data.generate("c1", "rebuild it");
+      const caught = expect(building).rejects.toThrow("The build stopped responding. Try again.");
+      await vi.advanceTimersByTimeAsync(540000);
+      await caught;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("deleting the account removes it on the server, then starts a fresh guest session", async () => {
     const { client, http, data } = harness({ storage: memoryStorage(stored("member", "member")) });
     await data.ready;

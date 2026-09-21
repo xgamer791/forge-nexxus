@@ -3,11 +3,21 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireMemberId } from "./access";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
-import { failOpenRun, openRun, providerTrace } from "./diagnostics";
-import { BUILD_IMAGE_LIMIT, callProvider, chatRoute, describe, parseReply } from "./generate";
+import { failOpenRun, openRun } from "./diagnostics";
+import {
+  attachQuietly,
+  BUILD_IMAGE_LIMIT,
+  callProvider,
+  chatRoute,
+  closeQuietly,
+  describe,
+  openQuietly,
+  parseReply,
+  traceFor,
+} from "./generate";
 import { FORGE_MD } from "./forgeMd";
 import { FRONTEND_DESIGN } from "./frontendDesign";
 import { fulfilImages, wantsImages } from "./images";
@@ -19,6 +29,13 @@ import { briefFile, QUESTIONS } from "./onboardingQuestions";
 const TEXT_BUDGET_MS = 420000;
 const RETRY_FLOOR_MS = 120000;
 const WATCHDOG_MS = 570000;
+// What one action gets before the platform takes its ten minutes back.
+const ACTION_BUDGET_MS = 540000;
+// A build the watchdog should already have spoken for. Whatever happened to
+// it -- a killed action, a mutation that never landed, an expire that was
+// never scheduled -- the member is not held behind it: submit and rebuild
+// close a row this old and start again.
+const STALE_MS = 480000;
 
 async function owned(ctx: MutationCtx | QueryCtx, id: Id<"siteOnboarding">) {
   const userId = await requireMemberId(ctx);
@@ -78,19 +95,38 @@ async function queueOnboardingBuild(
     assistantId: undefined,
     updatedAt: Date.now(),
   });
-  const site = await ctx.db.get(siteId);
-  await openRun(ctx, {
-    userId: row.userId,
-    source,
-    status: "queued",
-    siteId,
-    conversationId: site?.conversationId,
-    onboardingId: id,
-    attempt,
-    requestKind: "generate",
-  });
+  // The work is scheduled before the build log is opened, and the log is
+  // allowed to fail. Opening it first meant a missing `buildRuns` table left
+  // the draft queued with nothing scheduled to build it or to expire it.
   await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
   await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id, attempt });
+  const site = await ctx.db.get(siteId);
+  try {
+    await openRun(ctx, {
+      userId: row.userId,
+      source,
+      status: "queued",
+      siteId,
+      conversationId: site?.conversationId,
+      onboardingId: id,
+      attempt,
+      requestKind: "generate",
+    });
+  } catch (error) {
+    console.error("Forge could not open a build log:", describe(error));
+  }
+}
+
+// Closes an active row that nothing is coming back for, so the next attempt
+// is not refused by a build that is already gone.
+async function expireStale(ctx: MutationCtx, rows: Doc<"siteOnboarding">[], now: number) {
+  let expired = false;
+  for (const row of rows) {
+    if (!isActiveBuild(row.status) || now - row.updatedAt <= STALE_MS) continue;
+    await expireBuild(ctx, row._id, row.attempt, {});
+    expired = true;
+  }
+  return expired;
 }
 
 export const state = query({
@@ -208,7 +244,11 @@ export const detach = mutation({
 export const submit = mutation({
   args: { id: v.id("siteOnboarding") },
   handler: async (ctx, { id }) => {
-    const row = await owned(ctx, id);
+    const owner = await owned(ctx, id);
+    // A build that has gone quiet is closed here rather than standing in the
+    // way of the next one. Without this a draft stuck on `queued` could never
+    // be submitted again, and the button did nothing for good.
+    const row = (await expireStale(ctx, [owner], Date.now())) ? (await ctx.db.get(id))! : owner;
     if (["queued", "building", "saving", "complete"].includes(row.status)) return;
     const plan = await currentPlan(ctx, row.userId);
     if (plan.key === "free") throw new ConvexError("Choose a paid plan to build your website. Your answers are saved.");
@@ -246,11 +286,16 @@ export const rebuild = mutation({
     const userId = await requireMemberId(ctx);
     const plan = await currentPlan(ctx, userId);
     if (plan.key === "free") throw new ConvexError("Choose a paid plan to rebuild your website. Your answers are saved.");
-    const rows = await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", userId)).collect();
+    const now = Date.now();
+    const found = await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", userId)).collect();
+    // Same as submit: a build nothing is coming back for is closed, not
+    // treated as one still in flight.
+    const rows = (await expireStale(ctx, found, now))
+      ? await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", userId)).collect()
+      : found;
     if (rows.some(r => isActiveBuild(r.status))) throw new ConvexError("Your website is still building");
     const brief = rows.filter(briefReadyToBuild).sort((a, b) => b.updatedAt - a.updatedAt)[0];
     if (!brief) throw new ConvexError("Finish your website questions first");
-    const now = Date.now();
     for (const other of rows) {
       if (other._id !== brief._id && !other.dismissed) {
         await ctx.db.patch(other._id, { dismissed: true, updatedAt: now });
@@ -359,7 +404,11 @@ export const cancel = mutation({
     for (const row of active) {
       if (row.holdId) await releaseHold(ctx, row.holdId);
       if (row.assistantId && (await ctx.db.get(row.assistantId))) await ctx.db.delete(row.assistantId);
-      await failOpenRun(ctx, { onboardingId: row._id, attempt: row.attempt, error: "Build cancelled" });
+      try {
+        await failOpenRun(ctx, { onboardingId: row._id, attempt: row.attempt, error: "Build cancelled" });
+      } catch (error) {
+        console.error("Forge could not close a build log:", describe(error));
+      }
       await ctx.db.patch(row._id, {
         status: "failed",
         dismissed: true,
@@ -491,10 +540,16 @@ async function writePage(
 export const build = internalAction({
   args: { id: v.id("siteOnboarding"), attempt: v.number() },
   handler: async (ctx, { id, attempt }): Promise<void> => {
+    const started = Date.now();
     const row = await ctx.runQuery(internal.onboarding.load, { id });
     if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
-    const existing = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
-    const runId = existing ?? await ctx.runMutation(internal.diagnostics.open, {
+    let existing: Id<"buildRuns"> | null = null;
+    try {
+      existing = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
+    } catch (error) {
+      console.error("Forge could not read the build log:", describe(error));
+    }
+    const runId = existing ?? await openQuietly(ctx, {
       userId: row.userId,
       source: "onboarding",
       status: "started",
@@ -506,8 +561,7 @@ export const build = internalAction({
     const route = chatRoute();
     let providerHost = route.baseUrl;
     try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
-    await ctx.runMutation(internal.diagnostics.attach, {
-      runId,
+    await attachQuietly(ctx, runId, {
       siteId: row.siteId,
       onboardingId: id,
       attempt,
@@ -519,8 +573,9 @@ export const build = internalAction({
       misrouted: route.misrouted,
       status: "started",
     });
-    const trace = providerTrace(ctx, runId, row.userId);
-    const deadline = Date.now() + TEXT_BUDGET_MS;
+    const trace = traceFor(ctx, runId, row.userId);
+    const deadline = started + TEXT_BUDGET_MS;
+    const clock = started + ACTION_BUDGET_MS;
     try {
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
         url: await ctx.storage.getUrl(asset.storageId), text: asset.type.startsWith("text/") ? (await (await ctx.storage.get(asset.storageId))?.text())?.slice(0, 12000) : undefined })));
@@ -532,12 +587,11 @@ export const build = internalAction({
       const brief = await file.text();
       if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, storageId })) {
         await ctx.storage.delete(storageId);
-        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
+        await closeQuietly(ctx, runId, { status: "failed", error: "This build is no longer active" });
         return;
       }
       const job = await ctx.runMutation(internal.generate.beginOnboarding, { id, attempt });
-      await ctx.runMutation(internal.diagnostics.attach, {
-        runId,
+      await attachQuietly(ctx, runId, {
         messageId: job.result.assistantId,
         holdId: job.result.holdId,
         requestKind: job.result.requestKind,
@@ -560,7 +614,7 @@ export const build = internalAction({
       if (wantsImages(html)) {
         await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Page written" });
         await trace.note({ phase: "images", label: "Making pictures", status: "images" });
-        const pictures = await fulfilImages(ctx, { html, userId: row.userId, siteId: row.siteId, limit: BUILD_IMAGE_LIMIT });
+        const pictures = await fulfilImages(ctx, { html, userId: row.userId, siteId: row.siteId, limit: BUILD_IMAGE_LIMIT, deadline: clock });
         html = pictures.html;
         imageWanted = pictures.wanted;
         imageMade = pictures.made;
@@ -572,17 +626,16 @@ export const build = internalAction({
         });
       }
       if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, saving: true })) {
-        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
+        await closeQuietly(ctx, runId, { status: "failed", error: "This build is no longer active" });
         return;
       }
       await trace.note({ phase: "saving", label: "Saving your website", status: "saving", detail: { htmlChars: html.length } });
       const finished = await ctx.runMutation(internal.generate.finish, { ...job.result, html, summary: page.summary || "Your first website is ready.", onboardingId: id, attempt });
       if (finished === "cancelled") {
-        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "Build cancelled" });
+        await closeQuietly(ctx, runId, { status: "failed", error: "Build cancelled" });
         return;
       }
-      await ctx.runMutation(internal.diagnostics.close, {
-        runId,
+      await closeQuietly(ctx, runId, {
         status: "complete",
         htmlChars: html.length,
         imageWanted,
@@ -598,16 +651,33 @@ export const build = internalAction({
   },
 });
 
+async function expireBuild(
+  ctx: MutationCtx,
+  id: Id<"siteOnboarding">,
+  attempt: number,
+  { failed, reason }: { failed?: boolean; reason?: string },
+) {
+  const row = await ctx.db.get(id);
+  if (!row || row.attempt !== attempt || !isActiveBuild(row.status)) return;
+  if (row.holdId) await releaseHold(ctx, row.holdId);
+  const error = reason ? `${reason.replace(/[.!?]?\s*$/, ".")} Your answers are saved.`
+    : failed ? "Your website couldn’t be completed. Your answers are saved. Try building again." : "The build stopped responding. Your answers are saved. Try building again.";
+  if (row.assistantId && await ctx.db.get(row.assistantId)) await ctx.db.patch(row.assistantId, { status: "failed", body: error });
+  await ctx.db.patch(id, { status: "failed", error, updatedAt: Date.now() });
+  // Closing the log is the last thing and the least important: a build that
+  // failed has to be marked failed whether or not the log can say so.
+  try {
+    await failOpenRun(ctx, { onboardingId: id, attempt, error });
+  } catch (caught) {
+    console.error("Forge could not close a build log:", describe(caught));
+  }
+}
+
 export const expire = internalMutation({
   args: { id: v.id("siteOnboarding"), attempt: v.number(), failed: v.optional(v.boolean()), reason: v.optional(v.string()) },
+  returns: v.null(),
   handler: async (ctx, { id, attempt, failed, reason }) => {
-    const row = await ctx.db.get(id);
-    if (!row || row.attempt !== attempt || !["queued", "building", "saving"].includes(row.status)) return;
-    if (row.holdId) await releaseHold(ctx, row.holdId);
-    const error = reason ? `${reason.replace(/[.!?]?\s*$/, ".")} Your answers are saved.`
-      : failed ? "Your website couldn’t be completed. Your answers are saved. Try building again." : "The build stopped responding. Your answers are saved. Try building again.";
-    if (row.assistantId && await ctx.db.get(row.assistantId)) await ctx.db.patch(row.assistantId, { status: "failed", body: error });
-    await ctx.db.patch(id, { status: "failed", error, updatedAt: Date.now() });
-    await failOpenRun(ctx, { onboardingId: id, attempt, error });
+    await expireBuild(ctx, id, attempt, { failed, reason });
+    return null;
   },
 });

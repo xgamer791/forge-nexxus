@@ -282,7 +282,13 @@ const ENABLED = true;
     }
     markLocal('building', 'Agent started building your website');
     if (cancelRequested) return;
-    await data.generate(site.conversationId, REBUILD_PROMPT);
+    try {
+      await data.sites.generate(site.conversationId, REBUILD_PROMPT);
+    } catch (caught) {
+      if (cancelRequested || !localBuild) return;
+      markLocal('failed', caught?.data || caught?.message || 'The build stopped responding. Try again.');
+      throw caught;
+    }
     if (cancelRequested || !localBuild) return;
     markLocal('complete', 'Website saved and ready');
   }
@@ -507,13 +513,9 @@ const ENABLED = true;
         await data.onboarding.rebuild();
       } catch (caught) {
         if (!missingRebuild(caught)) throw caught;
-        try {
-          await rebuildWithoutServer();
-        } catch (failed) {
-          if (cancelRequested || !localBuild) return;
-          markLocal('failed', failed?.data || failed?.message || 'Your website couldn’t be completed. Try building again.');
-          throw failed;
-        }
+        // The fallback marks its own failure, so both the retry button and
+        // this path leave the screen saying the same thing.
+        await rebuildWithoutServer();
       }
     },
   };

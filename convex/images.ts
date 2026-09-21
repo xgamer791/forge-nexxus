@@ -12,6 +12,12 @@ export const IMAGE_MODEL = "gemini-3.1-flash-lite-image";
 export const IMAGE_MODEL_LABEL = "Gemini Nano Banana 2 Lite";
 const IMAGE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const IMAGE_TIMEOUT_MS = 60000;
+// A picture takes up to a minute, so asking for one with less than this left
+// on the action's clock spends the time the page needed to be saved. Below the
+// floor the provider is skipped and every picture becomes the wash below: a
+// site that reads a little plainer is a site, and a site that never saved is
+// a member back on "Building your site…" with nothing to show.
+const IMAGE_FLOOR_MS = 90000;
 const PROMPT_LIMIT = 900;
 const ASPECTS = new Set(["1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16"]);
 const DEFAULT_ASPECT = "16:9";
@@ -126,16 +132,25 @@ export function wantsImages(html: string) {
 // that comes back never points at anything that does not exist.
 export async function fulfilImages(
   ctx: ActionCtx,
-  { html, userId, siteId, limit }: { html: string; userId: Id<"users">; siteId: Id<"sites">; limit: number },
+  {
+    html,
+    userId,
+    siteId,
+    limit,
+    // When the action's own clock runs out. Absent means there is no hurry.
+    deadline,
+  }: { html: string; userId: Id<"users">; siteId: Id<"sites">; limit: number; deadline?: number },
 ) {
   if (!wantsImages(html)) return { html, wanted: 0, made: 0 };
+  const rushed = deadline !== undefined && deadline - Date.now() < IMAGE_FLOOR_MS;
+  if (rushed) console.warn("Forge skipped this build's pictures: not enough time left to make them.");
   const tags = [...new Set(html.match(IMG_TAG) ?? [])].filter(
     (tag) => attribute(tag, "data-forge-image") !== null || /^forge-image:/i.test(attribute(tag, "src") ?? ""),
   );
   const jobs = tags.map((tag, index) => {
     const prompt = decode(attribute(tag, "data-forge-image") || attribute(tag, "alt") || "").slice(0, PROMPT_LIMIT);
     const asked = attribute(tag, "data-forge-aspect") ?? "";
-    return { tag, prompt, aspect: ASPECTS.has(asked) ? asked : DEFAULT_ASPECT, run: index < limit && Boolean(prompt) };
+    return { tag, prompt, aspect: ASPECTS.has(asked) ? asked : DEFAULT_ASPECT, run: !rushed && index < limit && Boolean(prompt) };
   });
   const sources = await Promise.all(
     jobs.map(async (job) => {

@@ -4,8 +4,26 @@ const KIND_KEY = "forge-auth-kind";
 const VERIFIER_KEY = "forge-auth-verifier";
 const PENDING_KEY = "forge-auth-pending";
 const GUEST_RETRY_MS = [1000, 2000, 4000, 8000, 16000];
+// A build runs inside a Convex action, and an action is stopped at ten
+// minutes. Waiting past that is waiting on something that is already gone, so
+// the client gives up just inside it and says so. The server's own watchdog
+// marks the thread failed at 9.5 minutes, so the two agree on what happened.
+const BUILD_TIMEOUT_MS = 540000;
+const BUILD_TIMEOUT_MESSAGE = "The build stopped responding. Try again.";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A promise that cannot wait forever. The timer is cleared either way, so a
+// build that answers in a second does not hold the page open for nine minutes.
+function withTimeout(work, ms, message) {
+  let timer;
+  return Promise.race([
+    work,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 const PROVIDER_LABELS = { google: "Google", apple: "Apple", link: "That sign-in link" };
 
@@ -360,6 +378,15 @@ export function createForgeData({
     return () => listeners.delete(listener);
   }
 
+  // One prompt, one build: the action records the prompt, holds the credits,
+  // calls the model, and answers in the thread.
+  const generate = (conversationId, prompt) =>
+    withTimeout(
+      client.action(api.generate.run, { conversationId, prompt }),
+      BUILD_TIMEOUT_MS,
+      BUILD_TIMEOUT_MESSAGE,
+    );
+
   return {
     ready,
     auth: {
@@ -397,10 +424,7 @@ export function createForgeData({
       create: (name) => client.mutation(api.sites.create, name ? { name } : {}),
       rename: (id, name) => client.mutation(api.sites.rename, { id, name }),
       remove: (id) => client.mutation(api.sites.remove, { id }),
-      // One prompt, one build: the action records the prompt, holds the
-      // credits, calls the model, and answers in the thread.
-      generate: (conversationId, prompt) =>
-        client.action(api.generate.run, { conversationId, prompt }),
+      generate,
       currentHtml: (siteId, callback) =>
         client.onUpdate(api.sites.currentHtml, { siteId }, callback),
       publish: (id) => client.mutation(api.sites.publish, { id }),
@@ -459,5 +483,9 @@ export function createForgeData({
       subscribe: (callback) => client.onUpdate(api.settings.get, {}, callback),
       update: (patch) => client.mutation(api.settings.update, patch),
     },
+    // Building is a site's own verb, so it lives under `sites`. It is also
+    // reached straight off the top, because the onboarding screen's fallback
+    // rebuild calls it there and used to find nothing at all.
+    generate,
   };
 }

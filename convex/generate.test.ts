@@ -464,3 +464,96 @@ describe("generate.run", () => {
     expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.generate });
   });
 });
+
+// A turn that dies without saying so is the one failure nothing in the build
+// path can report: an action the platform kills at ten minutes never reaches
+// its own catch. The watchdog is scheduled alongside the hold, so it outlives
+// whatever killed the build.
+describe("generate.watchdog", () => {
+  // Building on a site that already has a page is what a paid member does
+  // after onboarding, and it is the shortest way to a held turn here.
+  async function startedTurn(t: ReturnType<typeof fresh>) {
+    const member = await createBuilder(t, "m@example.com");
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    await t.run(async (ctx) => {
+      const versionId = await ctx.db.insert("siteVersions", {
+        userId: member.userId,
+        siteId,
+        html: PAGE,
+        summary: "Built it.",
+        requestKind: "generate",
+        createdAt: Date.now(),
+      });
+      await ctx.db.patch(siteId, { currentVersionId: versionId });
+    });
+    return { member, siteId, conversationId };
+  }
+
+  test("a build that never came back is marked failed and gives the hold back", async () => {
+    const t = fresh();
+    const { member, conversationId } = await startedTurn(t);
+    const job = await t.mutation(internal.generate.begin, {
+      userId: member.userId,
+      conversationId,
+      prompt: "Add opening hours",
+    });
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({ reserved: REQUEST_COSTS.edit });
+
+    await t.mutation(internal.generate.watchdog, { assistantId: job.assistantId, holdId: job.holdId });
+
+    const messages = await member.as.query(api.messages.list, { conversationId });
+    expect(messages.map((m) => [m.role, m.body, m.status ?? null])).toEqual([
+      ["user", "Add opening hours", null],
+      ["assistant", "The build stopped responding. Try again.", "failed"],
+    ]);
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
+      credits: OPENING,
+      reserved: 0,
+      available: OPENING,
+    });
+    expect(await t.run((ctx) => ctx.db.query("creditHolds").collect())).toMatchObject([
+      { status: "released" },
+    ]);
+  });
+
+  test("a build that answered is left exactly as it was", async () => {
+    const t = fresh();
+    const { member, conversationId } = await startedTurn(t);
+    stubProvider(() => reply("Added opening hours.", PAGE_TWO));
+    await member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" });
+    const { assistantId, holdId } = await t.run(async (ctx) => {
+      const message = (await ctx.db.query("messages").collect()).find((m) => m.role === "assistant")!;
+      const hold = (await ctx.db.query("creditHolds").collect())[0];
+      return { assistantId: message._id, holdId: hold._id };
+    });
+
+    await t.mutation(internal.generate.watchdog, { assistantId, holdId });
+
+    const messages = await member.as.query(api.messages.list, { conversationId });
+    expect([messages[1].body, messages[1].status ?? null]).toEqual(["Added opening hours.", null]);
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
+      credits: OPENING - REQUEST_COSTS.edit,
+      reserved: 0,
+    });
+    expect(await t.run((ctx) => ctx.db.query("creditHolds").collect())).toMatchObject([
+      { status: "settled" },
+    ]);
+  });
+
+  test("the turn that takes the hold is the turn that arms the watchdog", async () => {
+    const t = fresh();
+    const { member, conversationId } = await startedTurn(t);
+    const job = await t.mutation(internal.generate.begin, {
+      userId: member.userId,
+      conversationId,
+      prompt: "Add opening hours",
+    });
+    const scheduled = await t.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    expect(scheduled).toMatchObject([
+      {
+        name: "generate:watchdog",
+        args: [{ assistantId: job.assistantId, holdId: job.holdId }],
+      },
+    ]);
+  });
+});

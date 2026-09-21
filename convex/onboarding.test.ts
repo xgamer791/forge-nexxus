@@ -192,6 +192,78 @@ describe("onboarding rebuild", () => {
   });
 });
 
+// A build whose action the platform killed leaves the row active with nothing
+// coming back for it. That row used to be a locked door: submit returned
+// without doing anything and rebuild refused, so the only way out was support.
+describe("a build that stopped responding", () => {
+  // Older than the watchdog's own window, so nothing is still on its way.
+  const STALE = 600000;
+
+  test("submitting a brief stuck on queued starts it again", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const seeded = await seedReadySite(t, member.userId, { dismissed: false, status: "complete" });
+    const holdId = await t.run(async (ctx) => {
+      const holdId = await ctx.db.insert("creditHolds", {
+        userId: member.userId,
+        requestKind: "generate",
+        amount: 20,
+        status: "held",
+        createdAt: Date.now(),
+      });
+      await ctx.db.patch(seeded.briefId, {
+        status: "queued",
+        holdId,
+        updatedAt: Date.now() - STALE,
+      });
+      return holdId;
+    });
+
+    await member.as.mutation(api.onboarding.submit, { id: seeded.briefId });
+
+    const brief = await t.run((ctx) => ctx.db.get(seeded.briefId));
+    expect(brief).toMatchObject({ status: "queued", attempt: 2, dismissed: false });
+    expect(brief?.error).toBeUndefined();
+    expect(brief?.holdId).toBeUndefined();
+    expect(brief?.events).toEqual([expect.objectContaining({ label: "Answers submitted" })]);
+    // The credits the dead attempt was holding come back with it.
+    expect(await t.run((ctx) => ctx.db.get(holdId))).toMatchObject({ status: "released" });
+  });
+
+  test("rebuilding is not refused by a build that is already gone", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const seeded = await seedReadySite(t, member.userId, { dismissed: false });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.briefId, { status: "building", updatedAt: Date.now() - STALE });
+    });
+
+    const briefId = await member.as.mutation(api.onboarding.rebuild, {});
+
+    expect(briefId).toBe(seeded.briefId);
+    const brief = await t.run((ctx) => ctx.db.get(seeded.briefId));
+    expect(brief).toMatchObject({ status: "queued", attempt: 2, dismissed: false });
+    expect(brief?.events).toEqual([
+      expect.objectContaining({ label: "Rebuilding from your answers" }),
+    ]);
+  });
+
+  test("a build that only just started is still a build in flight", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const seeded = await seedReadySite(t, member.userId, { dismissed: false });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.briefId, { status: "building", updatedAt: Date.now() });
+    });
+    await expect(member.as.mutation(api.onboarding.rebuild, {})).rejects.toThrow("still building");
+    await member.as.mutation(api.onboarding.submit, { id: seeded.briefId });
+    expect(await t.run((ctx) => ctx.db.get(seeded.briefId))).toMatchObject({
+      status: "building",
+      attempt: 1,
+    });
+  });
+});
+
 describe("onboarding cancel", () => {
   test("cancelling a queued rebuild wipes the in-flight work and opens the dashboard", async () => {
     const t = fresh();

@@ -2,9 +2,9 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import { action, internalMutation, internalQuery, type ActionCtx } from "./_generated/server";
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
-import { providerTrace, type ProviderTrace } from "./diagnostics";
+import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
 import { FORGE_MD } from "./forgeMd";
@@ -40,6 +40,15 @@ const CONTINUE_FLOOR_MS = 45000;
 const MAX_CONTINUATIONS = 2;
 const MAX_COMPLETE_LOOPS = 5;
 const RETRY_WAIT_MS = 1500;
+// What one action gets before the platform takes its ten minutes back. The
+// pictures stop when the clock reaches this, so the page still gets saved.
+const ACTION_BUDGET_MS = 540000;
+// The watchdog sits just inside that ten minutes. An action killed mid-build
+// never reaches its own `catch`, so without this the thread keeps saying
+// "Building your site…" forever and the hold is never handed back.
+const WATCHDOG_MS = 570000;
+// What a build that never came back says, in the thread and on the client.
+export const STALLED_MESSAGE = "The build stopped responding. Try again.";
 
 export function chatRoute() {
   const baseUrl = (process.env.AI_BASE_URL?.trim() || CHAT_BASE_URL).replace(/\/+$/, "");
@@ -124,6 +133,86 @@ const PENDING_LABELS: Record<RequestKind, string> = {
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
+// The diagnostics tables record what the agent did; they are never what makes
+// it run. A deployment that has not had the schema pushed yet, or an insert
+// that hits a limit, used to take the build down with it -- the open happened
+// before the try, so the thread was left pending and no watchdog was armed.
+// Every read and write of the build log now fails quietly instead.
+type RunStatus = "queued" | "started" | "calling" | "images" | "saving" | "complete" | "failed";
+
+export async function openQuietly(
+  ctx: ActionCtx,
+  args: {
+    userId: Id<"users">;
+    source: "generate" | "onboarding" | "rebuild";
+    status?: RunStatus;
+    siteId?: Id<"sites">;
+    conversationId?: Id<"conversations">;
+    onboardingId?: Id<"siteOnboarding">;
+    attempt?: number;
+    requestKind?: string;
+    promptChars?: number;
+  },
+): Promise<Id<"buildRuns"> | undefined> {
+  try {
+    return await ctx.runMutation(internal.diagnostics.open, args);
+  } catch (error) {
+    console.error("Forge could not open a build log:", describe(error));
+    return undefined;
+  }
+}
+
+export async function attachQuietly(
+  ctx: ActionCtx,
+  runId: Id<"buildRuns"> | undefined,
+  args: {
+    siteId?: Id<"sites">;
+    conversationId?: Id<"conversations">;
+    onboardingId?: Id<"siteOnboarding">;
+    messageId?: Id<"messages">;
+    holdId?: Id<"creditHolds">;
+    attempt?: number;
+    requestKind?: string;
+    providerHost?: string;
+    providerModel?: string;
+    providerLabel?: string;
+    keySet?: boolean;
+    misrouted?: boolean;
+    status?: RunStatus;
+  },
+) {
+  if (!runId) return;
+  try {
+    await ctx.runMutation(internal.diagnostics.attach, { runId, ...args });
+  } catch (error) {
+    console.error("Forge could not update a build log:", describe(error));
+  }
+}
+
+export async function closeQuietly(
+  ctx: ActionCtx,
+  runId: Id<"buildRuns"> | undefined,
+  args: {
+    status: "complete" | "failed";
+    error?: string;
+    htmlChars?: number;
+    imageWanted?: number;
+    imageMade?: number;
+  },
+) {
+  if (!runId) return;
+  try {
+    await ctx.runMutation(internal.diagnostics.close, { runId, ...args });
+  } catch (error) {
+    console.error("Forge could not close a build log:", describe(error));
+  }
+}
+
+// A trace for a run that was never opened writes nowhere and says nothing.
+export function traceFor(ctx: ActionCtx, runId: Id<"buildRuns"> | undefined, userId: Id<"users">): ProviderTrace {
+  return runId ? providerTrace(ctx, runId, userId) : { note: async () => {} };
+}
+
 // One prompt in, one build out. The credits are held before the provider is
 // called and settled or released after, so a failed build costs nothing and a
 // burst of prompts cannot outrun the balance.
@@ -134,7 +223,10 @@ export const run = action({
     if (!userId) throw new ConvexError("Not signed in");
     const text = prompt.trim();
     if (!text) throw new ConvexError("Describe what you want first");
-    const runId = await ctx.runMutation(internal.diagnostics.open, {
+    const clock = Date.now() + ACTION_BUDGET_MS;
+    // The build log is a convenience, not a prerequisite. A deployment whose
+    // diagnostics tables are missing or full still builds sites.
+    const runId = await openQuietly(ctx, {
       userId,
       conversationId,
       source: "generate",
@@ -149,8 +241,7 @@ export const run = action({
       const route = chatRoute();
       let providerHost = route.baseUrl;
       try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
-      await ctx.runMutation(internal.diagnostics.attach, {
-        runId,
+      await attachQuietly(ctx, runId, {
         siteId: job.siteId,
         conversationId,
         messageId: job.assistantId,
@@ -163,7 +254,7 @@ export const run = action({
         misrouted: route.misrouted,
         status: "calling",
       });
-      const trace = providerTrace(ctx, runId, userId);
+      const trace = traceFor(ctx, runId, userId);
       await trace.note({
         phase: "held",
         label: job.requestKind === "chat" ? "Credits held for a conversation" : "Credits held for a build",
@@ -187,7 +278,7 @@ export const run = action({
         if (wantsImages(parsed.html)) {
           await trace.note({ phase: "images", label: "Making pictures", status: "images" });
         }
-        const pictures = await fulfilImages(ctx, { html: parsed.html, userId, siteId: job.siteId, limit: job.imageLimit });
+        const pictures = await fulfilImages(ctx, { html: parsed.html, userId, siteId: job.siteId, limit: job.imageLimit, deadline: clock });
         html = pictures.html;
         imageWanted = pictures.wanted;
         imageMade = pictures.made;
@@ -216,15 +307,10 @@ export const run = action({
         epoch: job.epoch,
       });
       if (finished === "cancelled") {
-        await ctx.runMutation(internal.diagnostics.close, {
-          runId,
-          status: "failed",
-          error: "Build cancelled",
-        });
+        await closeQuietly(ctx, runId, { status: "failed", error: "Build cancelled" });
         return { messageId: job.assistantId };
       }
-      await ctx.runMutation(internal.diagnostics.close, {
-        runId,
+      await closeQuietly(ctx, runId, {
         status: "complete",
         htmlChars: html?.length,
         imageWanted,
@@ -235,11 +321,7 @@ export const run = action({
       if (assistantId && holdId) {
         await ctx.runMutation(internal.generate.fail, { assistantId, holdId, reason });
       }
-      try {
-        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: reason });
-      } catch {
-        /* A failed close must not hide the build error. */
-      }
+      await closeQuietly(ctx, runId, { status: "failed", error: reason });
       throw new ConvexError(reason);
     }
     return { messageId: assistantId! };
@@ -290,6 +372,7 @@ export const begin = internalMutation({
     });
     await ctx.db.patch(conversationId, { updatedAt: now });
     await ctx.db.patch(site._id, { updatedAt: now });
+    await ctx.scheduler.runAfter(WATCHDOG_MS, internal.generate.watchdog, { assistantId, holdId });
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const imageLimit = current ? EDIT_IMAGE_LIMIT : BUILD_IMAGE_LIMIT;
     const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit);
@@ -324,6 +407,7 @@ export const beginOnboarding = internalMutation({
     const { holdId } = await holdCredits(ctx, row.userId, "generate");
     const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
     await ctx.db.patch(id, { holdId, assistantId, events: [...row.events, { label: "Agent started building your website", at: Date.now() }] });
+    await ctx.scheduler.runAfter(WATCHDOG_MS, internal.generate.watchdog, { assistantId, holdId });
     return {
       messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null, BUILD_IMAGE_LIMIT),
       result: { siteId: site._id, holdId, assistantId, requestKind: "generate" as const, epoch: site.buildEpoch ?? 0 },
@@ -415,11 +499,42 @@ export const finish = internalMutation({
 
 export const fail = internalMutation({
   args: { assistantId: v.id("messages"), holdId: v.id("creditHolds"), reason: v.string() },
+  returns: v.null(),
   handler: async (ctx, { assistantId, holdId, reason }) => {
     if (await ctx.db.get(assistantId)) {
       await ctx.db.patch(assistantId, { body: reason, status: "failed" });
     }
     await releaseHold(ctx, holdId);
+    return null;
+  },
+});
+
+// Armed the moment a turn starts, and almost always a no-op: by the time it
+// runs the reply has landed and there is nothing pending to speak for. It
+// exists for the build that never came back at all -- an action the platform
+// killed at ten minutes, which never reaches its own `catch`. Without it the
+// thread sits on "Building your site…" for good and the hold is never
+// released, so the next prompt is refused for credits that are not spent.
+export const watchdog = internalMutation({
+  args: {
+    assistantId: v.id("messages"),
+    holdId: v.id("creditHolds"),
+    runId: v.optional(v.id("buildRuns")),
+  },
+  returns: v.null(),
+  handler: async (ctx, { assistantId, holdId, runId }) => {
+    const message = await ctx.db.get(assistantId);
+    if (!message || message.status !== "pending") return null;
+    await ctx.db.patch(assistantId, { body: STALLED_MESSAGE, status: "failed" });
+    await releaseHold(ctx, holdId);
+    if (runId) {
+      try {
+        await closeRun(ctx, { runId, status: "failed", error: STALLED_MESSAGE });
+      } catch (error) {
+        console.error("Forge could not close a build log:", describe(error));
+      }
+    }
+    return null;
   },
 });
 
