@@ -27,7 +27,7 @@ const PAGE_HEADERS = {
   "surrogate-control": "no-store",
   "x-content-type-options": "nosniff",
   "content-security-policy":
-    "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data: https:; base-uri 'none'; form-action 'none'",
+    "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com; font-src https://fonts.gstatic.com https://cdn.fontshare.com; img-src data: https:; base-uri 'none'; form-action 'none'",
 } as const;
 
 function page(html: string | null) {

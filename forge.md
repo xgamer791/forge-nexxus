@@ -60,22 +60,17 @@ On top of the skill:
 
 **One typeface for the entire build.** Never pair two families. Never load a second font for headings and body — use weights, sizes and widths of the one family. This is Forge's rule and it holds even where the design skill allows a pair.
 
-Default to one of these, in this order of preference:
+There is no preferred family or ordered shortlist. Choose the family for this business and the current art direction, not because it was used on a previous build. Serif, condensed, humanist, rounded and grotesque families are all available choices. An explicitly supplied brand font wins; otherwise a rebuild's typography direction must change the visual character, not merely the font's name.
 
-1. **Satoshi** (Fontshare) — standout free geometric; sharp and expensive-looking.
-2. **Switzer** (Fontshare) — closest free thing to Helvetica Now / Neue Haas.
-
-**Fontshare and Google Fonts are both available**; load the one family from whichever hosts it. If neither default fits this project's audience and subject, pick exactly one from the list below — still one family sitewide.
+**Fontshare and Google Fonts are both available**; load the chosen family from its actual host. Keep one family sitewide.
 
 Do **not** default to Inter, Roboto, Open Sans, or system-ui stacks unless the brief names them.
 
-Always write a fallback after the family — `font-family: "Satoshi", system-ui, -apple-system, "Segoe UI", sans-serif` — so a webfont that does not arrive leaves a readable page rather than an unstyled one, and size the layout so it holds either way.
+Always provide a readable generic fallback matching the selected family, and size the layout so it holds before the webfont arrives.
 
-**Neutral, polished workhorses** — Geist, Mona Sans, Instrument Sans, Host Grotesk (Google Fonts); Switzer, General Sans (Fontshare); Public Sans (Google Fonts).
+## Rebuild means a different design
 
-**Geometric, warm** — Satoshi (Fontshare); Manrope, Plus Jakarta Sans, Figtree, Albert Sans, Onest (Google Fonts).
-
-**Editorial, characterful** — Bricolage Grotesque, Schibsted Grotesk, Familjen Grotesk, Parkinsans, Archivo, Epilogue (Google Fonts); Cabinet Grotesk, Clash Display (Fontshare). Display faces still carry the whole site on weights alone, with no second body face.
+The same business facts do not require the same visual answer. A rebuild rejects the preceding design, not the onboarding answers. Follow the rebuild art direction across the opening composition, type scale, surface treatment, imagery and section presentation. Do not reproduce a familiar site kit and call new words or different image URLs a new website. Do not carry forward old HTML, CSS, a previous design plan or conversational design decisions. Before returning, privately critique whether the composition meets the new direction on both phone and desktop.
 
 ## Images
 
