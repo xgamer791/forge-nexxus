@@ -1057,6 +1057,7 @@ window.addEventListener('resize', measureComposerSpace);
 window.addEventListener('orientationchange', measureComposerSpace);
 window.visualViewport?.addEventListener('resize', measureComposerSpace);
 const siteBarPreview = document.querySelector('.site-bar-preview');
+const siteBarRebuild = document.querySelector('.site-bar-rebuild');
 let sites = [];
 // Whether the sites subscription has answered yet. Only a list that has
 // arrived can say a remembered thread is gone.
@@ -1261,6 +1262,11 @@ if (forge?.sites && siteList && thread) {
         siteBarPreview.dataset.built = String(Boolean(activeSite.currentVersionId));
         siteBarPreview.disabled = !activeSite.currentVersionId || !window.ForgeOnboarding?.canPreview();
       }
+      if (siteBarRebuild) {
+        const offer = mayRebuild(activeSite);
+        siteBarRebuild.hidden = !offer;
+        siteBarRebuild.disabled = !offer;
+      }
     }
     if (promptInput) {
       promptInput.placeholder = activeSite?.currentVersionId ? 'Describe a change…' : 'Describe the site you want…';
@@ -1326,6 +1332,14 @@ if (forge?.sites && siteList && thread) {
     rebuildSite.disabled = true;
     runRebuild().finally(() => {
       rebuildSite.disabled = false;
+    });
+  });
+  siteBarRebuild?.addEventListener('click', () => {
+    if (!mayRebuild(activeSite)) return;
+    if (!confirm('Scrap this website and rebuild it from your saved answers? The address is kept.')) return;
+    siteBarRebuild.disabled = true;
+    runRebuild().finally(() => {
+      siteBarRebuild.disabled = !mayRebuild(activeSite);
     });
   });
   document.addEventListener('forge:onboarding-complete', event => {
