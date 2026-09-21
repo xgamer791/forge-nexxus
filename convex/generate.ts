@@ -8,7 +8,6 @@ import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
 import { FORGE_MD } from "./forgeMd";
-import { FRONTEND_DESIGN } from "./frontendDesign";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
@@ -481,9 +480,8 @@ function buildMessages(
   purpose: "chat" | "build",
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
-    // forge.md + frontend-design skill — every chat, build and strategy turn.
+    // FORGE_MD (house rules + frontend-design skill) — every chat, build and strategy turn.
     { role: "system", content: FORGE_MD },
-    { role: "system", content: FRONTEND_DESIGN },
     { role: "system", content: systemPrompt(imageLimit, purpose) },
   ];
   if (currentHtml) {
