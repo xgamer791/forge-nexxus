@@ -2,7 +2,8 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import { action, internalMutation, internalQuery, type ActionCtx } from "./_generated/server";
+import { messagesOpenFed, type FedSource } from "./fedReads";
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
@@ -198,7 +199,14 @@ export const run = action({
           keySet: Boolean(route.apiKey),
           },
       });
-      const reply = await callProvider(job.messages, undefined, undefined, trace, purpose);
+      const reply = await callProvider(
+        job.messages,
+        undefined,
+        undefined,
+        trace,
+        purpose,
+        { ctx, source: purpose === "chat" ? "chat" : "build" },
+      );
       const parsed = parseReply(reply);
       // The pictures a page asked for are made before it is stored, so the
       // version that lands never points at anything that does not exist. A page
@@ -671,7 +679,14 @@ export async function callProvider(
   budgetMs = TEXT_BUDGET_MS,
   trace?: ProviderTrace,
   purpose: "chat" | "build" = "chat",
+  fed?: { ctx: ActionCtx; source: FedSource },
 ) {
+  if (fed) {
+    await fed.ctx.runMutation(internal.fedReads.record, {
+      source: fed.source,
+      opened: messagesOpenFed(messages),
+    });
+  }
   const route = chatRoute(purpose);
   if (!route.apiKey) {
     await trace?.note({

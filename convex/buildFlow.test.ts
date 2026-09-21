@@ -666,6 +666,55 @@ describe("what actually reaches the model", () => {
     expect(systems[2]).toContain("Saved project context");
     expect(systems.some((c: string) => c.includes("You are Forge, the website-building agent"))).toBe(true);
   });
+
+  test("opening FED bumps a counter and records when it was triggered", async () => {
+    const t = fresh();
+    const before = await t.query(internal.fedReads.stats, {});
+    expect(before).toEqual({
+      count: 0,
+      lastTriggeredAt: null,
+      lastTriggered: null,
+      lastSource: null,
+      opened: false,
+    });
+
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    const id = await answerEverything(member);
+    await drain(t);
+
+    const afterStrategy = await t.query(internal.fedReads.stats, {});
+    expect(afterStrategy.opened).toBe(true);
+    expect(afterStrategy.count).toBeGreaterThan(0);
+    expect(afterStrategy.lastSource).toBe("strategy");
+    expect(afterStrategy.lastTriggeredAt).toEqual(expect.any(Number));
+    expect(afterStrategy.lastTriggered).toBe(new Date(afterStrategy.lastTriggeredAt!).toISOString());
+    const strategy = providers
+      .chatCalls()
+      .find((call) => /private website strategist/.test(JSON.stringify(call.body.messages)))!;
+    expect(strategy.body.messages.some((m: any) => m.role === "system" && m.content === FED)).toBe(true);
+
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+
+    const afterBuild = await t.query(internal.fedReads.stats, {});
+    expect(afterBuild.count).toBeGreaterThan(afterStrategy.count);
+    expect(afterBuild.lastSource).toBe("build");
+    expect(afterBuild.lastTriggeredAt).toBeGreaterThanOrEqual(afterStrategy.lastTriggeredAt!);
+    const build = providers
+      .chatCalls()
+      .find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
+    expect(build.body.messages.some((m: any) => m.role === "system" && m.content === FED)).toBe(true);
+
+    await member.as.mutation(api.onboarding.rebuild, {});
+    await drain(t);
+
+    const afterRebuild = await t.query(internal.fedReads.stats, {});
+    expect(afterRebuild.count).toBeGreaterThan(afterBuild.count);
+    expect(afterRebuild.lastSource).toBe("rebuild");
+    expect(afterRebuild.lastTriggeredAt).toBeGreaterThanOrEqual(afterBuild.lastTriggeredAt!);
+    expect(providers.chatCalls().at(-1)!.body.messages.some((m: any) => m.role === "system" && m.content === FED)).toBe(true);
+  });
 });
 
 // The saved strategy is handed to the model as "Working design and build

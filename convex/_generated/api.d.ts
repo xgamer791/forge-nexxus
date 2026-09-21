@@ -15,6 +15,7 @@ import type * as billing from "../billing.js";
 import type * as conversations from "../conversations.js";
 import type * as diagnostics from "../diagnostics.js";
 import type * as domains from "../domains.js";
+import type * as fedReads from "../fedReads.js";
 import type * as generate from "../generate.js";
 import type * as http from "../http.js";
 import type * as images from "../images.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   conversations: typeof conversations;
   diagnostics: typeof diagnostics;
   domains: typeof domains;
+  fedReads: typeof fedReads;
   generate: typeof generate;
   http: typeof http;
   images: typeof images;
