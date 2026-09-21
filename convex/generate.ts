@@ -7,6 +7,7 @@ import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute } from "./images";
 import { briefFile } from "./onboardingQuestions";
 import { FORGE_MD } from "./forgeMd";
+import { FRONTEND_DESIGN } from "./frontendDesign";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
@@ -338,8 +339,9 @@ function buildMessages(
   imageLimit: number,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
-    // forge.md — standing agent rules, every turn.
+    // forge.md + frontend-design skill — every DeepSeek chat/build turn.
     { role: "system", content: FORGE_MD },
+    { role: "system", content: FRONTEND_DESIGN },
     { role: "system", content: systemPrompt(imageLimit) },
   ];
   if (currentHtml) {
