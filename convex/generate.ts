@@ -32,9 +32,9 @@ const TALK_LIMIT = 4000;
 // are only the fallbacks, so an unset variable lands on the model this
 // deployment actually runs rather than nowhere. Pictures have a route of their
 // own in `images.ts`, and text never goes to it.
-const CHAT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
-const CHAT_MODEL = "gemini-3.8-flash";
-const CHAT_MODEL_LABEL = "Gemini 3.8 Flash";
+const CHAT_BASE_URL = "https://api.deepseek.com/v1";
+const CHAT_MODEL = "deepseek-flash";
+const CHAT_MODEL_LABEL = "DeepSeek v4.1 Flash";
 
 // How many new pictures one reply may ask for. A first build carries a hero
 // and then whatever the page is actually about — products need one each, and

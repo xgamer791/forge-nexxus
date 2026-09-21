@@ -13,7 +13,7 @@ import schema from "./schema";
 // request was ever sent. Nothing is refused now: the route is what the
 // variables say, and a provider that cannot serve it says so in its own words,
 // which is what the thread and the failed screen show.
-const ENV = ["AI_BASE_URL", "AI_MODEL", "AI_BUILD_MODEL", "AI_API_KEY", "AI_IMAGE_MODEL", "AI_IMAGE_MODEL_OVERRIDE"];
+const ENV = ["AI_BASE_URL", "AI_MODEL", "AI_MODEL_LABEL", "AI_BUILD_MODEL", "AI_API_KEY", "AI_IMAGE_MODEL", "AI_IMAGE_MODEL_OVERRIDE"];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -37,8 +37,9 @@ describe("the route is whatever the deployment names", () => {
       baseUrl: GOOGLE_OPENAI,
       model: "gemini-3.8-flash",
       apiKey: "sk-test",
-      // The pretty name belongs to this exact id, so the route reports it.
-      label: "Gemini 3.8 Flash",
+      // The pretty name belongs to the DeepSeek fallback id, so a configured
+      // Gemini reports itself rather than borrowing that name.
+      label: "gemini-3.8-flash",
     });
     // Any other id reports itself rather than borrowing that name.
     process.env.AI_MODEL = "gemini-3.8-pro";
@@ -81,11 +82,11 @@ describe("the route is whatever the deployment names", () => {
   });
 
   test("an unset deployment still lands somewhere valid", () => {
-    for (const key of ["AI_BASE_URL", "AI_MODEL"]) delete process.env[key];
+    for (const key of ["AI_BASE_URL", "AI_MODEL", "AI_MODEL_LABEL"]) delete process.env[key];
     expect(chatRoute()).toMatchObject({
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-      model: "gemini-3.8-flash",
-      label: "Gemini 3.8 Flash",
+      baseUrl: "https://api.deepseek.com/v1",
+      model: "deepseek-flash",
+      label: "DeepSeek v4.1 Flash",
     });
   });
 });
