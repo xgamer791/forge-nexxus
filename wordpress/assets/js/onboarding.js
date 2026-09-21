@@ -202,9 +202,12 @@ const ENABLED = true;
       if (publish?.isConnected) publish.textContent = 'Publish my website';
     } finally { setBusy(false); render(); }
   }
+  function canRebuild() {
+    return Boolean(state?.canRebuild || (member && state && !state.isFree && state.hasWebsite));
+  }
   function paintRebuild() {
     document.querySelectorAll('.rebuild-site').forEach(button => {
-      button.hidden = !state?.canRebuild;
+      button.hidden = !canRebuild();
     });
   }
   function render() {
@@ -373,6 +376,7 @@ const ENABLED = true;
   window.ForgeOnboarding = {
     enabled: ENABLED,
     canPreview,
+    canRebuild,
     setMember(user) {
       if (member?._id !== user?._id) { activeDraft = null; rendered = ''; }
       member = user && !user.isAnonymous ? user : null;

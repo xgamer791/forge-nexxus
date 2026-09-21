@@ -1176,6 +1176,12 @@ if (forge?.sites && siteList && thread) {
       const fillMenu = () => {
         const built = Boolean(site.currentVersionId);
         const items = [menuItem('Preview', () => { selectConversation(site.conversationId); openPreview(); })];
+        if (mayRebuild(site)) {
+          items.push(menuItem('Rebuild website', () => {
+            if (!confirm('Scrap this website and rebuild it from your saved answers? The address is kept.')) return;
+            runRebuild();
+          }));
+        }
         if (built && summary?.plan.codeDownload) {
           // Asked for as the menu opens, so the press that follows can save it
           // while the browser still counts it as the member's own doing.
@@ -1300,18 +1306,25 @@ if (forge?.sites && siteList && thread) {
       showNote(sitesError, messageOf(error));
     });
   });
-  rebuildSite?.addEventListener('click', () => {
+  function mayRebuild(site) {
+    if (!summary?.plan.key || summary.plan.key === 'free') return false;
+    return Boolean(site?.currentVersionId) || Boolean(window.ForgeOnboarding?.canRebuild?.());
+  }
+  function runRebuild() {
     showNote(sitesError, '');
-    rebuildSite.disabled = true;
     const begin = window.ForgeOnboarding?.rebuild
       ? window.ForgeOnboarding.rebuild()
       : forge.onboarding.rebuild();
-    Promise.resolve(begin).then(() => {
+    return Promise.resolve(begin).then(() => {
       closeMenu();
     }).catch(error => {
       reportError(error);
       showNote(sitesError, messageOf(error));
-    }).finally(() => {
+    });
+  }
+  rebuildSite?.addEventListener('click', () => {
+    rebuildSite.disabled = true;
+    runRebuild().finally(() => {
       rebuildSite.disabled = false;
     });
   });
