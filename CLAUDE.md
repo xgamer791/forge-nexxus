@@ -164,12 +164,13 @@ from the glob so convex-test can still load the rest.
 - `npm run build` — required whenever `src/` changed
 - `npm test` — Convex functions and the session lifecycle
 
-## Standing access: Convex + Gemini (every Claude session)
+## Standing access: Convex + DeepSeek + Gemini (every Claude session)
 
 Secrets live in gitignored `.env.local` on the Windows GOAT checkout and in GitHub Actions secrets. **Never paste keys into chat.**
 
 - **Convex deploy:** `CONVEX_DEPLOY_KEY` + `CONVEX_DEPLOYMENT=dev:polished-ram-883` in `.env.local`. Also `CONVEX_DEPLOY_KEY` GitHub Actions secret — pushing to `main` runs Convex deploy in CI.
-- **Gemini:** `GEMINI_API_KEY` (same value as Convex `AI_API_KEY` / `AI_IMAGE_API_KEY`) in `.env.local` and GitHub secret `GEMINI_API_KEY`. Chat/build model is `gemini-3.8-flash` via OpenAI-compat base `https://generativelanguage.googleapis.com/v1beta/openai`. Images stay `gemini-3.1-flash-lite-image`.
-- **Verify without secrets:** `npx convex run generate:routing` on polished-ram-883. It returns three rows: `chat` and `build` both on `gemini-3.8-flash` at host `generativelanguage.googleapis.com` (with `build.sameAsChat: true` while `AI_BUILD_MODEL` is unset), and `image` on `gemini-3.1-flash-lite-image` with `pinnedToLite: false`. There is no `misrouted` or `refuseReason` field any more — the route guard was removed, so nothing is judged before it is tried. A session that cannot reach the deployment can run `npx vitest run convex/routing.test.ts convex/buildFlow.test.ts` instead, which drives the same settings through the real build pipeline.
+- **Chat/build:** DeepSeek v4.1 Flash. Convex `AI_MODEL=deepseek-flash`, `AI_BASE_URL=https://api.deepseek.com/v1`, `AI_API_KEY` set. `AI_MODEL_LABEL` is unset so the fallback pretty name is used. Hardcoded fallbacks in `convex/generate.ts` match that route.
+- **Images:** Gemini Nano Banana 2 Lite. `GEMINI_API_KEY` (same value as Convex `AI_IMAGE_API_KEY`) in `.env.local` and GitHub secret `GEMINI_API_KEY`. `AI_IMAGE_MODEL=gemini-3.1-flash-lite-image`.
+- **Verify without secrets:** `npx convex run generate:routing` on polished-ram-883. It returns three rows: `chat` and `build` both on `deepseek-flash` at host `api.deepseek.com` (with `build.sameAsChat: true` while `AI_BUILD_MODEL` is unset), and `image` on `gemini-3.1-flash-lite-image` with `pinnedToLite: false`. There is no `misrouted` or `refuseReason` field any more — the route guard was removed, so nothing is judged before it is tried. A session that cannot reach the deployment can run `npx vitest run convex/routing.test.ts convex/buildFlow.test.ts` instead, which drives the same settings through the real build pipeline.
 - **Cloud Claude:** if this session cannot reach `convex.cloud`, ship Convex by merging to `main` and watching the Actions Convex step (needs `CONVEX_DEPLOY_KEY` secret, already set). Do not ask the user to paste keys.
 
