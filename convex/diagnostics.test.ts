@@ -103,6 +103,8 @@ describe("building-agent diagnostics", () => {
     stubProvider(() => reply("Added hours."));
 
     await member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" });
+    // The answered turn reflects on itself afterwards; let it finish here rather than in the next test.
+    await t.finishAllScheduledFunctions(() => {});
 
     const mine = await member.as.query(api.diagnostics.mine, {});
     expect(mine?.latest).toMatchObject({

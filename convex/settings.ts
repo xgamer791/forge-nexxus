@@ -13,6 +13,7 @@ const fields = {
   reduceTransparency: v.optional(v.boolean()),
   uiFont: v.optional(v.string()),
   codeFont: v.optional(v.string()),
+  memory: v.optional(v.boolean()),
 };
 
 export async function settingsFor(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {

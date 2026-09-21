@@ -201,6 +201,12 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .provider-row{justify-content:space-between}
 .provider-row strong{font-size:17px;font-weight:400}
 .provider-row svg{width:18px;height:18px;color:var(--ok)}
+/* Memory: each row is one remembered sentence and the word that removes it.
+   The sentence wraps; Forget keeps its place at the top of the row. */
+.memory-list .appearance-row{align-items:flex-start;gap:16px}
+.memory-text{margin:0;flex:1;min-width:0;font-size:17px;line-height:22px;overflow-wrap:anywhere}
+.memory-forget{flex-shrink:0;padding:0;font-size:15px;line-height:22px;color:var(--danger)}
+.memory-clear{margin-top:12px}
 
 /* Plan and credits. */
 .plan-current .appearance-row{align-items:center}
@@ -556,6 +562,6 @@ a.onboarding-primary:focus-visible{outline:2px solid var(--focus);outline-offset
   .address-tab:hover:not([aria-selected=true]){color:var(--text);background:var(--surface)}
   .chip-button:hover:not([disabled]),.plan-cta:hover:not([disabled]),.account-button:hover:not(:disabled),.credits-cta:hover,.new-site:hover,.rebuild-site:hover,.site-bar-preview:hover:not([disabled]),.site-bar-rebuild:hover:not([disabled]){filter:brightness(1.08)}
   .credits-summary:hover{opacity:.9}
-  .address-remove:hover{text-decoration:underline}
+  .address-remove:hover,.memory-forget:hover{text-decoration:underline}
   .dismiss:hover{background:transparent!important;border-radius:0!important;color:var(--muted)}
 }

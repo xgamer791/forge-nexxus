@@ -33,6 +33,7 @@ const api = {
     portal: "billing:portal",
   },
   settings: { get: "settings:get", update: "settings:update" },
+  memory: { list: "memory:list", forget: "memory:forget", forgetAll: "memory:forgetAll" },
   diagnostics: { mine: "diagnostics:mine" },
   onboarding: { rebuild: "onboarding:rebuild" },
 };
@@ -311,7 +312,7 @@ describe("sign-in providers", () => {
 });
 
 describe("data access", () => {
-  test("account, site, message, domain, billing, and settings calls target the right functions", async () => {
+  test("account, site, message, domain, billing, settings, and memory calls target the right functions", async () => {
     const { client, data } = harness();
     await data.ready;
     const callback = () => {};
@@ -324,6 +325,7 @@ describe("data access", () => {
     data.billing.catalog(callback);
     data.billing.history(callback);
     data.settings.subscribe(callback);
+    data.memory.subscribe(callback);
     data.diagnostics.subscribe(callback);
     data.sites.currentHtml("s1", callback);
     await data.account.updateProfile("Sam");
@@ -335,6 +337,8 @@ describe("data access", () => {
     await data.domains.add("s1", "shop.example");
     await data.domains.remove("d1");
     await data.settings.update({ theme: "light" });
+    await data.memory.forget("m1");
+    await data.memory.forgetAll();
     await data.sites.publish("s1");
     await data.sites.unpublish("s1");
     await data.billing.checkout({ plan: "pro" });
@@ -352,6 +356,7 @@ describe("data access", () => {
       ["billing:catalog", {}, callback],
       ["billing:history", {}, callback],
       ["settings:get", {}, callback],
+      ["memory:list", {}, callback],
       ["diagnostics:mine", {}, callback, undefined],
       ["sites:currentHtml", { siteId: "s1" }, callback],
     ]);
@@ -365,6 +370,8 @@ describe("data access", () => {
       ["domains:add", { siteId: "s1", hostname: "shop.example" }],
       ["domains:remove", { id: "d1" }],
       ["settings:update", { theme: "light" }],
+      ["memory:forget", { id: "m1" }],
+      ["memory:forgetAll", {}],
       ["sites:publish", { id: "s1" }],
       ["sites:unpublish", { id: "s1" }],
     ]);

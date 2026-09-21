@@ -504,6 +504,8 @@ describe("a rebuild, start to finish", () => {
 
     // A turn that finished keeps its reply and its spend when the watchdog fires.
     await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add opening hours" });
+    // An answered turn reflects on itself afterwards; let it, so nothing is left ticking.
+    await drain(t);
     const done = (await t.run((ctx) => ctx.db.query("messages").withIndex("by_conversation", (q) => q.eq("conversationId", site.conversationId)).order("desc").collect()))
       .find((message) => message.role === "assistant" && message.versionId && !message.status)!;
     const settled = (await t.run((ctx) => ctx.db.query("creditHolds").collect())).filter((hold) => hold.requestKind === "edit" && hold.status === "settled");
@@ -660,6 +662,8 @@ describe("what actually reaches the model", () => {
     // index 1. FORGE_MD (house rules + skill) is still the only forge prompt.
     expect(systems[1]).toContain("Saved project context");
     expect(systems.some((c: string) => c.includes("You are Forge, the website-building agent"))).toBe(true);
+    // The turn reflects on itself after answering: drain it here rather than into the next test.
+    await drain(t);
   });
 });
 

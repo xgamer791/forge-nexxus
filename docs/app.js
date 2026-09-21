@@ -190,6 +190,7 @@ const SETTING_DEFAULTS = {
   reduceTransparency: true,
   uiFont: 'Satoshi',
   codeFont: 'System monospace',
+  memory: true,
 };
 function knownSettings(values) {
   if (!values || typeof values !== 'object') return {};
@@ -224,7 +225,7 @@ function showOverlay(element) {
   element.querySelector('button')?.focus({preventScroll:true});
 }
 const SETTINGS_TABS = ['account', 'plan', 'sites'];
-const SETTINGS_TAB_FOR = {profile: 'account', plan: 'plan', usage: 'plan', domains: 'sites'};
+const SETTINGS_TAB_FOR = {profile: 'account', memory: 'account', plan: 'plan', usage: 'plan', domains: 'sites'};
 function showSettingsTab(name) {
   if (!SETTINGS_TABS.includes(name)) name = 'account';
   document.querySelectorAll('[data-settings-tab]').forEach(tab => {
@@ -326,6 +327,8 @@ function applySettings(values) {
     button.setAttribute('aria-pressed', String(values[button.dataset.setting] === true));
   });
   applyTransparency(values.reduceTransparency === true);
+  // Off is the only state worth a sentence; on is what the toggle already says.
+  document.querySelectorAll('.memory-paused').forEach(note => { note.hidden = values.memory !== false; });
   document.querySelectorAll('.font-select[data-setting]').forEach(select => {
     const label = select.querySelector('span');
     if (!label) return;
@@ -1494,6 +1497,7 @@ if (forge?.account && accountSheet) {
 // `data-back` on each section is what the back button and Escape use.
 const settingsScreens = {
   profile: {element: document.querySelector('.overlay.profile-screen'), opener: '.open-profile', label: 'Profile'},
+  memory: {element: document.querySelector('.overlay.memory'), opener: '.open-memory', label: 'Memory'},
   plan: {element: document.querySelector('.overlay.plan'), opener: '.open-plan', label: 'Plan and credits'},
   usage: {element: document.querySelector('.overlay.usage'), opener: '.open-usage', label: 'Usage'},
   domains: {element: document.querySelector('.overlay.domains'), opener: '.open-domains', label: 'Domains'},
@@ -1923,6 +1927,66 @@ if (forge?.account && profileScreen) {
       showNote(error, `Could not delete the account: ${messageOf(caught)}`);
     } finally {
       deleteButton.disabled = false;
+    }
+  });
+}
+
+// Memory: what Forge remembers about the member, written by the server after
+// each turn. This screen lists it and forgets it; nothing here adds a memory —
+// that is said in the thread, and the count on the settings row is the proof.
+const memoryScreen = document.querySelector('.overlay.memory');
+if (forge?.memory && memoryScreen) {
+  const list = memoryScreen.querySelector('[data-memory-list]');
+  const empty = memoryScreen.querySelector('[data-memory-empty]');
+  const clear = memoryScreen.querySelector('.memory-clear');
+  const forgetAll = memoryScreen.querySelector('.memory-forget-all');
+  const error = memoryScreen.querySelector('.overlay-error');
+  forge.memory.subscribe(rows => {
+    const memories = Array.isArray(rows) ? rows : [];
+    list.hidden = memories.length === 0;
+    empty.hidden = memories.length > 0;
+    clear.hidden = memories.length === 0;
+    document.querySelectorAll('[data-settings-memory]').forEach(element => {
+      element.textContent = memories.length ? String(memories.length) : '';
+      element.hidden = memories.length === 0;
+    });
+    list.replaceChildren(...memories.map(memory => {
+      const row = document.createElement('div');
+      row.className = 'appearance-row memory-row';
+      const text = document.createElement('p');
+      text.className = 'memory-text';
+      text.textContent = memory.text;
+      const forget = document.createElement('button');
+      forget.type = 'button';
+      forget.className = 'memory-forget';
+      forget.textContent = 'Forget';
+      forget.setAttribute('aria-label', `Forget: ${memory.text}`);
+      forget.addEventListener('click', async () => {
+        showNote(error, '');
+        forget.disabled = true;
+        try {
+          await forge.memory.forget(memory._id);
+        } catch (caught) {
+          reportError(caught);
+          showNote(error, `Could not forget that: ${messageOf(caught)}`);
+          forget.disabled = false;
+        }
+      });
+      row.append(text, forget);
+      return row;
+    }));
+  });
+  forgetAll.addEventListener('click', async () => {
+    if (!confirm('Forget everything Forge remembers about you? This cannot be undone.')) return;
+    showNote(error, '');
+    forgetAll.disabled = true;
+    try {
+      await forge.memory.forgetAll();
+    } catch (caught) {
+      reportError(caught);
+      showNote(error, `Could not forget everything: ${messageOf(caught)}`);
+    } finally {
+      forgetAll.disabled = false;
     }
   });
 }

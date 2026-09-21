@@ -459,5 +459,12 @@ export function createForgeData({
       subscribe: (callback) => client.onUpdate(api.settings.get, {}, callback),
       update: (patch) => client.mutation(api.settings.update, patch),
     },
+    // What Forge remembers about the member, across their sites. The server
+    // writes it after a turn; a browser only lists it and forgets it.
+    memory: {
+      subscribe: (callback) => client.onUpdate(api.memory.list, {}, callback),
+      forget: (id) => client.mutation(api.memory.forget, { id }),
+      forgetAll: () => client.mutation(api.memory.forgetAll, {}),
+    },
   };
 }

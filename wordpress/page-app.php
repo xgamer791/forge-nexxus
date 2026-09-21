@@ -8,8 +8,8 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
-<meta name="app-version" content="fe5a298cd1d5344e9c31812a22d53d370c1d4fa4">
-<meta name="app-build" content="16">
+<meta name="app-version" content="7c298cbb1ab037a927ff535a2e0c0a0ccf3f1f52">
+<meta name="app-build" content="17">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">
@@ -30,7 +30,7 @@ defined( 'ABSPATH' ) || exit;
 <main class="app" hidden inert>
 <header class="chrome">
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
-<span class="build-stamp" data-build-stamp aria-label="Version 16">16</span>
+<span class="build-stamp" data-build-stamp aria-label="Version 17">17</span>
 <button class="globe-button" type="button" aria-label="Domains" data-open="address" aria-haspopup="dialog"><svg><use href="#globe"/></svg></button>
 <button class="website-preview-button" type="button" aria-label="Preview website" aria-haspopup="dialog" aria-expanded="false"><svg><use href="#preview-eye"/></svg></button>
 </header>
@@ -134,6 +134,7 @@ defined( 'ABSPATH' ) || exit;
 <div class="settings-panel" id="settings-panel-account" role="tabpanel" aria-labelledby="settings-tab-account" data-settings-panel="account">
 <button class="open-profile" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="4"/><path d="M5 22v-3a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v3"/></svg><span>Profile</span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
 <button class="open-appearance" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20h1a2 2 0 0 0 1-4 2 2 0 0 1 1-4h3a4 4 0 0 0 4-4 10 10 0 0 0-10-8Z"/><circle cx="7" cy="9" r=".7"/><circle cx="11" cy="6" r=".7"/><circle cx="16" cy="7" r=".7"/><circle cx="6" cy="14" r=".7"/></svg><span>Appearance</span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
+<button class="open-memory" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16"/><path d="M12 4a3.5 3.5 0 0 0-6 2.5A3.5 3.5 0 0 0 4 12a3.5 3.5 0 0 0 2 5.5A3.5 3.5 0 0 0 12 20"/><path d="M12 4a3.5 3.5 0 0 1 6 2.5A3.5 3.5 0 0 1 20 12a3.5 3.5 0 0 1-2 5.5A3.5 3.5 0 0 1 12 20"/></svg><span>Memory</span><span class="settings-value" data-settings-memory hidden></span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
 </div>
 <div class="settings-panel" id="settings-panel-plan" role="tabpanel" aria-labelledby="settings-tab-plan" data-settings-panel="plan" hidden>
 <button class="open-plan" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="15" rx="2"/><path d="M2 9h20M6 15h4"/></svg><span>Plan &amp; credits</span><span class="settings-value" data-settings-plan></span><svg class="chevron" aria-hidden="true"><use href="#chevron"/></svg></button>
@@ -203,6 +204,19 @@ defined( 'ABSPATH' ) || exit;
 <h3>Account</h3>
 <div class="appearance-stack"><button class="row-button profile-signout" type="button">Sign out</button><button class="row-button danger profile-delete" type="button">Delete account</button></div>
 <p class="overlay-note">Deleting your account removes your sites, domains, credits and history. It cannot be undone.</p>
+<p class="overlay-error" role="alert" hidden></p>
+</div>
+</section>
+<section class="overlay memory" data-back=".memory-back" role="dialog" aria-modal="true" aria-labelledby="memory-title" hidden>
+<header class="appearance-header"><button class="appearance-back memory-back" type="button" aria-label="Back to Settings"><svg><use href="#arrow-left"/></svg></button><h2 id="memory-title">Memory</h2></header>
+<div class="appearance-scroll">
+<div class="appearance-stack"><div class="appearance-row"><div class="appearance-copy"><strong>Remember across sites</strong><p>Forge keeps what you share — your business, your taste, your decisions — and uses it on every site you build.</p></div>
+<button class="toggle" type="button" data-setting="memory" aria-pressed="true" aria-label="Remember across sites"></button></div></div>
+<p class="overlay-note memory-paused" hidden>While this is off, Forge won't use or add memories. What's here stays until you forget it.</p>
+<h3>What Forge remembers</h3>
+<div class="appearance-stack memory-list" data-memory-list hidden></div>
+<p class="overlay-note" data-memory-empty hidden>Nothing yet. As you build, Forge keeps what matters. To add something now, tell it in the thread: “Remember that…”</p>
+<div class="appearance-stack memory-clear" hidden><button class="row-button danger memory-forget-all" type="button">Forget everything</button></div>
 <p class="overlay-error" role="alert" hidden></p>
 </div>
 </section>

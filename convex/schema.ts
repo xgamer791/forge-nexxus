@@ -244,8 +244,17 @@ export default defineSchema({
     .index("by_run_at", ["runId", "at"])
     .index("by_user", ["userId"])
     .index("by_user_at", ["userId", "at"]),
-  // Appearance choices follow the account rather than the device, so they
-  // survive signing out and back in.
+  // What Forge remembers about a member between conversations: short facts
+  // they shared, kept across every site they build. The server writes a row
+  // after a turn; Settings lists and forgets them. Never a page or a key.
+  memories: defineTable({
+    userId: v.id("users"),
+    text: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+  // Appearance choices and the memory switch follow the account rather than
+  // the device, so they survive signing out and back in.
   settings: defineTable({
     userId: v.id("users"),
     theme: v.optional(v.union(v.literal("light"), v.literal("dark"))),
@@ -255,5 +264,8 @@ export default defineSchema({
     reduceTransparency: v.optional(v.boolean()),
     uiFont: v.optional(v.string()),
     codeFont: v.optional(v.string()),
+    // Unset means on. Off stops Forge reading and adding memories; what is
+    // saved stays until the member forgets it.
+    memory: v.optional(v.boolean()),
   }).index("by_user", ["userId"]),
 });

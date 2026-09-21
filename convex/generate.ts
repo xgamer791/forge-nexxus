@@ -8,6 +8,7 @@ import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
 import { FORGE_MD } from "./forgeMd";
+import { memoryEnabled, memoryNote } from "./memory";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
@@ -253,6 +254,20 @@ export const run = action({
         imageWanted,
         imageMade,
       });
+      // What was said is reflected on after the reply has landed, on its own
+      // clock: the page never goes along, and a hiccup here is not the turn's.
+      if (job.remember) {
+        try {
+          await ctx.scheduler.runAfter(0, internal.memory.reflect, {
+            userId,
+            siteName: job.siteName,
+            prompt: text,
+            reply: parsed.summary,
+          });
+        } catch (error) {
+          console.error("Forge could not queue the memory update:", describe(error));
+        }
+      }
     } catch (error) {
       const reason = describe(error);
       if (assistantId && holdId) {
@@ -316,10 +331,13 @@ export const begin = internalMutation({
     await ctx.scheduler.runAfter(RUN_WATCHDOG_MS, internal.generate.expire, { assistantId, holdId });
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const imageLimit = current ? EDIT_IMAGE_LIMIT : BUILD_IMAGE_LIMIT;
-    const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit, kind === "chat" ? "chat" : "build");
+    const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit, kind === "chat" ? "chat" : "build", await memoryNote(ctx, userId));
     if (setup) messages.splice(1, 0, { role: "system", content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
     return {
       siteId: site._id,
+      siteName: site.name,
+      // Whether this turn is reflected on once it is answered.
+      remember: await memoryEnabled(ctx, userId),
       holdId,
       assistantId,
       requestKind: kind,
@@ -349,7 +367,7 @@ export const beginOnboarding = internalMutation({
     const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
     await ctx.db.patch(id, { holdId, assistantId, events: [...row.events, { label: "Agent started building your website", at: Date.now() }] });
     return {
-      messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null, BUILD_IMAGE_LIMIT, "build"),
+      messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null, BUILD_IMAGE_LIMIT, "build", await memoryNote(ctx, row.userId)),
       result: { siteId: site._id, holdId, assistantId, requestKind: "generate" as const, epoch: site.buildEpoch ?? 0 },
     };
   },
@@ -478,12 +496,16 @@ function buildMessages(
   talkOnly: { needed: number; available: number } | null,
   imageLimit: number,
   purpose: "chat" | "build",
+  // What Forge remembers about this member, or null when memory is off or
+  // empty. It rides every text turn and never an image.
+  memory: string | null = null,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
     // FORGE_MD (house rules + frontend-design skill) — every chat, build and strategy turn.
     { role: "system", content: FORGE_MD },
     { role: "system", content: systemPrompt(imageLimit, purpose) },
   ];
+  if (memory) messages.push({ role: "system", content: memory });
   if (currentHtml) {
     messages.push({
       role: "system",

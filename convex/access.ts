@@ -44,3 +44,10 @@ export async function requireOwnedDomain(ctx: QueryCtx | MutationCtx, id: Id<"do
   if (!domain || domain.userId !== userId) throw new ConvexError("Domain not found");
   return domain;
 }
+
+export async function requireOwnedMemory(ctx: QueryCtx | MutationCtx, id: Id<"memories">) {
+  const userId = await requireUserId(ctx);
+  const memory = await ctx.db.get(id);
+  if (!memory || memory.userId !== userId) throw new ConvexError("Memory not found");
+  return memory;
+}
