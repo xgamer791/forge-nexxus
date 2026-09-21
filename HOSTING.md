@@ -1,122 +1,93 @@
 # Where published sites are served
 
-A member's site is served by the Convex deployment, not by GitHub Pages and
-not by the WordPress host. `convex/http.ts` answers in two ways:
+A member's site is built and stored by Convex. Where a visitor reaches it
+depends on one deployment variable, `SITES_DOMAIN`:
 
-- **By path**, at `https://<deployment>.convex.site/sites/<slug>`. This works
-  on any deployment with no DNS at all.
-- **By host**, for `<slug>.<SITES_DOMAIN>` and for a member's own custom
-  domain. This needs DNS *and* Convex.
+| `SITES_DOMAIN` | A site's address | What has to exist |
+|---|---|---|
+| unset | `https://polished-ram-883.convex.site/sites/<slug>` | nothing — works on any deployment |
+| `sites.forgenexxus.com` | `https://<slug>.sites.forgenexxus.com` | DNS, the Cloudways router, and a wildcard certificate |
 
-`SITES_DOMAIN` chooses between them. Unset, sites are served by path. Set, a
-site's address becomes `https://<slug>.<SITES_DOMAIN>` and that is the link
-the app hands out, the thread announces, and Preview opens.
+`convex/http.ts` serves the page either way. The path route answers by slug,
+and `/site-by-host` answers by hostname for a member's own domain.
 
-**Set `SITES_DOMAIN` only when the domain already answers.** It is the last
-step of setting a domain up, not the first.
+**Set `SITES_DOMAIN` only when the branded domain already answers.** It is the
+last step of setting one up, not the first — it is what makes the app hand
+members branded links, and a link handed out before the hosting is ready is a
+dead link.
 
 ## What went wrong before
 
 `sitesDomain()` used to default to `sites.forgenexxus.com` whether or not
-anyone had configured it. Nothing at GoDaddy pointed that name anywhere and
-Convex had never been asked to hold a certificate for it, so every member got
-a link to `https://<slug>.sites.forgenexxus.com` and every one of them failed
-with `ERR_NAME_NOT_RESOLVED`. The name had no records of any kind — not a
-Convex 404 and not a certificate error, but a name that did not exist.
+anyone had configured it. Nothing at GoDaddy pointed that name anywhere, so
+every member got a link to `https://<slug>.sites.forgenexxus.com` and every
+one of them failed with `ERR_NAME_NOT_RESOLVED`. The name had no records of
+any kind — not a 404, not a certificate error, but a name that did not exist.
 
-The default is gone. A deployment that has not been told about a domain now
-serves working links from its own origin.
+The default is gone. A deployment that has not been told about a domain serves
+working links from its own origin.
 
-## Turning on `sites.forgenexxus.com`
+## The branded domain, through Cloudways
 
-Three things must be true, in this order. Skipping any of them leaves members
-with dead links, which is the failure above.
+`<slug>.sites.forgenexxus.com` resolves to the Cloudways server that already
+runs the WordPress site (`138.197.83.241`), and a small PHP router there
+fetches the page from Convex and passes it back. Convex is still the only
+place a published page lives.
 
-### 1. Convex Pro, and the domain registered on the deployment
+**[`cloudways/sites-router/README.md`](cloudways/sites-router/README.md) is the
+install: the files, the exact paths on the server, and the order.** In short:
 
-Custom domains are a [Convex Pro
-feature](https://docs.convex.dev/production/custom-domains). In the Convex
-dashboard, open the `polished-ram-883` deployment → Settings → URL & Deploy
-Key → Custom Domains, and add the domain for **HTTP Actions** (not for the
-Convex API).
+1. Copy `forge-sites-router.php` into the application's `public_html`.
+2. Paste the `.htaccess` snippet above `# BEGIN WordPress`.
+3. Add `*.sites.forgenexxus.com` to application `ghxskkxdmf` in Cloudways
+   Domain Management.
+4. GoDaddy: `*.sites` A → `138.197.83.241`.
+5. Issue a wildcard certificate (DNS-01 — the HTTP challenge cannot do
+   wildcards).
+6. `npx convex env set SITES_DOMAIN sites.forgenexxus.com`.
 
-This step is not optional and DNS cannot substitute for it. Convex terminates
-TLS, and it will only present a certificate for a hostname it has been told
-to hold. A name pointed at Convex that Convex does not know about fails the
-handshake before any request is routed.
+The main WordPress site is not touched. Every rule is guarded by hostname and
+`forgenexxus.com` never matches.
 
-### 2. The DNS records, at GoDaddy
+### Why not Convex custom domains
 
-`forgenexxus.com` is on GoDaddy nameservers (`ns65.domaincontrol.com`,
-`ns66.domaincontrol.com`). Convex shows the records to create when you add the
-domain — **use exactly what the dashboard shows**, including any validation
-record. It is the authoritative source and it is what the certificate check
-reads.
-
-Expect something of this shape, in GoDaddy's DNS manager under
-`forgenexxus.com` → DNS → Records:
-
-| Type | Name | Value | TTL |
-|---|---|---|---|
-| CNAME | `*.sites` | `polished-ram-883.convex.site` | 600 |
-
-plus whatever validation record Convex asks for, entered the same way (its
-**Name** is relative to `forgenexxus.com`, so drop the `.forgenexxus.com`
-suffix from what the dashboard prints).
-
-Leave the existing `forgenexxus.com` A record (`138.197.83.241`, Cloudways)
-alone. It serves the marketing site and nothing here touches it.
-
-**Open question before you start.** Convex's documentation does not say
-whether a *wildcard* custom domain is supported. If it is not, then
-`*.sites.forgenexxus.com` will never hold a certificate, and per-site
-subdomains need one of:
-
-- each `<slug>.sites.forgenexxus.com` registered as its own custom domain when
-  a site publishes, through the [management
-  API](https://docs.convex.dev/management-api/create-custom-domain); or
-- a proxy in front — a Cloudflare Worker on `*.sites.forgenexxus.com` that
-  forwards to `https://polished-ram-883.convex.site/sites/<slug>`, which also
-  gives you the wildcard certificate.
-
-Ask support@convex.dev before committing to the wildcard. Until that is
-answered, leave `SITES_DOMAIN` unset and sites keep working by path.
-
-### 3. `SITES_DOMAIN` on the deployment
-
-Once the domain resolves and serves, and not before:
-
-```
-npx convex env set SITES_DOMAIN sites.forgenexxus.com
-```
-
-To go back to path-based addresses, remove it:
-
-```
-npx convex env remove SITES_DOMAIN
-```
+Convex can serve a custom domain itself, which would drop the proxy hop —
+but it is a [Pro plan feature](https://docs.convex.dev/production/custom-domains),
+and its documentation does not say whether a *wildcard* domain is supported at
+all. Since every member site is its own subdomain, an unsupported wildcard
+would mean registering each slug individually. The Cloudways router needs
+neither, and the server is already paid for. If Convex Pro is taken later and
+confirms wildcard support, pointing DNS straight at Convex and deleting the
+router is a small change: nothing in the app knows which of the two is
+answering.
 
 ## Checking it
 
 ```
 node scripts/check-sites-hosting.mjs
-node scripts/check-sites-hosting.mjs --domain sites.forgenexxus.com --slug pure-x-aminos
+node scripts/check-sites-hosting.mjs --domain sites.forgenexxus.com --slug <a-real-slug>
 ```
 
 It resolves each name against public DNS (8.8.8.8 and 1.1.1.1, not this
 machine's resolver) and then asks for a page over HTTPS, so it separates the
-three failures: a name that does not resolve, a certificate Convex was never
-told to mint, and a deployment that is not serving. Run it before setting
-`SITES_DOMAIN`, and again after.
+failures: a name that does not resolve, a certificate that is missing, and a
+server that is not serving. Run it before setting `SITES_DOMAIN`, and again
+after.
 
-## What flipping it does to sites already published
+Before DNS has propagated, this reaches the router directly:
+
+```
+curl -H 'Host: <slug>.sites.forgenexxus.com' http://138.197.83.241/ -i
+```
+
+## What switching it on does to sites already published
 
 Nothing needs migrating. A site's slug is stored; only the address built from
-it changes, and the app reads that address from the server everywhere it shows
-one. Sites published while `SITES_DOMAIN` was unset keep their slug and move
-to `https://<slug>.sites.forgenexxus.com` as soon as it is set.
+it changes, and every screen reads that address from the server. Sites
+published while `SITES_DOMAIN` was unset keep their slug and move to
+`https://<slug>.sites.forgenexxus.com` as soon as it is set.
 
-The old `/sites/<slug>` path keeps working either way, so a link someone saved
+The `/sites/<slug>` path keeps working either way, so a link someone saved
 earlier does not break.
 
 ## A member's own custom domain
@@ -125,8 +96,9 @@ earlier does not break.
 hostname at the site's address — `<slug>.sites.forgenexxus.com` where there is
 a sites domain, and `polished-ram-883.convex.site` where there is not.
 
-The same rule from step 1 applies: **every custom domain must also be
-registered on the deployment in the Convex dashboard**, or it will not get a
-certificate. `domains.verify` only checks DNS; it cannot see whether Convex
-holds the domain, so a domain can verify and still fail to load until it is
-registered.
+`domains.verify` only checks that DNS points here. It cannot see whether the
+server will serve the domain, so a domain can verify and still not load until
+the three server-side steps in the router's README are done: the hostname in
+the router's list, in the `.htaccess` condition, and in Cloudways with a
+certificate. Until custom domains are automated, treat each one as a manual
+setup after the member's DNS is verified.

@@ -5,7 +5,7 @@
 //
 // Reads DNS the way a visitor's browser would and then asks for a page over
 // HTTPS, so it fails where the real thing fails: a name that does not resolve,
-// a certificate Convex was never told to mint, or a deployment that is not
+// a certificate that was never issued for the name, or a server that is not
 // serving. Nothing here touches the deployment's data.
 import { Resolver } from "node:dns/promises";
 
@@ -77,7 +77,7 @@ if (!domain) {
   say(wildcard.ok, `${slug}.${domain} resolves (the wildcard)`, wildcard.detail);
   if (wildcard.ok) {
     // A name that resolves but has no certificate is the second half of this:
-    // DNS done, Convex never told to hold the domain.
+    // DNS done, nothing issued for the name yet.
     const served = await serves(`https://${slug}.${domain}/`);
     say(served.ok, `https://${slug}.${domain}/ serves`, served.detail);
   }

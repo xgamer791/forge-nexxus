@@ -1,0 +1,31 @@
+# Forge Nexxus — sites router
+#
+# Paste this block into the WordPress application's public_html/.htaccess,
+# ABOVE the "# BEGIN WordPress" line. WordPress rewrites its own block when
+# permalinks are saved and leaves everything outside it alone, so this
+# survives. Nothing here runs for forgenexxus.com or www.forgenexxus.com:
+# the hostname condition is the whole guard, and the main site never matches.
+
+# BEGIN Forge Nexxus sites router
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# Which hostnames are member sites. One condition, one list: a member's own
+# domain is added inside the brackets as another alternative, like
+#   ...forgenexxus\.com|shop\.example\.com)$
+# and also to FORGE_CUSTOM_DOMAINS in forge-sites-router.php. Keep it to one
+# condition — chaining these with [OR] is easy to get subtly wrong.
+# The slug shape is the one Convex enforces: 3 to 40 characters, lowercase
+# letters, digits and inner hyphens.
+RewriteCond %{HTTP_HOST} ^([a-z0-9][a-z0-9-]{1,38}[a-z0-9]\.sites\.forgenexxus\.com)$ [NC]
+
+# Without this the rewritten request matches the rule again and Apache stops
+# with a loop error.
+RewriteCond %{REQUEST_URI} !^/forge-sites-router\.php$
+
+# Let Let's Encrypt answer its own challenge on these hostnames.
+RewriteCond %{REQUEST_URI} !^/\.well-known/
+
+RewriteRule ^ /forge-sites-router.php [L,QSA]
+</IfModule>
+# END Forge Nexxus sites router

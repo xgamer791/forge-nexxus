@@ -10,7 +10,11 @@ auth.addHttpRoutes(http);
 // Stripe posts here; the handler verifies the signature before anything else.
 http.route({ path: "/stripe/webhook", method: "POST", handler: webhook });
 
-const NOT_FOUND = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not published</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;background:#121315;color:#e9ebee;text-align:center}p{color:#9fa1a4}</style></head><body><main><h1>Nothing here yet</h1><p>This site isn't published, or the address has changed.</p></main></body></html>`;
+// Two servers show this same page for the same reason -- this deployment, and
+// the router in front of the sites domain -- so the copy here and the copy in
+// `cloudways/sites-router/forge-sites-router.php` are kept identical. The
+// gutter is what keeps the line off the edge of a narrow phone.
+const NOT_FOUND = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not published</title><style>body{margin:0;min-height:100vh;box-sizing:border-box;padding:24px 16px;display:grid;place-items:center;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;background:#121315;color:#e9ebee;text-align:center}p{color:#9fa1a4}</style></head><body><main><h1>Nothing here yet</h1><p>This site isn't published, or the address has changed.</p></main></body></html>`;
 
 // Every build publishes itself, and Preview opens this address, so a page a
 // browser kept from a minute ago would show a member the site they just
@@ -52,6 +56,21 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const slug = new URL(request.url).pathname.slice("/sites/".length).split("/")[0];
     return page(slug ? await ctx.runQuery(internal.sites.publishedHtml, { slug }) : null);
+  }),
+});
+
+// What the router in front of the sites domain asks, for a host it cannot
+// answer from the slug alone -- a member's own domain. It is the same answer
+// `/` gives to a visitor who arrives here directly, and it exists because a
+// proxy cannot pass the visitor's Host header upstream without breaking TLS
+// to this deployment. Naming a host reveals nothing: these pages are public,
+// and a host nobody has pointed here gets the same 404 as an unknown slug.
+http.route({
+  path: "/site-by-host",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const host = new URL(request.url).searchParams.get("host") ?? "";
+    return page(host ? await ctx.runQuery(internal.sites.publishedHtmlForHost, { host }) : null);
   }),
 });
 
