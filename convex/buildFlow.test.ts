@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { readFileSync } from "node:fs";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
@@ -608,5 +609,57 @@ describe("what actually reaches the model", () => {
     // forge.md. Both still arrive whole, which is what matters.
     expect(systems[1]).toContain("Saved project context");
     expect(systems.some((c: string) => c.includes("You are Forge, the website-building agent"))).toBe(true);
+  });
+});
+
+// The saved strategy is handed to the model as "Working design and build
+// strategy" on every build. Written once under the old rules, it named a page
+// structure — so a rebuild was given the scrapped page's own plan and built it
+// again, whatever the contract said. That is why loosening the contract
+// changed nothing on the page.
+describe("a rebuild starts the plan over, not just the page", () => {
+  test("the scrapped page's strategy is not handed back to the next build", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    const id = await answerEverything(member);
+    await drain(t);
+
+    // Whatever the strategist settled on while the questions were answered.
+    const first = (await t.run((ctx) => ctx.db.get(id)))!;
+    expect(first.strategy).toBeTruthy();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(id, { strategy: "Header, nav, hero, three feature cards, closing CTA, footer." });
+    });
+
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+    const firstBrief = providers
+      .chatCalls()
+      .find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!
+      .body.messages.at(-1).content;
+    expect(firstBrief).toContain("three feature cards");
+
+    await member.as.mutation(api.onboarding.rebuild, {});
+    // Cleared the moment the rebuild is queued, before the agent reads it.
+    expect((await t.run((ctx) => ctx.db.get(id)))!.strategy).toBeUndefined();
+    await drain(t);
+
+    const rebuiltBrief = providers
+      .chatCalls()
+      .at(-1)!
+      .body.messages.at(-1).content;
+    expect(rebuiltBrief).not.toContain("three feature cards");
+    expect(rebuiltBrief).toContain("Develop the strategy from the answers above");
+    // The answers themselves survive — only the plan for the old page goes.
+    expect(rebuiltBrief).toContain("Harbor Roasters");
+    expect(rebuiltBrief).toContain("Pier Roast 250g");
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
+  });
+
+  test("the strategist no longer draws a skeleton for the build to follow", () => {
+    const onboarding = readFileSync(new URL("./onboarding.ts", import.meta.url), "utf8");
+    expect(onboarding).toContain("Say nothing about page structure, section order or layout");
+    expect(onboarding).not.toMatch(/conversion goal, page structure, copy priorities/);
   });
 });
