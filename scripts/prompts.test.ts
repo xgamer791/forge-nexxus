@@ -40,7 +40,7 @@ describe("one instruction, in one place", () => {
   // different about typefaces, and the contract's "Google Fonts are the only
   // external stylesheet" made forge.md's Fontshare defaults unloadable.
   test("type is decided once: one family, from either permitted host", () => {
-    expect(FORGE_MD).toMatch(/Frontend Design/i);
+    expect(FORGE_MD).toContain("One typeface for the entire build");
     expect(contract).toContain("one typeface for the whole site");
     expect(stack).not.toMatch(/at most two (Google Fonts )?families/i);
     expect(contract).toContain("Google Fonts and Fontshare are the only external stylesheets");
@@ -49,6 +49,8 @@ describe("one instruction, in one place", () => {
   // A member who says they sell products was given a brochure: the brief asked
   // for a shop and three separate instructions refused to build one.
   test("the site covers the job the brief names, including selling", () => {
+    expect(FORGE_MD).toContain("What the site must cover");
+    expect(FORGE_MD).toContain("a products section is required");
     expect(contract).toContain("A business that sells products gets a products section");
     expect(onboarding).toContain("Build a section for every job the brief says the site has to do");
     expect(stack).not.toMatch(/do not imply that bookings, payments, accounts or form delivery work/i);
@@ -59,6 +61,7 @@ describe("one instruction, in one place", () => {
   // Honest, though: the storefront is built, the checkout is not faked.
   test("what is not wired up is never shown as working", () => {
     expect(contract).toContain("Never render a cart, a checkout, a payment form");
+    expect(FORGE_MD).toContain("Never invent a price");
   });
 });
 
@@ -111,8 +114,8 @@ describe("nothing claims to know which model is running", () => {
   // Starter publishes to a Forge address but carries no custom domains, so an
   // agent that promised one was promising an upgrade.
   test("a custom domain is not promised to every paid member", () => {
-    // Domain entitlements live in the product/UI, not in the injected design skill.
-    expect(FORGE_MD).toMatch(/Frontend Design/i);
+    expect(FORGE_MD).toContain("not every paid plan carries");
+    expect(FORGE_MD).not.toMatch(/Paid users .*may connect their own custom domain/);
   });
 });
 
@@ -163,9 +166,18 @@ describe("the contract sets a floor, not a mould", () => {
   });
 
   // And forge.md hands shape to the skill rather than keeping it.
-  test("forge.md is the injected frontend-design skill and outranks other notes", () => {
-    expect(FORGE_MD).toMatch(/Frontend Design skill \(injected/i);
-    expect(FORGE_MD).toMatch(/Frontend design supersedes everything else/i);
-    expect(FORGE_MD).not.toMatch(/Satoshi|Switzer/);
+  test("forge.md gives the skeleton to the skill", () => {
+    expect(FORGE_MD).toContain("the skeleton is the skill's to invent for this business");
+    expect(FORGE_MD).not.toMatch(/decide those two things/);
+  });
+
+  // The two files were once the same document, so the build turn spent ~5k
+  // tokens saying the skill twice and the house rules it defers to — the
+  // catalogue, one typeface, what the site must cover — were in neither.
+  test("forge.md and the skill are two different documents", () => {
+    expect(FORGE_MD).not.toBe(FRONTEND_DESIGN);
+    expect(FORGE_MD).not.toContain("Approach this as the design lead at a design studio");
+    expect(FRONTEND_DESIGN).toContain("Approach this as the design lead at a design studio");
+    expect(FORGE_MD).toContain("Forge — standing instructions for the website agent");
   });
 });
