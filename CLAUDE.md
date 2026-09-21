@@ -81,19 +81,24 @@ codebase: the same HTML, CSS and JS serve both. What differs is width.
   done. If a feature only makes sense on one, say so out loud rather than
   quietly leaving the other behind.
 
-## Rule 4: the frontend-design skill, in full
+## Rule 4: the frontend-design skill is mandatory, and it is below
+
+**The frontend-design skill below is mandatory design direction for every
+visual change, every time. Do not skip the plan → review → build → critique
+process.** There is no change small enough to be exempt from it and no deadline
+that earns an exemption.
 
 Design work is anything a user sees or reads: a screen, a sheet, a control, an
 icon, a layout, spacing, colour, a chip, an empty state, an error, a line of
 copy — whether it is new or being reshaped. A one-line CSS change is design
-work. Renaming a button is design work. There is no change small enough to
-skip this and no deadline that earns an exemption.
+work. Renaming a button is design work.
 
 The skill is not something to remember to load. It is written out below, so it
 is in context from the first message of every session here and nothing has to
-go and fetch it. The vendored copy at `.claude/skills/frontend-design/SKILL.md`
-is where it came from and what to re-read when upstream changes; the text
-below is what governs.
+go and fetch it. Loading it from anywhere else is redundant; skipping it is not
+possible, because it is already in front of you. The vendored copy at
+`.claude/skills/frontend-design/SKILL.md` is where it came from and what to
+re-read when upstream changes; the text below is what governs.
 
 Forge already has a visual language — the tokens, radii, type scale and
 components in `docs/styles.css` — and Rule 3 puts every change at both widths.
