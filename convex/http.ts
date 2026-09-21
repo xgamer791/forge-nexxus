@@ -21,7 +21,10 @@ const NOT_FOUND = `<!doctype html><html lang="en"><head><meta charset="utf-8"><m
 // changed as though they had not. The page is always asked for again.
 const PAGE_HEADERS = {
   "content-type": "text/html; charset=utf-8",
-  "cache-control": "public, max-age=0, must-revalidate",
+  // Rebuild publishes a new page to the same URL. public/max-age=0 still lets
+  // Cloudways Varnish keep a HIT for hours; no-store is what stops that.
+  "cache-control": "private, no-store, max-age=0, must-revalidate",
+  "surrogate-control": "no-store",
   "x-content-type-options": "nosniff",
   "content-security-policy":
     "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data: https:; base-uri 'none'; form-action 'none'",

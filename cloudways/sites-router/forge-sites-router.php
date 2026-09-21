@@ -239,7 +239,11 @@ if ($answer['status'] !== 200 && $answer['status'] !== 404) {
 http_response_code($answer['status']);
 header('Content-Type: ' . ($answer['headers']['content-type'] ?? 'text/html; charset=utf-8'));
 header('X-Content-Type-Options: ' . ($answer['headers']['x-content-type-options'] ?? 'nosniff'));
-header('Cache-Control: ' . ($answer['headers']['cache-control'] ?? 'no-store'));
+// Always no-store: passing Convex's cache-control through still left Varnish
+// returning Age: 13000+ HITs of the pre-rebuild page on *.sites.forgenexxus.com.
+header('Cache-Control: private, no-store, max-age=0, must-revalidate');
+header('Surrogate-Control: no-store');
+header('X-Forge-Sites-Router: 1');
 if (isset($answer['headers']['content-security-policy'])) {
     header('Content-Security-Policy: ' . $answer['headers']['content-security-policy']);
 }

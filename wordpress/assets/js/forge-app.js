@@ -1086,9 +1086,17 @@ let openPreview = () => {};
 // serving the build the member is looking at: published, and published with
 // the latest version. That address is what Preview opens.
 function liveUrl(site = activeSite) {
-  return site?.status === 'published' && site.publishedUrl && site.publishedVersionId === site.currentVersionId
-    ? site.publishedUrl
-    : null;
+  // Preview opens the branded address. That host sits behind Cloudways/Varnish,
+  // which was still returning an hours-old HIT after Rebuild published a new
+  // version. Bust with the published version id so each rebuild gets a fresh
+  // fetch without waiting on a purge.
+  if (!(site?.status === 'published' && site.publishedUrl && site.publishedVersionId === site.currentVersionId)) {
+    return null;
+  }
+  const stamp = site.publishedVersionId || site.publishedAt;
+  if (!stamp) return site.publishedUrl;
+  const join = site.publishedUrl.includes('?') ? '&' : '?';
+  return `${site.publishedUrl}${join}v=${encodeURIComponent(String(stamp))}`;
 }
 // A real link, pressed for them: the one way to open a tab that no popup
 // blocker argues with, because it is what the press already was.
