@@ -166,3 +166,34 @@ describe("what the agent is told about type is true and survives a failure", () 
     expect(FORGE_MD).toContain("system-ui");
   });
 });
+
+describe("the contract sets a floor, not a mould", () => {
+  // Every Forge site came out with the same bones — header, nav, hero saying
+  // what/who/one-action, sections, closing CTA, footer, the same CTA words
+  // three times — because the contract dictated that running order and, by
+  // forge.md's own precedence, outranked the skill it was injected beside.
+  // Swapping the model changed the prose inside the boxes and nothing else.
+  test("no fixed running order survives in the build rules", () => {
+    expect(contract).not.toMatch(/a header with the name and a nav/i);
+    expect(contract).not.toMatch(/appears in the hero, again after the offer/i);
+    expect(contract).not.toMatch(/then a closing call to action/i);
+    expect(contract).toContain("The page's shape is yours to decide from this business");
+    expect(contract).toContain("Two businesses must not come out with the same skeleton");
+  });
+
+  // The floor is the part that must not move: what a page owes whatever shape
+  // the skill gives it.
+  test("the quality floor is still stated outright", () => {
+    expect(contract).toContain("What every page owes, whatever shape it takes");
+    expect(contract).toContain("Semantic landmarks");
+    expect(contract).toContain("Mobile-first and responsive from 320px");
+    expect(contract).toContain("Cover every job the brief says the site has to do");
+    expect(contract).toContain("a products section");
+  });
+
+  // And forge.md hands shape to the skill rather than keeping it.
+  test("forge.md gives the skeleton to the skill", () => {
+    expect(FORGE_MD).toContain("the skeleton is the skill's to invent for this business");
+    expect(FORGE_MD).not.toMatch(/decide those two things/);
+  });
+});
