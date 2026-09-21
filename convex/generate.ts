@@ -133,13 +133,13 @@ const PENDING_LABELS: Record<RequestKind, string> = {
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
+type RunStatus = "queued" | "started" | "calling" | "images" | "saving" | "complete" | "failed";
+
 // The diagnostics tables record what the agent did; they are never what makes
 // it run. A deployment that has not had the schema pushed yet, or an insert
 // that hits a limit, used to take the build down with it -- the open happened
 // before the try, so the thread was left pending and no watchdog was armed.
 // Every read and write of the build log now fails quietly instead.
-type RunStatus = "queued" | "started" | "calling" | "images" | "saving" | "complete" | "failed";
-
 export async function openQuietly(
   ctx: ActionCtx,
   args: {
