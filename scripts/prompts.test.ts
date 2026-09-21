@@ -94,3 +94,29 @@ describe("the brief collects what a shop needs", () => {
     expect(client).toContain("lastStep()");
   });
 });
+
+describe("nothing claims to know which model is running", () => {
+  // The models are deployment settings: AI_MODEL, AI_BUILD_MODEL and
+  // AI_IMAGE_MODEL all move them. forge.md used to hardcode "DeepSeek V4.1
+  // Flash" and "You are not Claude, GPT, or Gemini", so a deployment that
+  // pointed builds anywhere else had an agent instructed to deny what it was
+  // while the build contract, in the same turn, named it correctly.
+  test("forge.md names no model or vendor", () => {
+    expect(FORGE_MD).not.toMatch(/deepseek|gemini|openai|anthropic|\bGPT\b|\bClaude\b|nano banana/i);
+  });
+
+  // The contract interpolates the label instead, and for a build it has to be
+  // the build model's — chatRoute() with no argument answers for chat.
+  test("the contract reads the label off the turn's own route", () => {
+    expect(contract).toContain("this turn runs on ${chatRoute(purpose).label}");
+    expect(contract).not.toMatch(/\$\{chatRoute\(\)\.label\}/);
+    expect(generate).toContain('function systemPrompt(imageLimit: number, purpose: "chat" | "build")');
+  });
+
+  // Starter publishes to a Forge address but carries no custom domains, so an
+  // agent that promised one was promising an upgrade.
+  test("a custom domain is not promised to every paid member", () => {
+    expect(FORGE_MD).toContain("not every paid plan carries");
+    expect(FORGE_MD).not.toMatch(/Paid users .*may connect their own custom domain/);
+  });
+});

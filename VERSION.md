@@ -1,6 +1,6 @@
 # Forge Nexxus version
 
-Current version: **4**
+Current version: **5**
 
 That integer is what the user sees at the top-right of the prompt canvas
 (`[data-build-stamp]`). It is a plain number. Never show a hash, a `v` prefix,

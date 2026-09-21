@@ -24,10 +24,11 @@ const REASON_LIMIT = 300;
 // the one-line summary that rides along with a build.
 const TALK_LIMIT = 4000;
 
-// Conversation and site building run on DeepSeek Flash, and on nothing else.
-// The deployment's `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY` name the route;
-// what they fall back to is DeepSeek too, so an unset variable can never send
-// a build somewhere else. Pictures have a route of their own in `images.ts`.
+// Where conversation and site building go when the deployment says nothing:
+// `AI_BASE_URL`, `AI_MODEL`, `AI_BUILD_MODEL` and `AI_API_KEY` name the route,
+// and these are the fallbacks, so an unset variable lands on DeepSeek rather
+// than nowhere. Pictures have a route of their own in `images.ts`, and text
+// never goes to it.
 const CHAT_BASE_URL = "https://api.deepseek.com/v1";
 const CHAT_MODEL = "deepseek-flash";
 const CHAT_MODEL_LABEL = "DeepSeek V4.1 Flash";
@@ -97,7 +98,7 @@ export const routing = internalQuery({
   },
 });
 
-function systemPrompt(imageLimit: number) {
+function systemPrompt(imageLimit: number, purpose: "chat" | "build") {
   const pictures = imageRoute().apiKey
     ? `IMAGES — pictures are made for you by an image model after you reply.
 - Where a photograph or illustration genuinely helps (the hero, the offer, the place, the people, the work), write an img whose src is forge-image: followed by a number, and describe the picture in data-forge-image, like this: <img src="forge-image:1" data-forge-image="Morning light across the counter of a small neighbourhood bakery, sourdough loaves in the foreground, warm and unposed, editorial photograph" data-forge-aspect="16:9" alt="Sourdough loaves on the counter" width="1600" height="900">
@@ -129,7 +130,7 @@ Reply with one sentence saying what you built or changed, then the complete HTML
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
 
-IDENTITY — if someone asks which AI or model you are, say it plainly in one sentence and get back to their site: your conversation and site building run on ${chatRoute().label}, and the pictures on a site are made by ${IMAGE_MODEL_LABEL}. You yourself are not Gemini, GPT or Claude, and you do not guess at anything about the models beyond this.
+IDENTITY — if someone asks which AI or model you are, say it plainly in one sentence and get back to their site: this turn runs on ${chatRoute(purpose).label}, and the pictures on a site are made by ${IMAGE_MODEL_LABEL}. Those two names are all you know: never guess at a model's family, version, maker or abilities beyond them, and never claim to be or not to be some other company's model.
 
 Never ask the user questions or append a follow-up question. For an ambiguous request, use the saved website brief and sensible design defaults. Never invent missing business facts. Keep strategy private. If the request is clearly about creating or changing a website, build it.`;
 }
@@ -318,7 +319,7 @@ export const begin = internalMutation({
     await ctx.scheduler.runAfter(RUN_WATCHDOG_MS, internal.generate.expire, { assistantId, holdId });
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const imageLimit = current ? EDIT_IMAGE_LIMIT : BUILD_IMAGE_LIMIT;
-    const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit);
+    const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit, kind === "chat" ? "chat" : "build");
     if (setup) messages.splice(1, 0, { role: "system", content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
     return {
       siteId: site._id,
@@ -351,7 +352,7 @@ export const beginOnboarding = internalMutation({
     const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
     await ctx.db.patch(id, { holdId, assistantId, events: [...row.events, { label: "Agent started building your website", at: Date.now() }] });
     return {
-      messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null, BUILD_IMAGE_LIMIT),
+      messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null, BUILD_IMAGE_LIMIT, "build"),
       result: { siteId: site._id, holdId, assistantId, requestKind: "generate" as const, epoch: site.buildEpoch ?? 0 },
     };
   },
@@ -479,12 +480,13 @@ function buildMessages(
   // Set when the balance cannot cover a build, which makes this turn TALK.
   talkOnly: { needed: number; available: number } | null,
   imageLimit: number,
+  purpose: "chat" | "build",
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
     // forge.md + frontend-design skill — every DeepSeek chat/build turn.
     { role: "system", content: FORGE_MD },
     { role: "system", content: FRONTEND_DESIGN },
-    { role: "system", content: systemPrompt(imageLimit) },
+    { role: "system", content: systemPrompt(imageLimit, purpose) },
   ];
   if (currentHtml) {
     messages.push({
