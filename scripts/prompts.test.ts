@@ -191,9 +191,12 @@ describe("the contract sets a floor, not a mould", () => {
     expect(contract).toContain("a products section");
   });
 
-  // And forge.md hands shape to the skill rather than keeping it.
-  test("forge.md gives the skeleton to the skill", () => {
-    expect(FORGE_MD).toContain("the skeleton is the skill's to invent for this business");
+  // forge.md used to hand the page's shape to the design skill by name. It no
+  // longer mentions it: the house rules keep what they own and the shape is the
+  // agent's to invent, so nothing here defers to a block injected beside it.
+  test("forge.md keeps no running order, and names no skill", () => {
+    expect(FORGE_MD).toContain("is yours to invent for this business");
+    expect(FORGE_MD).not.toMatch(/frontend-design|design skill/i);
     expect(FORGE_MD).not.toMatch(/decide those two things/);
   });
 });
