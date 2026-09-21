@@ -4,6 +4,11 @@ Claude Code loads this file automatically at the start of every session in this
 repository, so treat it as always in effect. Re-read it before changing how any
 user-facing state is stored, and follow it over habit or convenience.
 
+**Rule 4 is a hard rule and outranks the rest.** The frontend-design skill is
+written out in full there, and where it and anything else disagree — another
+rule here, a convention already in `docs/`, habit, or a deadline — the skill
+wins.
+
 ## Rule 1: all user data lives in the database
 
 **Every piece of user state belongs in Convex, owned by a `userId`.** If a user
@@ -81,12 +86,12 @@ codebase: the same HTML, CSS and JS serve both. What differs is width.
   done. If a feature only makes sense on one, say so out loud rather than
   quietly leaving the other behind.
 
-## Rule 4: the frontend-design skill is mandatory, and it is below
+## Rule 4: the frontend-design skill is a hard rule, and it is below
 
 **The frontend-design skill below is mandatory design direction for every
-visual change, every time. Do not skip the plan → review → build → critique
-process.** There is no change small enough to be exempt from it and no deadline
-that earns an exemption.
+visual change, every time, and it supersedes every other rule in this file. Do
+not skip the plan → review → build → critique process.** There is no change
+small enough to be exempt from it and no deadline that earns an exemption.
 
 Design work is anything a user sees or reads: a screen, a sheet, a control, an
 icon, a layout, spacing, colour, a chip, an empty state, an error, a line of
@@ -105,8 +110,9 @@ components in `docs/styles.css` — and Rule 3 puts every change at both widths.
 Reach for an existing token or component first; when something genuinely needs
 a shape the system does not have, the skill decides what that shape is rather
 than the nearest default. Where the skill and something already here disagree,
-follow one and say which, and why. Silently picking either is the only wrong
-answer.
+the skill wins — including against a convention this file or `docs/styles.css`
+already established. Say what moved and why, so the system follows the skill
+rather than drifting away from it.
 
 What follows is the skill as Forge's own building agent receives it, with the
 handful of lines that speak to *that* agent's job rewritten for this one. You
