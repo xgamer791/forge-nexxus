@@ -19,16 +19,18 @@ import { publishBuild } from "./sites";
 const HISTORY_LIMIT = 32;
 const DEFAULT_MAX_TOKENS = 16000;
 const BUILD_MAX_TOKENS = 24000;
+// What to drop to when a provider refuses the length without naming its cap.
+const SAFE_MAX_TOKENS = 8192;
 const REASON_LIMIT = 300;
 // A conversational reply is the message itself, so it gets far more room than
 // the one-line summary that rides along with a build.
 const TALK_LIMIT = 4000;
 
-// Where conversation and site building go when the deployment says nothing:
-// `AI_BASE_URL`, `AI_MODEL`, `AI_BUILD_MODEL` and `AI_API_KEY` name the route,
-// and these are the fallbacks, so an unset variable lands on DeepSeek rather
-// than nowhere. Pictures have a route of their own in `images.ts`, and text
-// never goes to it.
+// Where conversation and site building go when the deployment says nothing.
+// `AI_BASE_URL`, `AI_MODEL`, `AI_BUILD_MODEL` and `AI_API_KEY` name the real
+// route; any provider that speaks the OpenAI chat shape works, Google's
+// `/v1beta/openai` path included. Pictures have a route of their own in
+// `images.ts`, and text never goes to it.
 const CHAT_BASE_URL = "https://api.deepseek.com/v1";
 const CHAT_MODEL = "deepseek-flash";
 const CHAT_MODEL_LABEL = "DeepSeek V4.1 Flash";
@@ -74,14 +76,41 @@ export function chatRoute(purpose: "chat" | "build" = "chat") {
     // one model id, so any other id reports itself rather than borrowing it:
     // `deepseek-chat` is not "V4.1 Flash", and saying so would be a guess.
     label: process.env.AI_MODEL_LABEL?.trim() || (model === CHAT_MODEL ? CHAT_MODEL_LABEL : model),
-    // Text never goes to the image provider. A chat route pointed at Gemini is
-    // the image key in the wrong variable, and it is refused rather than used:
-    // a site quietly built by the wrong model is worse than one that says why
-    // it was not built.
-    misrouted:
-      /generativelanguage\.googleapis\.com|aiplatform\.googleapis\.com/i.test(baseUrl) ||
-      /gemini|imagen|banana|-image(?:-|$)/i.test(model),
+    ...misrouting(baseUrl, model),
   };
+}
+
+// Whether this route can write a website, and why not when it cannot. Two
+// things are genuinely broken and both are refused rather than attempted,
+// because a build that quietly went to the wrong model is worse than one that
+// says why it did not run.
+//
+// An image model cannot write HTML, whoever makes it. And Google's native
+// endpoint does not speak the OpenAI chat shape this client sends, so
+// `${baseUrl}/chat/completions` is a 404 there that explains nothing.
+//
+// A Gemini text model on Google's OpenAI-compatible path is a supported chat
+// route and goes through: the provider, not the vendor, is what has to match.
+function misrouting(baseUrl: string, model: string) {
+  const googleHost = /generativelanguage\.googleapis\.com|aiplatform\.googleapis\.com/i.test(baseUrl);
+  const openAiShaped = /\/openai(\/|$)/i.test(baseUrl);
+  if (/imagen|banana|-image(?:-|$)/i.test(model)) {
+    return {
+      misrouted: true,
+      misroutedReason:
+        `AI_MODEL names an image model (${model}). Site building needs a text model; ` +
+        "pictures have their own route in AI_IMAGE_MODEL.",
+    };
+  }
+  if (googleHost && !openAiShaped) {
+    return {
+      misrouted: true,
+      misroutedReason:
+        `AI_BASE_URL (${baseUrl}) is Google's native API, which does not speak the OpenAI chat shape. ` +
+        "Use https://generativelanguage.googleapis.com/v1beta/openai instead.",
+    };
+  }
+  return { misrouted: false, misroutedReason: undefined as string | undefined };
 }
 
 // Which model each kind of work goes to, for whoever runs the deployment:
@@ -485,7 +514,7 @@ function buildMessages(
   purpose: "chat" | "build",
 ): ChatMessage[] {
   const messages: ChatMessage[] = [
-    // forge.md + frontend-design skill — every DeepSeek chat/build turn.
+    // forge.md + frontend-design skill — every chat, build and strategy turn.
     { role: "system", content: FORGE_MD },
     { role: "system", content: FRONTEND_DESIGN },
     { role: "system", content: systemPrompt(imageLimit, purpose) },
@@ -583,9 +612,16 @@ async function complete(
       clearTimeout(timer);
     }
     if (!response.ok) {
-      const cap = response.status === 400 ? bodyText.match(/max_tokens[^[\]]*\[\s*\d+\s*,\s*(\d+)\s*\]/i) : null;
-      if (cap && Number(cap[1]) > 0 && Number(cap[1]) < limit) {
-        limit = Number(cap[1]);
+      // A provider whose output cap is lower than what was asked for says so
+      // in its own words. DeepSeek names the range, and that exact number is
+      // used when it is there; anything else that refuses over the length just
+      // gets one more go inside a cap every chat model clears, rather than
+      // failing a build over a number.
+      const named = response.status === 400 ? bodyText.match(/max_tokens[^[\]]*\[\s*\d+\s*,\s*(\d+)\s*\]/i) : null;
+      const overLength =
+        response.status === 400 && /max_?(?:output_?)?tokens/i.test(bodyText) && limit > SAFE_MAX_TOKENS;
+      if ((named && Number(named[1]) > 0 && Number(named[1]) < limit) || overLength) {
+        limit = named ? Number(named[1]) : SAFE_MAX_TOKENS;
         await trace?.note({
           phase: "provider_cap",
           label: "Lowered the model's length limit",
@@ -677,10 +713,7 @@ export async function callProvider(
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
   if (route.misrouted) {
-    console.error(
-      `Forge refused the chat route: AI_BASE_URL / AI_MODEL point at the image provider (${route.model}). ` +
-        "Conversation and site building run on DeepSeek Flash; set AI_BASE_URL, AI_MODEL and AI_API_KEY for it.",
-    );
+    console.error(`Forge refused the chat route. ${route.misroutedReason}`);
     await trace?.note({
       phase: "provider_error",
       label: "Site generation isn't set up on this deployment yet",

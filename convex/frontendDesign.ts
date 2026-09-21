@@ -1,4 +1,4 @@
-// Embedded frontend-design skill for DeepSeek (and any chat/build model).
+// Embedded frontend-design skill for whichever model writes the site.
 // Claude Code loads this from a skill file; Convex cannot, so generate.ts
 // injects FRONTEND_DESIGN on every build/chat/strategy turn. Keep in sync
 // with ../frontend-design.md; scripts/prompts.test.ts fails if it drifts.

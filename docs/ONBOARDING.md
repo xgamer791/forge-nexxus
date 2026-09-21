@@ -4,8 +4,8 @@ The full-screen setup route is live. `ENABLED` in `docs/onboarding.js` is the
 one switch for it; drafts saved in Convex survive it being turned off and on.
 
 The pipeline runs start to finish with no step that can strand a member:
-answers → private strategy → page written by DeepSeek Flash → pictures made by
-Gemini Nano Banana 2 Lite → version saved → address picked and published on the
+answers → private strategy → page written by the deployment's text model →
+pictures made by its image model → version saved → address picked and published on the
 hand-off screen → custom domain from the globe.
 
 Paid members answer the questions before their first build. An empty planning
