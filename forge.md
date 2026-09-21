@@ -69,6 +69,8 @@ Default to one of these, in this order of preference:
 
 Do **not** default to Inter, Roboto, Open Sans, or system-ui stacks unless the brief names them.
 
+Always write a fallback after the family — `font-family: "Satoshi", system-ui, -apple-system, "Segoe UI", sans-serif` — so a webfont that does not arrive leaves a readable page rather than an unstyled one, and size the layout so it holds either way.
+
 **Neutral, polished workhorses** — Geist, Mona Sans, Instrument Sans, Host Grotesk (Google Fonts); Switzer, General Sans (Fontshare); Public Sans (Google Fonts).
 
 **Geometric, warm** — Satoshi (Fontshare); Manrope, Plus Jakarta Sans, Figtree, Albert Sans, Onest (Google Fonts).

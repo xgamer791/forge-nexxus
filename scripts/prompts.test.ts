@@ -120,3 +120,49 @@ describe("nothing claims to know which model is running", () => {
     expect(FORGE_MD).not.toMatch(/Paid users .*may connect their own custom domain/);
   });
 });
+
+describe("the injected skill fits the reply Forge is allowed to give", () => {
+  const skill = read("frontend-design.md");
+
+  // The skill was written for a designer in conversation with a client. Forge
+  // may not ask the member anything and its reply is one sentence and a page,
+  // so the sentences that invited a question or a narrated plan pulled against
+  // forge.md and BUILD_ORDER on every single turn.
+  test("it never invites a question, a narrated plan, or a memory Forge lacks", () => {
+    expect(skill).not.toMatch(/confirm with the client|as a proposal/i);
+    expect(skill).not.toMatch(/say what you changed and why/i);
+    expect(skill).not.toMatch(/information in your memory|jot down notes/i);
+    expect(skill).toContain("you never put the question to the member");
+    expect(skill).toContain("Do this silently");
+  });
+
+  // Type is the house rule's, so the skill no longer offers a second family.
+  test("it does not offer a typeface pairing the house rule forbids", () => {
+    expect(skill).not.toMatch(/use one family or two/i);
+    expect(skill).toContain("Forge uses one family for the whole site");
+  });
+});
+
+describe("what the agent is told about type is true and survives a failure", () => {
+  // Checked against fonts.googleapis.com: every family below answers 200
+  // there, and every Fontshare-only family answers 400, so nothing on the
+  // list is asked for from a host that does not serve it.
+  test("each family is listed under a host that actually has it", () => {
+    for (const family of ["Geist", "Mona Sans", "Instrument Sans", "Host Grotesk", "Public Sans",
+      "Manrope", "Plus Jakarta Sans", "Figtree", "Albert Sans", "Onest", "Bricolage Grotesque",
+      "Schibsted Grotesk", "Familjen Grotesk", "Parkinsans", "Archivo", "Epilogue"]) {
+      expect(FORGE_MD).toContain(family);
+    }
+    const fontshare = FORGE_MD.slice(FORGE_MD.indexOf("## Typography"));
+    for (const family of ["Satoshi", "Switzer", "General Sans", "Cabinet Grotesk", "Clash Display"]) {
+      expect(fontshare).toContain(family);
+    }
+  });
+
+  // Fontshare cannot be reached from CI, so a family that fails to load is the
+  // one font risk left. A fallback stack is what keeps that from showing.
+  test("a webfont that never arrives still leaves a readable page", () => {
+    expect(FORGE_MD).toContain("Always write a fallback after the family");
+    expect(FORGE_MD).toContain("system-ui");
+  });
+});

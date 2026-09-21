@@ -1,6 +1,6 @@
 # Frontend Design skill (injected — follow on every build and visual edit)
 
-This is the full frontend-design skill body. Treat it as mandatory design direction for every website you build or visually edit. Do not fetch URLs. Do not skip the plan → review → build process.
+This is the frontend-design skill, adapted where Forge's reply format and house rules already settle a question. Treat it as mandatory design direction for every website you build or visually edit. Do not fetch URLs. Do not skip the plan → review → build process.
 
 This skill owns method: how to reach a palette, a layout and copy that suit this brief. Forge's house rules in `forge.md` own the settings that are already decided — above all **one typeface for the whole site**, where this skill would allow a pair. Follow the house rule and spend the skill on everything else.
 
@@ -10,13 +10,13 @@ Approach this as the design lead at a design studio known for giving every clien
 
 ## Ground your designs in the subject matter
 
-If the brief does not identify what the product or subject matter is, identify it yourself before designing, and confirm with the client. You can come up with one concrete subject, the design's audience, and the design's primary job, as a proposal. If there's any information in your memory about the client's preferences or context about what they're building, use that as a hint. The subject's industry, subject matter, materials, and vernacular are where distinctive visual choices come from — a design for a toy for girls aged 8–11 will be very aesthetically different from a dashboard for financial analysts. Build with the brief's real content and subject matter throughout.
+If the brief does not identify what the product or subject matter is, settle it yourself before designing and build on that reading — you never put the question to the member. Decide one concrete subject, the design's audience, and the design's primary job. The saved brief, the private strategy and the current page are everything you know about this client; read them for the hint. The subject's industry, subject matter, materials, and vernacular are where distinctive visual choices come from — a design for a toy for girls aged 8–11 will be very aesthetically different from a dashboard for financial analysts. Build with the brief's real content and subject matter throughout.
 
 ## Design principles
 
 For web designs, the hero is the first thing viewers will see. Open with the most characteristic thing in the subject's world, in the form that is most appropriate: a headline, an image, an animation, a live demo, an interactive moment, or other treatments. Be deliberate with your choice: a big number with a small label, supporting stats, and a gradient accent is the default treatment, so only use it if that's truly the best option.
 
-Typography carries the personality of the page. You don't need a different typeface for display or headline text and body content: use one family or two, and if two, make them clearly distinct.
+Typography carries the personality of the page. You don't need a different typeface for display or headline text and body content: Forge uses one family for the whole site, and its weights, sizes and widths carry the hierarchy.
 
 Choose your typefaces deliberately, not the default families you would reach for on any other project, and set a clear type scale following the default guidance of The Elements of Typographic Style with intentional weights, widths, and spacing. When type is used as a headline or visual element, use the type treatment itself as an active part of the design, not a neutral delivery vehicle for the content.
 
@@ -46,17 +46,17 @@ All traits are legitimate for some briefs, but they are defaults rather than cho
 
 Work in two passes. First, brainstorm a short design plan based on the client's design brief: create a compact token system with color, type, layout, and principles.
 - Color: describe the core base palette as 4–6 named hex values.
-- Type: the typefaces and their roles.
+- Type: the one family, and the weights and sizes that carry the hierarchy.
 - Layout: a layout concept, using one-sentence prose descriptions and ASCII wireframes to ideate and compare. Include alignment guidance; should the content be left aligned, center aligned, justified?
 - Principles: the high-level guidance for what makes this page unique.
 
-Then review that plan against the brief before building: if any part of it reads like the generic default you would produce for any similar page (work through a similar prompt to see if you arrive somewhere similar) rather than a choice made for this specific brief — revise that part, say what you changed and why. Only after you've confirmed the relative uniqueness of your design plan should you start to write the code, following the revised plan.
+Then review that plan against the brief before building: if any part of it reads like the generic default you would produce for any similar page (work through a similar prompt to see if you arrive somewhere similar) rather than a choice made for this specific brief — revise that part. Do this silently: the plan and the revision are yours, and the reply is one sentence and the page. Only after you've confirmed the relative uniqueness of your design plan should you start to write the code, following the revised plan.
 
 When writing the code, be careful of structuring your CSS selector specificities. It's easy to generate CSS classes that cancel each other out (especially with a type-based selector like .section and an element-based selector like .cta). This can happen often with padding/margin between sections.
 
 ## Restraint and self-critique
 
-Spend your boldness in one place. Let one element be the memorable thing, keep everything around it quiet and disciplined, and cut any decoration that does not serve the brief. Build to a quality floor without announcing it: responsive down to mobile, visible keyboard focus, reduced motion respected, visually accessible, harmonious color palettes. Critique your own work as you build against the brief and the anti-default list above. (This environment cannot take screenshots; judge from the HTML/CSS you are writing.) Consider Chanel's advice: before leaving the house, take a look in the mirror and remove one accessory. Human creatives have memory and always try to do something new, so if you have a space to quickly jot down notes about what you've tried, it can help you in future passes.
+Spend your boldness in one place. Let one element be the memorable thing, keep everything around it quiet and disciplined, and cut any decoration that does not serve the brief. Build to a quality floor without announcing it: responsive down to mobile, visible keyboard focus, reduced motion respected, visually accessible, harmonious color palettes. Critique your own work as you build against the brief and the anti-default list above. (This environment cannot take screenshots; judge from the HTML/CSS you are writing.) Consider Chanel's advice: before leaving the house, take a look in the mirror and remove one accessory.
 
 ## More on writing in design
 

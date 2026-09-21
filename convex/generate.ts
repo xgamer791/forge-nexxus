@@ -70,8 +70,10 @@ export function chatRoute(purpose: "chat" | "build" = "chat") {
     baseUrl,
     model,
     apiKey: process.env.AI_API_KEY,
-    // What the agent says it runs on. It only says DeepSeek when it does.
-    label: process.env.AI_MODEL_LABEL?.trim() || (/deepseek/i.test(model) ? CHAT_MODEL_LABEL : model),
+    // What the agent says it runs on. The marketing name belongs to exactly
+    // one model id, so any other id reports itself rather than borrowing it:
+    // `deepseek-chat` is not "V4.1 Flash", and saying so would be a guess.
+    label: process.env.AI_MODEL_LABEL?.trim() || (model === CHAT_MODEL ? CHAT_MODEL_LABEL : model),
     // Text never goes to the image provider. A chat route pointed at Gemini is
     // the image key in the wrong variable, and it is refused rather than used:
     // a site quietly built by the wrong model is worse than one that says why
