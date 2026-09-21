@@ -24,6 +24,27 @@ export const incomingPlanKey = storedPlanKey;
 export const PAID_PLAN_KEYS = ["starter", "pro", "ultra"] as const;
 export type PaidPlanKey = (typeof PAID_PLAN_KEYS)[number];
 
+// What a credit is worth. One credit is one cent of real provider spend, so a
+// balance is a budget rather than a score: 2,500 credits is $25.00 of model,
+// image and video calls. Every number the server holds, settles and grants is
+// denominated in it. Nothing in `docs/` ever prints that cash value — a member
+// is shown credits and only credits — so this constant stays on the server.
+export const CENTS_PER_CREDIT = 1;
+
+// How a purchase divides. Half of what Stripe collects pays the providers for
+// that member's work and Forge keeps the other half. It is applied to the
+// money actually received, so a promotion code or a proration splits the same
+// way a full-price month does.
+export const API_SHARE = 0.5;
+
+// The two halves of a payment, in whole cents. The remainder goes to Forge, so
+// an odd amount never loses a cent to rounding.
+export function splitPayment(paidCents: number) {
+  const paid = Math.max(0, Math.round(paidCents));
+  const apiCents = Math.round(paid * API_SHARE);
+  return { paidCents: paid, apiCents, forgeCents: paid - apiCents };
+}
+
 export type Plan = {
   key: PlanKey;
   name: string;

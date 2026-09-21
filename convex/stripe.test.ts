@@ -379,6 +379,88 @@ describe("webhook", () => {
   });
 });
 
+describe("how a payment divides", () => {
+  test("half of what Stripe collected is the provider budget and half is Forge's", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    await signed(t, {
+      id: "evt_plan",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          mode: "subscription",
+          customer: "cus_1",
+          subscription: "sub_1",
+          amount_total: starter.monthlyPriceCents,
+          currency: "usd",
+          metadata: { userId: member.userId, plan: "starter" },
+        },
+      },
+    });
+    await signed(t, {
+      id: "evt_renew",
+      type: "invoice.paid",
+      data: {
+        object: {
+          subscription: "sub_1",
+          billing_reason: "subscription_cycle",
+          amount_paid: starter.monthlyPriceCents,
+          currency: "usd",
+        },
+      },
+    });
+    const rows = await t.run((ctx) => ctx.db.query("payments").collect());
+    expect(rows.map((row) => [row.source, row.paidCents, row.apiCents, row.forgeCents])).toEqual([
+      ["plan", 6000, 3000, 3000],
+      ["renewal", 6000, 3000, 3000],
+    ]);
+    expect(rows[0]).toMatchObject({ planKey: "starter", currency: "usd", stripeEventId: "evt_plan" });
+    // The budget those payments bought, counted in the unit the member sees.
+    expect(await t.query(internal.billing.funding, {})).toMatchObject({
+      payments: 2,
+      paidCents: 12000,
+      apiCents: 6000,
+      forgeCents: 6000,
+      apiCredits: 6000,
+    });
+  });
+
+  test("a month that collected nothing records nothing, and an odd amount still adds up", async () => {
+    const t = fresh();
+    const member = await createUser(t, { email: "m@example.com" });
+    // A full-discount coupon still puts the member on the plan.
+    const discounted = await signed(t, {
+      id: "evt_free",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          mode: "subscription",
+          subscription: "sub_1",
+          amount_total: 0,
+          currency: "usd",
+          metadata: { userId: member.userId, plan: "starter" },
+        },
+      },
+    });
+    expect(await discounted.json()).toEqual({ handled: true, action: "plan", plan: "starter" });
+    expect(await t.run((ctx) => ctx.db.query("payments").collect())).toEqual([]);
+    await signed(t, {
+      id: "evt_pack",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          mode: "payment",
+          amount_total: 2999,
+          currency: "usd",
+          metadata: { userId: member.userId, pack: "topup-1000" },
+        },
+      },
+    });
+    const [pack] = await t.run((ctx) => ctx.db.query("payments").collect());
+    expect(pack).toMatchObject({ source: "topup", pack: "topup-1000", paidCents: 2999, apiCents: 1500, forgeCents: 1499 });
+  });
+});
+
 describe("cancel, resume, and the portal", () => {
   test("cancelling and resuming tell Stripe when it bills the plan, and only then", async () => {
     const t = fresh();

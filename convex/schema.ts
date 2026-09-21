@@ -138,6 +138,27 @@ export default defineSchema({
     type: v.string(),
     receivedAt: v.number(),
   }).index("by_event", ["eventId"]),
+  // Money received, and where it went. Half of every payment is set aside to
+  // pay the providers for that member's work and half is Forge's, recorded the
+  // moment Stripe says the money moved. This is operator accounting in real
+  // cents, not user data: no query a browser can call returns it, because a
+  // member is shown credits and never a cash value.
+  payments: defineTable({
+    userId: v.id("users"),
+    source: v.union(v.literal("plan"), v.literal("renewal"), v.literal("topup")),
+    planKey: v.optional(storedPlanKey),
+    pack: v.optional(v.string()),
+    // What Stripe actually collected, after any promotion code.
+    paidCents: v.number(),
+    currency: v.string(),
+    apiCents: v.number(),
+    forgeCents: v.number(),
+    // The delivery that reported it, so a payment can be traced back to Stripe.
+    stripeEventId: v.string(),
+    createdAt: v.number(),
+    // Deleting an account deliberately leaves these: money that was taken in
+    // stays on the books, and Stripe keeps its own record either way.
+  }).index("by_user_created", ["userId", "createdAt"]).index("by_event", ["stripeEventId"]),
   // Append-only record of every credit movement, so a balance can always be
   // explained. `amount` is signed and `balanceAfter` is what was left.
   creditLedger: defineTable({

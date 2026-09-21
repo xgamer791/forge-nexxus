@@ -2,8 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction, internalMutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { addMonth, applyPlan, creditTopUp, subscriptionByStripe } from "./billing";
-import { PAID_PLAN_KEYS, normalizePlanKey, paidPlanKey, topUpFor, type PlanKey } from "./plans";
+import { PAID_PLAN_KEYS, normalizePlanKey, paidPlanKey, splitPayment, topUpFor, type PlanKey } from "./plans";
 
 // Stripe over its REST API with form encoding, which is all checkout, the
 // portal and subscription updates need: no SDK, nothing to bundle. Price ids
@@ -197,6 +198,42 @@ export const webhook = httpAction(async (ctx, request) => {
 
 const seconds = (value: unknown) => (typeof value === "number" && value > 0 ? value * 1000 : null);
 
+// Records a payment and the two halves it divides into. `applyEvent` has
+// already refused a redelivery by the time this runs, so one payment is one
+// row. Stripe reports the amount in the currency's smallest unit, which is
+// what every number here is.
+async function recordPayment(
+  ctx: MutationCtx,
+  input: {
+    userId: Id<"users">;
+    source: "plan" | "renewal" | "topup";
+    planKey?: PlanKey;
+    pack?: string;
+    amount: unknown;
+    currency: unknown;
+    eventId: string;
+    now: number;
+  },
+) {
+  const amount = typeof input.amount === "number" && Number.isFinite(input.amount) ? input.amount : 0;
+  // A month that collected nothing — a full-discount coupon, a trial, a
+  // credit note — moved no money, so there is nothing to divide or record.
+  if (amount <= 0) return;
+  const split = splitPayment(amount);
+  await ctx.db.insert("payments", {
+    userId: input.userId,
+    source: input.source,
+    planKey: input.planKey,
+    pack: input.pack,
+    paidCents: split.paidCents,
+    currency: typeof input.currency === "string" && input.currency ? input.currency : "usd",
+    apiCents: split.apiCents,
+    forgeCents: split.forgeCents,
+    stripeEventId: input.eventId,
+    createdAt: input.now,
+  });
+}
+
 export const applyEvent = internalMutation({
   args: { event: v.any() },
   handler: async (ctx, { event }) => {
@@ -224,6 +261,15 @@ export const applyEvent = internalMutation({
           stripeCustomerId: customer,
           stripeSubscriptionId: typeof object.subscription === "string" ? object.subscription : undefined,
         });
+        await recordPayment(ctx, {
+          userId,
+          source: "plan",
+          planKey: plan,
+          amount: object.amount_total,
+          currency: object.currency,
+          eventId: id,
+          now,
+        });
         return { handled: true, action: "plan", plan };
       }
       if (object.mode === "payment" && typeof object.metadata?.pack === "string") {
@@ -231,6 +277,15 @@ export const applyEvent = internalMutation({
         if (!pack) return { handled: false, reason: "unknown pack" };
         // A paid pack is honoured whatever the plan says: the money has moved.
         await creditTopUp(ctx, userId, pack.credits, `${pack.credits} credit top-up`, now, customer);
+        await recordPayment(ctx, {
+          userId,
+          source: "topup",
+          pack: pack.key,
+          amount: object.amount_total,
+          currency: object.currency,
+          eventId: id,
+          now,
+        });
         return { handled: true, action: "topup", credits: pack.credits };
       }
       return { handled: false, reason: "unrecognised session" };
@@ -275,7 +330,17 @@ export const applyEvent = internalMutation({
       const periodEnd = seconds(line?.end) ?? addMonth(periodStart);
       // A renewal opens a fresh period on the same plan: the leftover expires
       // and the allowance is granted again.
-      await applyPlan(ctx, sub.userId, normalizePlanKey(sub.planKey), { now, periodStart, periodEnd, renewal: true });
+      const renewed = normalizePlanKey(sub.planKey);
+      await applyPlan(ctx, sub.userId, renewed, { now, periodStart, periodEnd, renewal: true });
+      await recordPayment(ctx, {
+        userId: sub.userId,
+        source: "renewal",
+        planKey: renewed,
+        amount: object.amount_paid,
+        currency: object.currency,
+        eventId: id,
+        now,
+      });
       return { handled: true, action: "renewed" };
     }
 

@@ -8,6 +8,7 @@ import { action, internalMutation, internalQuery, mutation, query } from "./_gen
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { createCheckoutSession, createPortalSession, stripeRequest } from "./stripe";
 import {
+  CENTS_PER_CREDIT,
   PLANS,
   REQUEST_COSTS,
   REQUEST_LABELS,
@@ -271,6 +272,30 @@ export const history = query({
       .order("desc")
       .take(HISTORY_LIMIT);
     return entries.map(({ userId: _owner, ...entry }) => entry);
+  },
+});
+
+// What has been taken in and how much of it is the providers' to spend, for
+// whoever runs the deployment: `npx convex run billing:funding`. Cash is never
+// answered to a browser, so this is an internal query and stays one.
+export const funding = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("payments").collect();
+    const total = rows.reduce(
+      (sum, row) => ({
+        paidCents: sum.paidCents + row.paidCents,
+        apiCents: sum.apiCents + row.apiCents,
+        forgeCents: sum.forgeCents + row.forgeCents,
+      }),
+      { paidCents: 0, apiCents: 0, forgeCents: 0 },
+    );
+    return {
+      payments: rows.length,
+      ...total,
+      // The same budget in the unit a member sees, at one cent a credit.
+      apiCredits: Math.floor(total.apiCents / CENTS_PER_CREDIT),
+    };
   },
 });
 
