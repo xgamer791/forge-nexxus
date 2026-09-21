@@ -304,14 +304,14 @@ describe("a brand new build, start to finish", () => {
     expect(providers.chatCalls().at(-1)!.body.model).toBe("forge-test");
   });
 
-  test("the deployment's own settings put text on Gemini 3.8 Flash and pictures on Nano Banana 2 Lite", async () => {
+  test("the deployment's own settings put text on DeepSeek v4.1 Flash and pictures on Nano Banana 2 Lite", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const providers = stubProviders(() => built("Harbor Roasters"));
     // Exactly what CLAUDE.md records for polished-ram-883. AI_BUILD_MODEL is
     // unset there, so a build inherits the chat model rather than differing.
-    process.env.AI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
-    process.env.AI_MODEL = "gemini-3.8-flash";
+    process.env.AI_BASE_URL = "https://api.deepseek.com/v1";
+    process.env.AI_MODEL = "deepseek-flash";
     process.env.AI_IMAGE_MODEL = "gemini-3.1-flash-lite-image";
     delete process.env.AI_BUILD_MODEL;
 
@@ -319,12 +319,12 @@ describe("a brand new build, start to finish", () => {
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    // The words: every chat and build turn on the OpenAI-compatible path.
+    // The words: every chat and build turn on DeepSeek's OpenAI-compatible path.
     const chat = providers.chatCalls();
     expect(chat.length).toBeGreaterThan(0);
     for (const call of chat) {
-      expect(call.url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
-      expect(call.body.model).toBe("gemini-3.8-flash");
+      expect(call.url).toBe("https://api.deepseek.com/v1/chat/completions");
+      expect(call.body.model).toBe("deepseek-flash");
     }
 
     // The pictures: their own native route, their own model, never the chat one.
@@ -343,7 +343,7 @@ describe("a brand new build, start to finish", () => {
       .flatMap((call) => call.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content))
       .find((c: string) => /IDENTITY/.test(c))!;
     expect(identity).toBeDefined();
-    expect(identity).toContain("this turn runs on Gemini 3.8 Flash");
+    expect(identity).toContain("this turn runs on DeepSeek v4.1 Flash");
     expect(identity).toContain("made by Gemini Nano Banana 2 Lite");
 
     // The build landed.
