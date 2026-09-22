@@ -169,8 +169,7 @@ const ENABLED = true;
       ${q.id === 'content' ? '<label class="onboarding-upload"><svg aria-hidden="true"><use href="#clip"/></svg><span>Add files</span><input type="file" data-onboarding-files multiple accept="image/png,image/jpeg,image/webp,.txt,.md"></label><p class="onboarding-file-hint">Up to 8 images or text files. Images under 5 MB; text under 100 KB.</p><ul class="onboarding-assets" data-onboarding-assets></ul>' : ''}
       <p class="onboarding-error" role="alert" hidden></p>
       <footer class="onboarding-actions"><button type="button" class="onboarding-quiet" data-onboarding-action="back" ${step === 0 ? 'hidden' : ''}>Back</button><div>${!q.required && step !== lastStep() ? `<button type="button" class="onboarding-quiet" data-onboarding-action="skip">${step === 7 ? 'You decide' : 'Skip'}</button>` : ''}<button type="submit" class="onboarding-primary">${step === lastStep() ? (state.isFree ? 'Choose a plan' : 'Build my website') : 'Continue'}</button></div></footer>
-      ${!state.required ? '<button class="onboarding-exit onboarding-quiet" type="button" data-onboarding-action="exit">Back to dashboard</button>' : ''}
-    </form>`);
+    </form>`) + (state.required ? '' : '<button class="onboarding-exit onboarding-quiet onboarding-dock" type="button" data-onboarding-action="exit">Back to dashboard</button>');
     renderAssets();
   }
   function builtSite() {

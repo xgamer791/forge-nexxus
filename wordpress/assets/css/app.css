@@ -463,6 +463,9 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .onboarding-quiet{font-size:14px;line-height:22px;color:var(--muted);min-height:44px;padding:8px 0}
 .site-onboarding button:disabled{opacity:.45;cursor:wait}
 .onboarding-exit{display:block;margin:20px auto 0;text-align:center}
+.onboarding-exit.onboarding-dock{flex-shrink:0;width:100%;max-width:640px;margin:0 auto;padding:4px 0 max(20px,calc(env(safe-area-inset-bottom) + 12px));text-align:center}
+.site-onboarding:has(.onboarding-dock){overflow:hidden}
+.site-onboarding:has(.onboarding-dock) .onboarding-body{min-height:0;overflow:auto}
 .onboarding-cancel{margin-top:8px;min-width:44px}
 .onboarding-error{font-size:15px;line-height:22px;margin:18px 0 0;color:var(--danger)}
 .onboarding-upload{display:inline-flex;gap:8px;align-items:center;position:relative;margin-top:20px;border:1px solid var(--border);border-radius:22px;min-height:44px;padding:9px 16px;cursor:pointer;font-size:15px;background:var(--surface)}
@@ -514,6 +517,7 @@ a.onboarding-primary:focus-visible{outline:2px solid var(--focus);outline-offset
   .onboarding-cancel{margin-top:12px}
   .onboarding-live-link{font-size:22px;line-height:30px}
   .onboarding-actions{margin-top:32px}
+  .onboarding-exit.onboarding-dock{padding-bottom:max(28px,calc(env(safe-area-inset-bottom) + 16px))}
   .onboarding-field input,.onboarding-field textarea{padding:24px}
   /* A wider column for the thread and the composer. Everything that docks to
      the shell — composer, sheets, drawer, overlays — follows it. */
