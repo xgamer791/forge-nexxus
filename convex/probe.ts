@@ -228,7 +228,8 @@ export const models = internalAction({
 });
 
 // One small streamed call through the very reader a build uses, for whoever
-// runs the deployment: `npx convex run probe:stream`. `probe:chat` says what a
+// runs the deployment: `npx convex run probe:stream` (add `'{"purpose":"build"}'`
+// or `strategy` to read that route). `probe:chat` says what a
 // whole reply carries; this says how a reply moves on this route -- when the
 // first token came, how much was thinking and how much was answer, how the
 // stream ended -- and, when it stopped, why. The log it returns is the one a
@@ -236,13 +237,16 @@ export const models = internalAction({
 // the key, never the text.
 type StreamNote = { phase: string; label: string; detail?: Record<string, unknown> };
 export const stream = internalAction({
-  args: {},
-  handler: async (): Promise<{ ok: boolean; durationMs: number; replyChars?: number; error?: string; log: StreamNote[] }> => {
+  // Which route to read, as `probe:chat` takes it: planning and the build can
+  // run on a provider of their own, and a build is always read as a stream,
+  // so a stream is the test that says whether a build will get through.
+  args: { purpose: v.optional(v.union(v.literal("chat"), v.literal("build"), v.literal("strategy"))) },
+  handler: async (_ctx, { purpose }): Promise<{ ok: boolean; durationMs: number; replyChars?: number; error?: string; log: StreamNote[] }> => {
     const log: StreamNote[] = [];
     const trace = { note: async (note: StreamNote) => { log.push({ phase: note.phase, label: note.label, detail: note.detail }); } };
     const started = Date.now();
     try {
-      const reply = await callProvider([{ role: "user", content: "In one short sentence, say what a bakery website needs most." }], 4000, 120000, trace, "chat");
+      const reply = await callProvider([{ role: "user", content: "In one short sentence, say what a bakery website needs most." }], 4000, 120000, trace, purpose ?? "chat");
       return { ok: true, durationMs: Date.now() - started, replyChars: reply.length, log };
     } catch (error) {
       return { ok: false, durationMs: Date.now() - started, error: scrub(error), log };
