@@ -34,33 +34,47 @@ type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 // `AI_BASE_URL`, `AI_MODEL`, `AI_BUILD_MODEL` and `AI_API_KEY` name the real
 // route, and any provider that speaks the OpenAI chat shape serves it. These
 // are only the fallbacks, so an unset variable lands on the model this
-// deployment actually runs rather than nowhere. `AI_REASONING_EFFORT` is sent
-// as `reasoning_effort` on every chat and build call; unset, it is high.
-// Pictures have a route of their own in `images.ts`, and text never goes to it.
-const CHAT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
-const CHAT_MODEL = "gemini-3.8-flash";
-const CHAT_MODEL_LABEL = "Gemini 3.8 Flash";
-// Gemini 3.8 Flash's OpenAI-compat thinking levels. `high` is the default
-// this deployment wants. `minimal` and `none` error on this model, so an
-// unknown or empty `AI_REASONING_EFFORT` lands on high rather than being sent.
+// deployment actually runs rather than nowhere. Pictures have a route of their
+// own in `images.ts`, and text never goes to it.
+const CHAT_BASE_URL = "https://api.deepseek.com/v1";
+const CHAT_MODEL = "deepseek-flash";
+const CHAT_MODEL_LABEL = "DeepSeek v4.1 Flash";
+const GEMINI_CHAT_HOST = "generativelanguage.googleapis.com";
+
+export function isGeminiChatHost(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).host === GEMINI_CHAT_HOST;
+  } catch {
+    return false;
+  }
+}
+
+// Gemini's OpenAI-compat thinking control. Only a Gemini chat host gets this
+// field: DeepSeek (the default) and every other provider omit it, even when
+// `AI_REASONING_EFFORT` is set, because a forced high-effort field breaks
+// those requests. On Gemini, unset lands on high; `low` / `medium` / `high`
+// are accepted; unknown values are not sent as themselves (`minimal` and
+// `none` error on Gemini 3.8 Flash).
 export type ReasoningEffort = "low" | "medium" | "high";
 const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
 
-export function reasoningEffort(): ReasoningEffort {
+export function reasoningEffort(baseUrl: string): ReasoningEffort | undefined {
+  if (!isGeminiChatHost(baseUrl)) return undefined;
   const wanted = process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "";
   return wanted === "low" || wanted === "medium" || wanted === "high" ? wanted : DEFAULT_REASONING_EFFORT;
 }
 
 // The OpenAI-shaped body every chat and build call sends — `complete`, the
 // probe, and anything else that shares this route, memory included. Pictures
-// never go through here.
-export function completionBody(route: { model: string }, messages: ChatMessage[], maxTokens: number) {
+// never go through here. `reasoning_effort` is present only for Gemini.
+export function completionBody(route: { model: string; baseUrl?: string }, messages: ChatMessage[], maxTokens: number) {
+  const effort = reasoningEffort(route.baseUrl ?? "");
   return {
     model: route.model,
     messages,
     temperature: 0.7,
     max_tokens: maxTokens,
-    reasoning_effort: reasoningEffort(),
+    ...(effort ? { reasoning_effort: effort } : {}),
   };
 }
 
@@ -117,10 +131,9 @@ export const routing = internalQuery({
     const chat = chatRoute();
     const build = chatRoute("build");
     const image = imageRoute();
-    const effort = reasoningEffort();
     return {
-      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: effort },
-      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: effort },
+      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl) ?? null },
+      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: reasoningEffort(build.baseUrl) ?? null },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
