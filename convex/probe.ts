@@ -112,9 +112,32 @@ function hostOf(baseUrl: string) {
 //
 // It returns headers and a verdict, never a page: the page is the member's,
 // and its bytes say nothing a header does not.
+// Named, because this action asks the deployment about itself: without a
+// return type of its own, typing it means typing `internal`, which means
+// typing this action, and TypeScript gives up on the whole API rather than
+// go round again.
+type SiteProbe = {
+  slug: string;
+  error?: string;
+  address?: string;
+  origin?: string | null;
+  durationMs?: number;
+  unreachable?: string;
+  httpStatus?: number;
+  chars?: number;
+  viaSitesRouter?: boolean;
+  cacheControl?: string | null;
+  age?: string | null;
+  via?: string | null;
+  varnish?: string | null;
+  server?: string | null;
+  shows?: string;
+  deploymentShows?: string;
+};
+
 export const site = internalAction({
   args: { slug: v.string(), path: v.optional(v.string()) },
-  handler: async (ctx, { slug, path }) => {
+  handler: async (ctx, { slug, path }): Promise<SiteProbe> => {
     const where: { url: string | null; origin: string | null } = await ctx.runQuery(
       internal.sites.addressForSlug,
       { slug },

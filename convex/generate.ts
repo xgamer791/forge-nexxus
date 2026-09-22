@@ -11,7 +11,7 @@ import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
 import { memoryEnabled, memoryNote } from "./memory";
-import { hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
+import { composePage, hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
@@ -33,6 +33,34 @@ const BUILD_MAX_TOKENS = 96000;
 // Where a second go lands when the first came back as thinking and no answer,
 // unless the provider has already named a cap below it.
 const ROOM_TO_ANSWER = 64000;
+
+// ——— TEMPORARY: one page only ——————————————————————————————————————
+// A site in pages is only worth as much as the address it is served at, and
+// `<slug>.sites.forgenexxus.com` has no wildcard certificate yet: a visitor
+// who follows the nav to /about meets a warning rather than a page. Until
+// that is installed, a build is one page — whole, self-contained, and
+// reachable everywhere the site is reachable at all.
+//
+// One switch, three places read it (grep `one-page block`): the contract the
+// agent is given, the note that outranks FORGE_MD's page-per-link rule, and
+// the trim that cuts a reply down if it returns pages anyway.
+//
+// To lift it: `npx convex env set SITE_PAGE_LIMIT 0`, which needs no deploy.
+// To remove it: delete this constant and the three blocks that name it.
+export function pageLimit() {
+  const wanted = Number(process.env.SITE_PAGE_LIMIT);
+  return Number.isFinite(wanted) && wanted >= 0 ? wanted : 1;
+}
+
+// What the agent is told to build while the limit is one page. It replaces the
+// shell-and-pages contract rather than arguing with it: one document, one
+// block, the form every build took before pages existed and which this
+// deployment still stores and serves unchanged.
+const ONE_PAGE_CONTRACT = `- A site is one page: one complete HTML document — <!doctype html> … </html>, with a lang, a <title>, a meta description, a meta viewport, and all CSS in one <style> block in the <head>.
+- Everything the site has to say lives on that page, as sections in a considered order, with the nav linking down to them by in-page anchor (#menu, #about, #contact). Do not link to another page of this site, and do not invent paths like /about: there is only this page.`;
+
+const ONE_PAGE_NOTE = `ONE PAGE — this deployment is serving one-page sites at the moment, and that outranks any rule you have been given about a site being made of several pages. Where the standing rules say a link into the site gets a page of its own, it gets a section of this page and an in-page anchor instead. Return exactly one page. Everything else about how you build and design it is unchanged.`;
+// ——— end one-page block ————————————————————————————————————————————
 // What to drop to when a provider refuses the length without naming its cap.
 const SAFE_MAX_TOKENS = 8192;
 const REASON_LIMIT = 300;
@@ -187,6 +215,8 @@ export const promptCheck = internalQuery({
 });
 
 function systemPrompt(imageLimit: number, purpose: "chat" | "build") {
+  // one-page block: which contract this turn is given.
+  const onePage = pageLimit() === 1;
   const pictures = imageRoute().apiKey
     ? `IMAGES — pictures are made for you by an image model after you reply.
 - Ask for one with an img whose src is forge-image: followed by a number, describing the picture in data-forge-image, like this: <img src="forge-image:1" data-forge-image="Morning light across the counter of a small neighbourhood bakery, sourdough loaves in the foreground, warm and unposed, editorial photograph" data-forge-aspect="16:9" alt="Sourdough loaves on the counter" width="1600" height="900">
@@ -200,15 +230,17 @@ You give one of two kinds of reply, and what the user asked for decides which.
 
 BUILD — when they describe a site to make, or ask for a change to it.
 What this platform can serve, which is not a matter of taste:
-- A site is one shell and one or more pages. The shell is a complete document — <!doctype html> … </html>, with a lang, a <title>, a meta description, a meta viewport, all CSS in one <style> block in the <head>, and whatever every page shares, like the nav and footer — holding the comment <!--forge-page--> exactly where a page's own markup goes. A page is only that markup, with no html, head or body of its own. Each page is served at its path with the shell around it.
-- Every page has a path: the home page is / and the others are short lowercase paths like /about. A link between pages is its path; a link within a page is an in-page anchor. Link only to pages you return.
+${onePage ? ONE_PAGE_CONTRACT : `- A site is one shell and one or more pages. The shell is a complete document — <!doctype html> … </html>, with a lang, a <title>, a meta description, a meta viewport, all CSS in one <style> block in the <head>, and whatever every page shares, like the nav and footer — holding the comment <!--forge-page--> exactly where a page's own markup goes. A page is only that markup, with no html, head or body of its own. Each page is served at its path with the shell around it.
+- Every page has a path: the home page is / and the others are short lowercase paths like /about. A link between pages is its path; a link within a page is an in-page anchor. Link only to pages you return.`}
 - No JavaScript runs on a published site — the server sends a policy that blocks it — so no scripts and no frameworks. Build in HTML and CSS alone, including anything interactive: a menu, a disclosure or a tab set has to work through CSS, or not be there. A form is static markup.
 - Because nothing is wired up behind the page, let every action lead somewhere true: an in-page anchor, or an external store, booking or contact link the brief supplies. Never render a cart, a checkout, a payment form, a signed-in account or a confirmed order as though it worked, and never invent a price, a stock count, a delivery promise, a review or a customer.
 - Google Fonts and Fontshare are the only external stylesheets this policy allows.
 
 ${pictures}
 
-Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change.
+${onePage
+  ? "Reply with one sentence saying what you built or changed, then the page in a single \`\`\`html block, and nothing after. The document must end with </html> inside that block or the build is rejected. When the user asks for a change, apply it to the current page and return the whole updated page, keeping everything they did not ask to change."
+  : "Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path=\"/about\" title=\"About\" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change."}
 
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
@@ -596,6 +628,10 @@ function buildMessages(
     { role: "system", content: FED },
     { role: "system", content: systemPrompt(imageLimit, purpose) },
   ];
+  // one-page block: FORGE_MD says every link into a site is its own page, and
+  // while the limit is one page it is not. This says so after it, where a
+  // later system message is the one that stands.
+  if (pageLimit() === 1) messages.push({ role: "system", content: ONE_PAGE_NOTE });
   if (memory) messages.push({ role: "system", content: memory });
   // The site as the model last wrote it, in the same blocks it is asked to
   // return, so an edit is a change to what is there and not a fresh build.
@@ -916,7 +952,26 @@ export type ParsedReply = { html: string | null; shell?: string; pages?: SitePag
 
 // What a reply built, or null when it answered instead of building.
 export function builtSite(parsed: ParsedReply): BuiltSite | null {
-  if (parsed.shell && parsed.pages?.length) return { shell: parsed.shell, pages: parsed.pages };
+  if (parsed.shell && parsed.pages?.length) {
+    const site = { shell: parsed.shell, pages: parsed.pages };
+    // one-page block: a reply that returned pages anyway is cut down rather
+    // than refused. At a limit of one the page is stored as a single
+    // document, which is the form a site took before pages existed -- and a
+    // document answers at every address on its site, so a nav link the model
+    // left pointing at /about lands on the page itself rather than on
+    // nothing. A larger limit keeps the home page and the first few others.
+    const limit = pageLimit();
+    if (limit && site.pages.length > limit) {
+      if (limit === 1) {
+        const home = composePage(site, "/");
+        return home ? { html: home } : null;
+      }
+      const home = site.pages.filter((page) => page.path === "/");
+      const rest = site.pages.filter((page) => page.path !== "/");
+      return { shell: site.shell, pages: [...home, ...rest].slice(0, limit) };
+    }
+    return site;
+  }
   return parsed.html ? { html: parsed.html } : null;
 }
 
