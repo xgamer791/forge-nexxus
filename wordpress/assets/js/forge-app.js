@@ -2034,7 +2034,11 @@ if (forge?.sites && previewScreen) {
   // it, and the way back is the one thing left on top.
   openPreview = () => {
     if (!window.ForgeOnboarding?.canPreview()) return;
-    if (!previewScreen.hidden) { closeMenu(); return; }
+    // What says the preview is on screen is the class the open puts there, not
+    // `hidden` alone: an overlay left un-hidden by a close that did not finish
+    // is invisible but would swallow every press as a close, and the eye would
+    // look dead. Only a preview that is really showing toggles shut.
+    if (!previewScreen.hidden && previewScreen.classList.contains('is-open')) { closeMenu(); return; }
     closePopovers();
     if (!activeSite?.currentVersionId) return;
     showOverlay(previewScreen);
