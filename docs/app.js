@@ -36,7 +36,12 @@ function interactionInProgress() {
     '.sheet.is-open,.navigation.is-open,.appearance.is-open,.overlay.is-open,.theme-menu:not([hidden]),.font-menu:not([hidden])',
   );
   const active = document.activeElement;
-  return Boolean(surface || active?.matches('input,textarea,select,[contenteditable="true"]'));
+  // A build in progress is the member waiting on something, and so is website
+  // setup. Reloading under either put them back at the front door while their
+  // session was confirmed again, mid-build, every time a release landed. The
+  // update waits for the build to finish.
+  const working = document.querySelector('#site-onboarding:not([hidden]),.message-pending');
+  return Boolean(surface || working || active?.matches('input,textarea,select,[contenteditable="true"]'));
 }
 async function checkRelease() {
   if (!loadedVersion || loadedVersion === 'development' || checkingRelease || document.hidden) return;

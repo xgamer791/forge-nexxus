@@ -31,6 +31,9 @@
       <video class="auth-hero-video" muted playsinline preload="auto" tabindex="-1" disablepictureinpicture data-hero-loop>${source}</video>
     </div>`;
   };
+  // The film held on its poster, for a state that lasts a moment: no video to
+  // fetch or play for a member who is only being let back in.
+  const heroStill = () => '<div class="auth-hero-film" aria-hidden="true"></div>';
   const heroRotator = () => `<div class="auth-message-rotator" data-hero-messages aria-hidden="true">${
     heroMessages.map((line, index) => `<p class="hero-message${index === 0 ? ' is-active' : ''}">${escapeHtml(line)}</p>`).join('')
   }</div><ul class="visually-hidden">${
@@ -166,6 +169,17 @@
     void playMessages();
   }
 
+  // A saved session is confirmed in a moment on a live connection. Without
+  // one it waits, and says what it is waiting for.
+  function restoringLine() {
+    return navigator.onLine ? 'Signing you back in…' : 'You\u2019re offline. Forge will sign you back in when you reconnect.';
+  }
+  function repaintRestoring() {
+    const line = gate.querySelector('[data-restoring-line]');
+    if (line) line.textContent = restoringLine();
+  }
+  window.addEventListener('online', repaintRestoring);
+  window.addEventListener('offline', repaintRestoring);
   function status(message, error = false) {
     const element = gate.querySelector('.auth-message');
     element.textContent = message;
@@ -176,8 +190,13 @@
     stopHero();
     stopHero = () => {};
     // The handoff wears the welcome layout: it is the same front door, mid-step.
-    gate.className = next === 'handoff' ? 'auth-gate auth-welcome auth-handoff' : `auth-gate auth-${next}`;
+    // So does restoring, which is a member who is already signed in being let
+    // back in after a reload -- not the front door at all, so no buttons.
+    gate.className = next === 'handoff' ? 'auth-gate auth-welcome auth-handoff'
+      : next === 'restoring' ? 'auth-gate auth-welcome auth-handoff auth-restoring'
+      : `auth-gate auth-${next}`;
     const message = '<p class="auth-message" role="status" aria-live="polite" hidden></p>';
+    if (next === 'restoring') gate.innerHTML = `${heroStill()}<div class="auth-hero"><h1 class="visually-hidden">Forge Nexxus</h1></div><div class="auth-welcome-sheet"><p class="auth-signing" role="status" aria-live="polite"><span class="auth-spinner" aria-hidden="true"></span><span data-restoring-line>${restoringLine()}</span></p>${message}</div>`;
     if (next === 'handoff') gate.innerHTML = `${heroFilm()}<div class="auth-hero"><h1 class="visually-hidden">Forge Nexxus</h1></div><div class="auth-welcome-sheet"><p class="auth-signing" role="status" aria-live="polite"><span class="auth-spinner" aria-hidden="true"></span>Finishing sign-in…</p><p class="auth-fineprint">Keep this page open — this only takes a moment.</p>${message}</div>`;
     if (next === 'welcome') gate.innerHTML = `${heroFilm()}<div class="auth-hero"><h1 class="visually-hidden">Forge Nexxus</h1>${heroRotator()}</div><div class="auth-welcome-sheet">${provider('apple')}${provider('google')}<button class="auth-button" type="button" data-auth-screen="email">Continue with email</button><p class="auth-switch">Already have an account? <button type="button" data-auth-screen="email">Sign in</button></p><p class="auth-fineprint">Every plan comes with monthly credits.</p>${message}</div>`;
     if (next === 'email') gate.innerHTML = `<div class="auth-login-content">${back('welcome')}<h1>Sign in to build</h1><p class="auth-intro">Enter your email and we'll send you a sign-in link. New here? The link creates your account — there's no password to remember.</p><form class="auth-email-form">${field('email', 'Email address', 'you@example.com', 'email')}<button class="auth-button auth-primary">Send sign-in link</button></form><div class="auth-or">OR</div><div class="auth-social">${provider('google')}${provider('apple')}</div>${message}<p class="auth-switch">Your sites, credits and settings follow your account on every device.</p></div>`;
@@ -203,7 +222,11 @@
   // that sent us home with nothing has already been worked out by then, and
   // says so here -- no listener is subscribed yet when that is decided.
   const arrival = data?.auth.handoff() ?? { pending: null, error: null };
-  render(arrival.pending ? 'handoff' : 'welcome');
+  // A member whose session is saved on this device is not arriving at the front
+  // door: the server confirms the session in a moment. Painting the sign-in
+  // buttons meanwhile read as having been signed out, on every reload.
+  const returning = !arrival.pending && !arrival.error && data?.auth.state().kind === 'member';
+  render(arrival.pending ? 'handoff' : returning ? 'restoring' : 'welcome');
   if (arrival.error) status(arrival.error, true);
   gate.addEventListener('click', async event => {
     const target = event.composedPath().find(node => node instanceof HTMLButtonElement);
@@ -242,7 +265,7 @@
     dashboard.hidden = true;
     dashboard.inert = true;
     gate.hidden = false;
-    if (!gate.classList.contains('auth-welcome') && !gate.classList.contains('auth-email') && !gate.classList.contains('auth-handoff')) {
+    if (gate.classList.contains('auth-restoring') || (!gate.classList.contains('auth-welcome') && !gate.classList.contains('auth-email') && !gate.classList.contains('auth-handoff'))) {
       render('welcome');
     }
   }
@@ -254,6 +277,9 @@
     if (user === null && confirmed && data.auth.state().kind === 'member') return;
     const member = Boolean(user && !user.isAnonymous);
     confirmed = member;
+    // Restoring waits for an answer. A guest row is one: this device's saved
+    // session was not a member's after all, so the front door opens.
+    if (!member && user && gate.classList.contains('auth-restoring')) render('welcome');
     // A confirmed account still waits for the authoritative website/plan
     // gate. Do not briefly flash the dashboard during sign-in or a reload.
     window.ForgeOnboarding?.setMember(member ? user : null);

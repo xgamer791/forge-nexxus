@@ -240,6 +240,61 @@ describe("token lifecycle", () => {
     expect(client.setAuth).toHaveBeenCalledTimes(2);
   });
 
+  // A token the way Convex Auth issues one, expiring `seconds` from now.
+  const jwt = (seconds) =>
+    `h.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + seconds })).toString("base64url")}.s`;
+  const member = (seconds) => memoryStorage({
+    "forge-auth-token": jwt(seconds),
+    "forge-auth-refresh": "member-refresh",
+    "forge-auth-kind": "member",
+  });
+
+  // Every refresh rotates the refresh token, and a page that comes back two
+  // rotations behind is one Convex Auth ends the session for. Coming back to
+  // the app used to rotate it twice on every glance.
+  test("coming back to the app leaves a session the live client holds alone", async () => {
+    const { client, http, data } = harness({ storage: member(3600) });
+    await data.ready;
+    const [, onStatus] = client.setAuth.mock.calls[0];
+    onStatus(true);
+    await data.auth.resume();
+    await data.auth.resume();
+    expect(http.calls.filter((call) => call.args.refreshToken)).toEqual([]);
+    expect(client.setAuth).toHaveBeenCalledTimes(1);
+    expect(data.auth.state()).toEqual({ signedIn: true, kind: "member" });
+  });
+
+  test("coming back refreshes a session whose token is about to run out", async () => {
+    const { client, http, data } = harness({ storage: member(60) });
+    await data.ready;
+    const [, onStatus] = client.setAuth.mock.calls[0];
+    onStatus(true);
+    await data.auth.resume();
+    expect(http.calls.filter((call) => call.args.refreshToken)).toHaveLength(1);
+    expect(client.setAuth).toHaveBeenCalledTimes(2);
+  });
+
+  test("coming back refreshes a session the live client has not signed in with", async () => {
+    const { client, http, data } = harness({ storage: member(3600) });
+    await data.ready;
+    await data.auth.resume();
+    expect(http.calls.filter((call) => call.args.refreshToken)).toHaveLength(1);
+    expect(client.setAuth).toHaveBeenCalledTimes(2);
+  });
+
+  test("a refresh presents the newest saved refresh token, even one another tab wrote", async () => {
+    const storage = member(3600);
+    const { client, http, data } = harness({ storage });
+    await data.ready;
+    // Another tab of the app rotated the shared session in the meantime.
+    storage.setItem("forge-auth-refresh", "other-tab-refresh");
+    storage.setItem("forge-auth-token", "other-tab-token");
+    const [fetchToken] = client.setAuth.mock.calls[0];
+    expect(await fetchToken({ forceRefreshToken: true })).toBe("refreshed-token");
+    expect(http.calls.at(-1).args).toEqual({ refreshToken: "other-tab-refresh" });
+    expect(storage.getItem("forge-auth-refresh")).toBe("refreshed-refresh");
+  });
+
   test("signing out does not wait on the deployment to let the session go", async () => {
     let stall;
     const { data, http } = harness({

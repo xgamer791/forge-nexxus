@@ -4,6 +4,9 @@ const KIND_KEY = "forge-auth-kind";
 const VERIFIER_KEY = "forge-auth-verifier";
 const PENDING_KEY = "forge-auth-pending";
 const GUEST_RETRY_MS = [1000, 2000, 4000, 8000, 16000];
+// A token with less than this left is refreshed when the app comes back into
+// view; one with more is left for the live client's own scheduled refresh.
+const RESUME_MARGIN_MS = 5 * 60 * 1000;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -68,6 +71,8 @@ export function createForgeData({
   let retryAttempt = 0;
   let sessionVersion = 0;
   let signingOut = false;
+  // Whether the live client's socket is signed in right now, as it last said.
+  let liveAuthenticated = false;
   const listeners = new Set();
   const accountListeners = new Set();
   const handoffListeners = new Set();
@@ -107,9 +112,22 @@ export function createForgeData({
   // token, so reach through to it, and fall back to a fetcher that resolves to
   // null, which is the only other way to say the same thing.
   function clearClientAuth() {
+    liveAuthenticated = false;
     if (typeof client.clearAuth === "function") client.clearAuth();
     else if (typeof client.client?.clearAuth === "function") client.client.clearAuth();
     else client.setAuth(async () => null);
+  }
+
+  // How long a session token has left, read from its own expiry. A token this
+  // cannot read is treated as spent, which only ever costs a refresh.
+  function tokenLifeMs(value) {
+    try {
+      const payload = value.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const exp = Number(JSON.parse(atob(payload)).exp);
+      return Number.isFinite(exp) ? exp * 1000 - Date.now() : 0;
+    } catch {
+      return 0;
+    }
   }
 
   function state() {
@@ -175,6 +193,7 @@ export function createForgeData({
     write(REFRESH_KEY, refreshToken);
     write(KIND_KEY, token === null ? null : kind);
     if (reconnect) {
+      liveAuthenticated = false;
       if (token === null) clearClientAuth();
       else client.setAuth(fetchToken, onAuthStatus);
     }
@@ -183,8 +202,18 @@ export function createForgeData({
 
   async function fetchToken({ forceRefreshToken }) {
     if (!forceRefreshToken && token !== null) return token;
-    if (refreshToken === null) return null;
     if (refreshing) return refreshing;
+    // Another tab of this app shares the saved session and rotates it too. A
+    // refresh token each rotation has left behind is, to Convex Auth, one
+    // being replayed -- more than one step behind and it ends the session --
+    // so the one presented is always the newest saved, not the one this page
+    // happened to read when it loaded.
+    const saved = read(REFRESH_KEY);
+    if (saved !== null && saved !== refreshToken) {
+      refreshToken = saved;
+      token = read(TOKEN_KEY) ?? token;
+    }
+    if (refreshToken === null) return null;
     const version = sessionVersion;
     const pending = authCall({ refreshToken }, { withToken: false })
       .then(({ tokens }) => {
@@ -219,8 +248,17 @@ export function createForgeData({
     }, pause);
   }
 
+  // Coming back to the app. A session the live client is still signed in
+  // with, on a token with life left in it, is left exactly as it is. Forcing a
+  // refresh here rotated the refresh token twice on every glance at the app --
+  // once here and once more when the live client re-confirmed the token -- and
+  // a phone that suspended the page between the two came back two rotations
+  // behind, which Convex Auth takes for a replayed token and ends the session
+  // over. Only a session that has lost its sign-in, or whose token is about to
+  // run out, is refreshed.
   async function resume() {
     if (signingOut || refreshToken === null) return;
+    if (liveAuthenticated && token !== null && tokenLifeMs(token) > RESUME_MARGIN_MS) return;
     if (restoring) return restoring;
     clearTimeout(retryTimer);
     retryTimer = null;
@@ -228,7 +266,10 @@ export function createForgeData({
     const pending = (async () => {
       const refreshed = await fetchToken({ forceRefreshToken: true });
       if (version !== sessionVersion || signingOut) return;
-      if (refreshed !== null) client.setAuth(fetchToken, onAuthStatus);
+      if (refreshed !== null) {
+        liveAuthenticated = false;
+        client.setAuth(fetchToken, onAuthStatus);
+      }
     })().finally(() => {
       if (restoring === pending) restoring = null;
     });
@@ -237,6 +278,7 @@ export function createForgeData({
   }
 
   function onAuthStatus(isAuthenticated) {
+    liveAuthenticated = isAuthenticated;
     if (isAuthenticated || signingOut) return;
     if (refreshToken !== null) {
       scheduleRestore();

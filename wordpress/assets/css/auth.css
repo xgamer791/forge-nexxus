@@ -11,6 +11,8 @@
 .auth-hero-video{position:absolute;inset:0;width:100%;height:100%;max-width:none;object-fit:cover;object-position:center;opacity:0}
 .auth-hero-video.is-active{opacity:1}
 .auth-hero-film::after{content:"";position:absolute;inset:0;background:var(--hero-overlay);pointer-events:none}
+/* Restoring holds the film on its poster: a member being let back in waits a moment, not a scene. */
+.auth-restoring .auth-hero-film{background-size:cover;background-position:center;background-repeat:no-repeat}
 .auth-hero{flex:1;position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:0;padding:max(60px,env(safe-area-inset-top)) 16px 20px;text-align:center}
 .auth-hero p:not(.hero-message){margin:0;max-width:320px;color:#fff;font-size:17px;line-height:23px}
 .auth-message-rotator{position:relative;width:100%;max-width:100%;height:clamp(210px,36svh,300px);overflow:hidden;color:#fff;pointer-events:none;margin-inline:auto;margin-bottom:18px}
