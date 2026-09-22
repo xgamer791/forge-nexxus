@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { auth } from "./auth";
+import { rewriteRootLinks } from "./pages";
 import { webhook } from "./stripe";
 
 const http = httpRouter();
@@ -72,7 +73,15 @@ http.route({
     const cut = rest.indexOf("/");
     const slug = cut === -1 ? rest : rest.slice(0, cut);
     const path = cut === -1 ? "/" : rest.slice(cut);
-    return page(slug ? await ctx.runQuery(internal.sites.publishedHtml, { slug, path }) : null);
+    const html = slug ? await ctx.runQuery(internal.sites.publishedHtml, { slug, path }) : null;
+    // A page links to its other pages by path, which is right on the site's own
+    // host. A browser reading the site here instead, under /sites/<slug>, would
+    // follow `/about` to this deployment's root and find nothing, so the links
+    // are pointed under the slug for it. The sites router fetches from here too,
+    // to serve the branded host, and names itself so its copy is left alone: a
+    // link rewritten for it would break on the very host it is for.
+    const proxied = (request.headers.get("user-agent") ?? "").startsWith("ForgeNexxus-SitesRouter");
+    return page(html !== null && !proxied ? rewriteRootLinks(html, (to) => `/sites/${slug}${to === "/" ? "/" : to}`) : html);
   }),
 });
 

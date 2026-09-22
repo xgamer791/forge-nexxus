@@ -1121,14 +1121,25 @@ function fetchSiteHtml(site, callback) {
   });
   if (answered) stop?.();
 }
-// The page as its address serves it, as a file: what a paid plan can take away.
-function saveSiteHtml(site, page) {
-  if (!page?.html) return;
-  const name = (site.slug || site.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'site') + '.html';
-  const url = URL.createObjectURL(new Blob([page.html], {type: 'text/html'}));
+// The site as files, asked for once: one per page, links between them already
+// made relative, or null when the plan does not include the code.
+function fetchSiteFiles(site, callback) {
+  forge.sites.exportPages(site._id).then(result => callback(result?.files ?? null)).catch(error => { reportError(error); callback(null); });
+}
+// The site as its address serves it, as files: what a paid plan can take away.
+// One page is one file, as it always was; several are a folder, zipped, that
+// opens from disk with its pages still linked to each other.
+function saveSiteCode(site, files) {
+  if (!files?.length) return;
+  const stem = site.slug || site.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'site';
+  const single = files.length === 1;
+  const blob = single
+    ? new Blob([files[0].html], {type: 'text/html'})
+    : new Blob([forge.zipFiles(files.map(file => ({ name: file.name, data: file.html })))], {type: 'application/zip'});
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = name;
+  anchor.download = `${stem}.${single ? 'html' : 'zip'}`;
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
@@ -1210,11 +1221,11 @@ if (forge?.sites && siteList && thread) {
         if (built && summary?.plan.codeDownload) {
           // Asked for as the menu opens, so the press that follows can save it
           // while the browser still counts it as the member's own doing.
-          let page = null;
-          fetchSiteHtml(site, next => { page = next; });
+          let files = null;
+          fetchSiteFiles(site, next => { files = next; });
           items.push(menuItem('Download code', () => {
-            if (page) saveSiteHtml(site, page);
-            else fetchSiteHtml(site, next => saveSiteHtml(site, next));
+            if (files) saveSiteCode(site, files);
+            else fetchSiteFiles(site, next => saveSiteCode(site, next));
           }));
         }
         if (built && summary?.plan.publicAddress) {
@@ -2056,18 +2067,11 @@ if (forge?.sites && previewScreen) {
       publishButton.disabled = false;
     }
   });
-  // The page as the preview shows it, as a file: what a paid plan can take away.
+  // The site as files: the same download the site menu offers.
   downloadButton.addEventListener('click', () => {
     if (!current || !activeSite) return;
-    const name = (activeSite.slug || activeSite.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'site') + '.html';
-    const url = URL.createObjectURL(new Blob([current.html], {type: 'text/html'}));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = name;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const site = activeSite;
+    fetchSiteFiles(site, files => saveSiteCode(site, files));
   });
   unpublishButton.addEventListener('click', async () => {
     if (!activeSite) return;

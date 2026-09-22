@@ -61,3 +61,5 @@ document.addEventListener("visibilitychange", resumeSession);
 
 export const { ready, auth, account, sites, messages, domains, billing, settings, memory, onboarding, diagnostics } = data;
 export { QUESTIONS as onboardingQuestions } from "../convex/onboardingQuestions.js";
+// The archive a site with several pages is downloaded as.
+export { zipFiles } from "./zip.js";

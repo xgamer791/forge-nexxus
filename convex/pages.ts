@@ -157,3 +157,41 @@ export function serializeSite(site: BuiltSite): string | null {
   }
   return site.html ? `\`\`\`html\n${site.html}\n\`\`\`` : null;
 }
+
+// Every root-relative link in a page -- `href="/about"`, `href="/"`, never a
+// protocol-relative `//host` -- rewritten by `target`, which is given the path
+// alone and returns what should stand in its place; a query or fragment on the
+// link is kept. A page's links between pages are written as paths because that
+// is what its address serves; anywhere else the page goes, they need translating.
+export function rewriteRootLinks(html: string, target: (path: string) => string) {
+  return html.replace(/(\bhref\s*=\s*)(["'])(\/(?!\/)[^"']*)\2/gi, (_, lead: string, quote: string, value: string) => {
+    const cut = value.search(/[?#]/);
+    const path = cut === -1 ? value : value.slice(0, cut);
+    const suffix = cut === -1 ? "" : value.slice(cut);
+    return `${lead}${quote}${target(path)}${suffix}${quote}`;
+  });
+}
+
+// The file a page becomes when the site is handed over as files: the home page
+// is `index.html`, `/about` is `about.html`, `/shop/shirts` is `shop/shirts.html`.
+export function fileNameFor(path: string) {
+  const clean = normalizePath(path) ?? "/";
+  return clean === "/" ? "index.html" : `${clean.slice(1)}.html`;
+}
+
+// The link from one of those files to another, relative to where the first one
+// sits, so the pages still find each other opened straight from a folder.
+export function relativeFileLink(from: string, to: string) {
+  const fromDirs = from.split("/").slice(0, -1);
+  const toParts = to.split("/");
+  let shared = 0;
+  while (shared < fromDirs.length && shared < toParts.length - 1 && fromDirs[shared] === toParts[shared]) shared += 1;
+  const up = "../".repeat(fromDirs.length - shared);
+  return `${up}${toParts.slice(shared).join("/")}`;
+}
+
+// A page's links, made to work from a folder on disk: each link to a page
+// points at that page's file, relative to this one.
+export function diskLinks(html: string, fromFile: string) {
+  return rewriteRootLinks(html, (path) => relativeFileLink(fromFile, fileNameFor(path)));
+}

@@ -403,6 +403,9 @@ export function createForgeData({
         client.action(api.generate.run, { conversationId, prompt }),
       currentHtml: (siteId, callback) =>
         client.onUpdate(api.sites.currentHtml, { siteId }, callback),
+      // The site as files to take away, or null when the plan does not include
+      // the code. One file per page, links between them made relative.
+      exportPages: (siteId) => client.query(api.sites.exportPages, { siteId }),
       publish: (id) => client.mutation(api.sites.publish, { id }),
       unpublish: (id) => client.mutation(api.sites.unpublish, { id }),
       // The address a site answers on. The domain it sits under is the

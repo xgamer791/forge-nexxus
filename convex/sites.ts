@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { requireMemberId, requireOwnedSite } from "./access";
 import { currentPlan } from "./billing";
 import { PLANS } from "./plans";
-import { composePage } from "./pages";
+import { composePage, diskLinks, fileNameFor } from "./pages";
 import { deleteConversation } from "./conversations";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -156,9 +156,9 @@ export const currentHtml = query({
     if ((await currentPlan(ctx, userId)).key === "free") return null;
     const version = await ctx.db.get(site.currentVersionId);
     if (!version) return null;
-    // The preview shows the home page. A site with more than one gets its own
-    // way of moving between them in the preview; until then this is the page a
-    // visitor lands on, which is the one worth showing.
+    // The home page. Preview opens the site at its own address, where its nav
+    // moves between pages; this is what stands in when there is no address
+    // yet, and it is the page a visitor lands on.
     const home = composePage(version, "/");
     if (home === null) return null;
     return {
@@ -168,6 +168,32 @@ export const currentHtml = query({
       createdAt: version.createdAt,
       published: site.publishedVersionId === version._id,
     };
+  },
+});
+
+// The site as files, for a member to take away: one file per page, named for
+// its address, with the links between pages made relative so the folder works
+// opened from disk. A site built before pages existed is its one document.
+// Null for anyone but the owner and for a plan that does not include the code,
+// since the plan is what says whether the code is theirs to download.
+export const exportPages = query({
+  args: { siteId: v.id("sites") },
+  handler: async (ctx, { siteId }) => {
+    const userId = await getAuthUserId(ctx);
+    const site = await ctx.db.get(siteId);
+    if (!userId || !site || site.userId !== userId || !site.currentVersionId) return null;
+    if (!(await currentPlan(ctx, userId)).codeDownload) return null;
+    const version = await ctx.db.get(site.currentVersionId);
+    if (!version) return null;
+    const paths = version.shell && version.pages?.length ? version.pages.map((page) => page.path) : ["/"];
+    const files: { name: string; html: string }[] = [];
+    for (const path of paths) {
+      const html = composePage(version, path);
+      if (html === null) continue;
+      const name = fileNameFor(path);
+      files.push({ name, html: diskLinks(await renderedHtml(ctx, site, html), name) });
+    }
+    return files.length ? { files } : null;
   },
 });
 

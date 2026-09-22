@@ -202,7 +202,8 @@ describe("a build with pages, start to finish", () => {
     const served = await about.text();
     expect(served).toContain("<title>Our story</title>");
     expect(served).toContain("<h1>Our story</h1>");
-    expect(served).toContain('<nav><a href="/">Home</a>');
+    // Read from the origin by a browser, so the nav is pointed under the slug.
+    expect(served).toContain(`<nav><a href="/sites/${site.slug}/">Home</a> <a href="/sites/${site.slug}/about">About</a></nav>`);
     expect(served).toContain("<footer>Harbor Roasters</footer>");
     expect(served).not.toContain("<h1>Harbor Roasters</h1>");
     expect(served).not.toContain("forge-page");
@@ -236,5 +237,63 @@ describe("a build with pages, start to finish", () => {
     expect(versions).toHaveLength(2);
     expect(versions[1].pages!.find((page) => page.path === "/about")!.body).toContain("Founded in 2019.");
     expect(await (await t.fetch(`/sites/${site.slug}/about`)).text()).toContain("Founded in 2019.");
+  });
+});
+
+describe("the site as files", () => {
+  test("one file per page, named for its address, linked to each other, badge-free on a paid plan", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    stubProviders(() => siteReply("Built it.", '<h1>Our story</h1><a href="/">Back home</a><a href="/about#team">Team</a>'));
+    const site = await onboarded(t, member);
+
+    const exported = await member.as.query(api.sites.exportPages, { siteId: site._id });
+    expect(exported!.files.map((file) => file.name)).toEqual(["index.html", "about.html"]);
+    const [home, about] = exported!.files;
+    expect(home.html).toContain("<title>Harbor Roasters</title>");
+    expect(home.html).toContain('<nav><a href="index.html">Home</a> <a href="about.html">About</a></nav>');
+    expect(about.html).toContain("<title>Our story</title>");
+    expect(about.html).toContain('<a href="index.html">Back home</a><a href="about.html#team">Team</a>');
+    expect(about.html).not.toContain("forge-page");
+    expect(about.html).not.toContain("Built with Forge");
+
+    // Nobody else's, and not a free plan's.
+    const stranger = await createBuilder(t, "s@example.com");
+    expect(await stranger.as.query(api.sites.exportPages, { siteId: site._id })).toBe(null);
+    await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "free" });
+    expect(await member.as.query(api.sites.exportPages, { siteId: site._id })).toBe(null);
+  });
+
+  test("a site built before pages existed is its one document", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const page = '<!doctype html><html lang="en"><head><title>Shop</title></head><body><h1>Shop</h1><a href="/">Top</a></body></html>';
+    stubProviders(() => `Built it.\n\n\`\`\`html\n${page}\n\`\`\``);
+    const site = await onboarded(t, member);
+    const exported = await member.as.query(api.sites.exportPages, { siteId: site._id });
+    expect(exported!.files).toHaveLength(1);
+    expect(exported!.files[0].name).toBe("index.html");
+    expect(exported!.files[0].html).toContain('<a href="index.html">Top</a>');
+  });
+});
+
+describe("the site read straight from this deployment's origin", () => {
+  test("a browser gets links it can follow under /sites/<slug>; the sites router gets the page untouched", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    stubProviders(() => siteReply("Built it."));
+    const site = await onboarded(t, member);
+
+    const browser = await (await t.fetch(`/sites/${site.slug}/about`)).text();
+    expect(browser).toContain(`<nav><a href="/sites/${site.slug}/">Home</a> <a href="/sites/${site.slug}/about">About</a></nav>`);
+
+    const routed = await (
+      await t.fetch(`/sites/${site.slug}/about`, { headers: { "user-agent": "ForgeNexxus-SitesRouter/1.0" } })
+    ).text();
+    expect(routed).toContain('<nav><a href="/">Home</a> <a href="/about">About</a></nav>');
+    // And the branded host, asked for by host, is never rewritten either.
+    process.env.SITES_DOMAIN = "sites.forgenexxus.com";
+    const branded = await (await t.fetch("/about", { headers: { host: `${site.slug}.sites.forgenexxus.com` } })).text();
+    expect(branded).toContain('<a href="/about">About</a>');
   });
 });

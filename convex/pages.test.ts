@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import http from "./http";
-import { composePage, designSource, normalizePath } from "./pages";
+import { composePage, designSource, diskLinks, fileNameFor, normalizePath, relativeFileLink, rewriteRootLinks } from "./pages";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -352,5 +352,46 @@ describe("a published site answers on every page it has", () => {
     const preview = await as.query(api.sites.currentHtml, { siteId });
     expect(preview?.html).toContain("<h1>Bakery</h1>");
     expect(preview?.html).not.toContain("<h1>Our story</h1>");
+  });
+});
+
+describe("a page's links, wherever the page goes", () => {
+  const PAGE =
+    '<a href="/">Home</a> <a href="/about">About</a> <a href="/about#team">Team</a> <a href=\'/shop/shirts?size=m\'>Shirts</a> ' +
+    '<a href="#top">Top</a> <a href="//cdn.example/x">CDN</a> <a href="https://example.com/">Out</a> <a href="mailto:a@b.c">Mail</a>';
+
+  test("only root-relative links are rewritten, and what follows the path is kept", () => {
+    const out = rewriteRootLinks(PAGE, (path) => `[${path}]`);
+    expect(out).toContain('href="[/]"');
+    expect(out).toContain('href="[/about]"');
+    expect(out).toContain('href="[/about]#team"');
+    expect(out).toContain("href='[/shop/shirts]?size=m'");
+    expect(out).toContain('href="#top"');
+    expect(out).toContain('href="//cdn.example/x"');
+    expect(out).toContain('href="https://example.com/"');
+    expect(out).toContain('href="mailto:a@b.c"');
+  });
+
+  test("a page becomes the file named for its address", () => {
+    expect(fileNameFor("/")).toBe("index.html");
+    expect(fileNameFor("/about")).toBe("about.html");
+    expect(fileNameFor("/About/")).toBe("about.html");
+    expect(fileNameFor("/shop/shirts")).toBe("shop/shirts.html");
+  });
+
+  test("files find each other from wherever they sit", () => {
+    expect(relativeFileLink("index.html", "about.html")).toBe("about.html");
+    expect(relativeFileLink("about.html", "index.html")).toBe("index.html");
+    expect(relativeFileLink("shop/shirts.html", "about.html")).toBe("../about.html");
+    expect(relativeFileLink("shop/shirts.html", "shop/hats.html")).toBe("hats.html");
+    expect(relativeFileLink("index.html", "shop/shirts.html")).toBe("shop/shirts.html");
+  });
+
+  test("on disk, a page's links point at the other pages' files", () => {
+    const out = diskLinks(PAGE, "shop/shirts.html");
+    expect(out).toContain('href="../index.html"');
+    expect(out).toContain('href="../about.html#team"');
+    expect(out).toContain("href='shirts.html?size=m'");
+    expect(out).toContain('href="#top"');
   });
 });
