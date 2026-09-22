@@ -111,9 +111,14 @@ export function isGeminiChatHost(baseUrl: string): boolean {
 // puzzle about light switches.
 //
 // A provider nobody has measured still gets a plain body.
-export type ReasoningEffort = "low" | "medium" | "high" | "max";
+// DeepSeek takes seven names for three real efforts and maps them itself:
+// minimal and low land on low; medium, high and xhigh on high; max and ultra
+// on max. All seven are passed through as written, because the provider's own
+// table is the mapping and `generate:routing` should report what was sent
+// rather than something rewritten on the way. Gemini has its own three.
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 const GEMINI_EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
-const DEEPSEEK_EFFORTS: ReasoningEffort[] = ["low", "high", "max"];
+const DEEPSEEK_EFFORTS: ReasoningEffort[] = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 const EFFORT_MODELS = new Set(["deepseek-flash", "deepseek-v4-pro"]);
 
 export function reasoningEffort(
@@ -130,8 +135,10 @@ export function reasoningEffort(
   if (!gemini && purpose !== "build") return undefined;
   const wanted = (process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "") as ReasoningEffort;
   if (takes.includes(wanted)) return wanted;
-  // A level this route does not have: DeepSeek has no medium, Gemini no max.
-  if (wanted === "medium" || wanted === "max") return "high";
+  // A name this route does not have. Gemini is the narrower vocabulary, so
+  // anything above its ceiling meets its ceiling, and minimal meets low.
+  if (wanted === "minimal") return "low";
+  if (wanted === "xhigh" || wanted === "max" || wanted === "ultra") return "high";
   // Unset. Gemini keeps the high it has always had; a build on a model with a
   // level above high takes it, which is the whole reason to name one.
   return gemini ? "high" : "max";

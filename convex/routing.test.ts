@@ -129,16 +129,30 @@ describe("reasoning_effort goes where it has been measured to work", () => {
     expect(reasoningEffort(DEEPSEEK, "deepseek-v4-pro", "build")).toBe("max");
   });
 
-  test("a level a route does not have is met with the nearest it does", () => {
-    // DeepSeek documents low, high and max; Gemini low, medium and high.
+  test("every name DeepSeek documents is passed through as written", () => {
+    // Seven names, three efforts, and the provider maps them: minimal and low
+    // to low, medium/high/xhigh to high, max and ultra to max. Rewriting them
+    // here would only hide what was asked for.
+    for (const name of ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]) {
+      process.env.AI_REASONING_EFFORT = name;
+      expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe(name);
+    }
+  });
+
+  test("a name a route does not have is met with the nearest it does", () => {
+    // Gemini is the narrower vocabulary: three names, no minimal and no max.
+    process.env.AI_REASONING_EFFORT = "minimal";
+    expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("low");
+    for (const above of ["xhigh", "max", "ultra"]) {
+      process.env.AI_REASONING_EFFORT = above;
+      expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("high");
+    }
     process.env.AI_REASONING_EFFORT = "medium";
-    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("high");
     expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("medium");
-    process.env.AI_REASONING_EFFORT = "max";
-    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("max");
+    // A name nobody documents is not sent as itself anywhere.
+    process.env.AI_REASONING_EFFORT = "turbo";
     expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("high");
-    process.env.AI_REASONING_EFFORT = "low";
-    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("low");
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("max");
   });
 
   test("temperature is not sent to a model that documents it as inert", () => {
@@ -160,8 +174,10 @@ describe("reasoning_effort goes where it has been measured to work", () => {
     process.env.AI_REASONING_EFFORT = "low";
     expect(reasoningEffort(GOOGLE_OPENAI)).toBe("low");
     // Gemini 3.8 Flash errors on these, so they are not sent as themselves.
+    // `minimal` is a real request for the least thinking, though, and Gemini's
+    // least is `low` — answering it with `high` was the opposite of the ask.
     process.env.AI_REASONING_EFFORT = "minimal";
-    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
+    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("low");
     process.env.AI_REASONING_EFFORT = "none";
     expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
     process.env.AI_REASONING_EFFORT = "turbo";
