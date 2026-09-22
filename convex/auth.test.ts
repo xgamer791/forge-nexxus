@@ -4,6 +4,7 @@ import { exportPKCS8, generateKeyPair } from "jose";
 import { beforeAll, describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
+import { resolveRedirect } from "./auth";
 
 const modules = import.meta.glob("./**/*.*s");
 const fresh = () => convexTest(schema, modules);
@@ -243,5 +244,30 @@ describe("users.me", () => {
       image: null,
       isAnonymous: false,
     });
+  });
+});
+
+describe("where a sign-in may return to", () => {
+  const SITE = "https://xgamer791.github.io/forge-nexxus";
+  test("the app on SITE_URL and on the WordPress site, and nowhere else", () => {
+    const before = process.env.SITE_URL;
+    process.env.SITE_URL = SITE;
+    try {
+      expect(resolveRedirect(`${SITE}/`)).toBe(`${SITE}/`);
+      expect(resolveRedirect("https://forgenexxus.com/app/")).toBe("https://forgenexxus.com/app/");
+      expect(resolveRedirect("https://www.forgenexxus.com/")).toBe("https://www.forgenexxus.com/");
+      for (const hostile of [
+        "https://forgenexxus.com.evil.com/",
+        "https://evil.com/?https://forgenexxus.com",
+        "http://forgenexxus.com/",
+        "https://xgamer791.github.io.evil.com/",
+        "javascript:alert(1)",
+      ]) {
+        expect(resolveRedirect(hostile)).toBe(SITE);
+      }
+    } finally {
+      if (before === undefined) delete process.env.SITE_URL;
+      else process.env.SITE_URL = before;
+    }
   });
 });

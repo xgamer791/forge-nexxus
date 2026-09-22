@@ -15,10 +15,28 @@ import { settingsFor } from "./settings";
 // own default throws on anything it does not recognise. Nothing unrecognised
 // is followed; it falls back to SITE_URL, which is also the safe answer for an
 // address someone else supplied.
+//
+// The app is also served from the WordPress site, which is a different origin
+// with its own storage: a sign-in started there saved its one-time verifier
+// there, so sending it home to SITE_URL failed every time with "Invalid
+// verifier". Those origins are listed in `AUTH_REDIRECT_ORIGINS` (comma
+// separated, exact origins); unset, it is Forge Nexxus's own domain.
+const DEFAULT_REDIRECT_ORIGINS = ["https://forgenexxus.com", "https://www.forgenexxus.com"];
+function extraOrigins() {
+  const configured = process.env.AUTH_REDIRECT_ORIGINS;
+  const list = configured === undefined ? DEFAULT_REDIRECT_ORIGINS : configured.split(",");
+  return list.map((origin) => origin.trim().replace(/\/+$/, "").toLowerCase()).filter(Boolean);
+}
 export function resolveRedirect(redirectTo: unknown): string {
   const base = (process.env.SITE_URL ?? "").replace(/\/+$/, "");
   if (typeof redirectTo !== "string" || redirectTo === "") return base;
   if (redirectTo.startsWith("/") || redirectTo.startsWith("?")) return `${base}${redirectTo}`;
+  // An allowed origin is compared whole, so `https://forgenexxus.com.evil.com`
+  // and `https://evil.com/?https://forgenexxus.com` are not it.
+  try {
+    const target = new URL(redirectTo);
+    if (target.protocol === "https:" && extraOrigins().includes(target.origin.toLowerCase())) return target.href;
+  } catch { /* not a URL: fall through to the base */ }
   if (!base) return base;
   // A prefix match alone would accept `https://site.example.evil.com`.
   if (redirectTo === base || redirectTo.startsWith(`${base}/`) || redirectTo.startsWith(`${base}?`)) {
