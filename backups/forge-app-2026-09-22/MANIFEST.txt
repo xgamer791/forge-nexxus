@@ -1,13 +1,13 @@
 Forge Nexxus GitHub app backup
-Taken: 2026-09-22T17:07:35Z
+Taken: 2026-09-22T17:08:23Z
 Reason: Snapshot the current GitHub Pages app (docs/ + src/) so it can be restored without using the Cloudways website.
 
-Source: origin/main @ 64df55e288bf8b6d0660127052f562f90f163c7e
-Commit: Revert "Collapse the homepage prompt until it is opened."
+Source: origin/main @ 9cb8e63fc6ddd626e5d4b0c011f99ab42f00332a
+Commit: Take the icon row off the preview instead of covering it
 Pages URL: https://xgamer791.github.io/forge-nexxus/
 Convex URL (from docs/index.html): https://polished-ram-883.convex.cloud
-docs/version.json: 4b2183f6b13dea7c752e3023c8426e3a02e65000
-App build: 35
+docs/version.json: 126b6c2edb8cec70f4992319f984d71de7db6573
+App build: 49
 
 This backup is the GitHub app only:
 - docs/ — the Pages client (HTML, CSS, JS, login video)
