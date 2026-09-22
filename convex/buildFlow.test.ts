@@ -132,6 +132,7 @@ afterEach(() => {
   delete process.env.AI_MODEL;
   delete process.env.AI_BUILD_MODEL;
   delete process.env.AI_REASONING_EFFORT;
+  delete process.env.AI_MAX_TOKENS;
   delete process.env.AI_IMAGE_API_KEY;
   delete process.env.CONVEX_SITE_URL;
 });
@@ -294,7 +295,9 @@ describe("a brand new build, start to finish", () => {
     const calls = providers.chatCalls();
     const build = calls.find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
     expect(build.body.model).toBe("forge-test-large");
-    expect(build.body.max_tokens).toBe(24000);
+    // A build's own ceiling: room for a site in pages and for the thinking a
+    // reasoning model bills inside the same budget.
+    expect(build.body.max_tokens).toBe(96000);
     const strategy = calls.find((call) => /private website strategist/.test(JSON.stringify(call.body.messages)))!;
     expect(strategy.body.model).toBe("forge-test");
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
@@ -564,12 +567,13 @@ describe("a rebuild, start to finish", () => {
     expect(await versions(t)).toHaveLength(2);
   });
 
-  test("a reasoning-only reply stops the build instead of buying the same answer twice", async () => {
+  test("a reasoning-only reply is asked again for an answer, and stops there", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     // writePage retries a reply that fell short of a page. This is not that:
-    // the budget went on thinking, so a second attempt spends another minute
-    // to be told the same thing.
+    // the budget went on thinking, so the page never started. That gets one
+    // go inside a ceiling worth answering in, and no more -- a third would
+    // spend another minute to be told the same thing.
     const providers = stubProviders(() =>
       json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking about the roastery…" } }] }),
     );
@@ -580,13 +584,43 @@ describe("a rebuild, start to finish", () => {
     const builds = providers.chatCalls().filter((call) =>
       call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)),
     );
-    expect(builds).toHaveLength(1);
+    expect(builds).toHaveLength(2);
+    expect(builds[1].body.messages.some((m: any) => /still thinking/.test(m.content))).toBe(true);
     const row = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(row.status).toBe("failed");
     expect(row.error).toContain("only its reasoning");
     // Nothing was built and nothing was charged for it.
     expect(await versions(t)).toHaveLength(0);
     expect((await member.as.query(api.billing.summary, {}))!.reserved).toBe(0);
+  });
+
+  test("a build too big for the deployment's ceiling is given room, and the site lands", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    // The failure this is about: a reasoning model bills its thinking inside
+    // the same ceiling as its answer, so a ceiling that only fits the page
+    // comes back as thinking and no page at all. Forge widens it and asks
+    // again rather than handing the member a failed build to retry by hand.
+    process.env.AI_MAX_TOKENS = "6000";
+    const providers = stubProviders((call) =>
+      call === 1
+        ? json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking about the roastery…" } }] })
+        : built("Harbor Roasters"),
+    );
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+
+    const builds = providers.chatCalls().filter((call) =>
+      call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)),
+    );
+    expect(builds.map((call) => call.body.max_tokens)).toEqual([6000, 64000]);
+    const row = (await t.run((ctx) => ctx.db.get(id)))!;
+    expect(row.status).toBe("complete");
+    expect(row.error).toBeUndefined();
+    expect(await versions(t)).toHaveLength(1);
+    // One build, charged once: the first go never produced anything to keep.
+    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
   });
 
   test("a page still arriving from before the rebuild cannot land on the fresh site", async () => {

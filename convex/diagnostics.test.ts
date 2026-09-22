@@ -93,6 +93,7 @@ afterEach(() => {
   delete process.env.AI_BASE_URL;
   delete process.env.AI_API_KEY;
   delete process.env.AI_MODEL;
+  delete process.env.AI_MAX_TOKENS;
 });
 
 describe("building-agent diagnostics", () => {
@@ -203,7 +204,7 @@ describe("building-agent diagnostics", () => {
     expect(mine?.events.filter((event) => event.phase === "provider_cap").length).toBeGreaterThan(0);
   });
 
-  test("a model that answers with only its reasoning fails once, and names what to change", async () => {
+  test("a model that answers with only its reasoning is asked again, then named for what to change", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { conversationId } = await seedBuiltSite(t, member.userId);
@@ -218,16 +219,70 @@ describe("building-agent diagnostics", () => {
       member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" }),
     ).rejects.toThrow("only its reasoning");
 
-    // Once. The same request would only buy the same answer a minute later.
-    expect(calls).toHaveLength(1);
+    // Twice, and not the same request twice: the second carries an
+    // instruction to stop deliberating that the first did not.
+    expect(calls).toHaveLength(2);
+    const nudges = (calls as any[]).map((body) =>
+      body.messages.filter((message: any) => /still thinking/.test(message.content)).length,
+    );
+    expect(nudges).toEqual([0, 1]);
     const mine = await member.as.query(api.diagnostics.mine, {});
     expect(mine?.latest).toMatchObject({ status: "failed", errorClass: "reasoning_budget" });
     expect(mine?.latest?.error).toContain("length limit needs changing");
+    expect(mine?.events.find((event) => event.phase === "provider_room")?.label)
+      .toBe("Asking the model again for an answer");
     const failure = mine?.events.find((event) => event.phase === "provider_error");
     expect(failure?.label).toBe("The model spent its length limit thinking and returned no page");
     expect(failure?.detail).toMatchObject({ reasoningChars: thinking.length, finishReason: "length" });
     // The balance is untouched: a build that never happened is never charged.
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({ credits: OPENING, reserved: 0 });
+  });
+
+  test("a ceiling too small to think and answer inside is widened, and the edit lands", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await seedBuiltSite(t, member.userId);
+    // A deployment that capped its own replies below what a reasoning model
+    // needs to think and then write. The first go has nothing left to say.
+    process.env.AI_MAX_TOKENS = "6000";
+    const calls = stubProvider((_body, call) =>
+      call === 1
+        ? json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking…" } }] })
+        : reply("Added hours."),
+    );
+
+    await member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" });
+    await t.finishAllScheduledFunctions(() => {});
+
+    // The turn itself, before the reflection the answered turn schedules.
+    expect((calls as any[]).slice(0, 2).map((body) => body.max_tokens)).toEqual([6000, 64000]);
+    const mine = await member.as.query(api.diagnostics.mine, {});
+    expect(mine?.latest).toMatchObject({ status: "complete", htmlChars: PAGE.length });
+    const room = mine?.events.find((event) => event.phase === "provider_room");
+    expect(room?.label).toBe("Giving the model more room to answer");
+    expect(room?.detail).toMatchObject({ tokensAsked: 64000, errorClass: "reasoning_budget" });
+    // The edit was built, so it is charged for exactly once.
+    expect(await member.as.query(api.billing.summary, {}))
+      .toMatchObject({ credits: OPENING - REQUEST_COSTS.edit, reserved: 0 });
+  });
+
+  test("a cap the provider named is never widened past", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const { conversationId } = await seedBuiltSite(t, member.userId);
+    // The provider refuses the length and names what it will take. Asking for
+    // more room after that would only be refused again.
+    const calls = stubProvider((_body, call) =>
+      call === 1
+        ? new Response("max_tokens must be in [1, 4096]", { status: 400 })
+        : json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking…" } }] }),
+    );
+
+    await expect(
+      member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" }),
+    ).rejects.toThrow("only its reasoning");
+
+    expect((calls as any[]).map((body) => body.max_tokens)).toEqual([96000, 4096, 4096]);
   });
 
   test("an empty reply with nothing behind it keeps its old class", async () => {

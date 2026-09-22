@@ -23,8 +23,9 @@ type Message = { content?: unknown; reasoning_content?: unknown; reasoning?: unk
 
 export const chat = internalAction({
   args: {
-    // A build asks for 24000; the default here is small so a probe is quick
-    // and cheap. Raise it to reproduce what a real build sees.
+    // A build asks for whatever `generate:routing` reports as its maxTokens;
+    // the default here is small so a probe is quick and cheap. Raise it to
+    // reproduce what a real build sees.
     maxTokens: v.optional(v.number()),
     prompt: v.optional(v.string()),
     purpose: v.optional(v.union(v.literal("chat"), v.literal("build"))),

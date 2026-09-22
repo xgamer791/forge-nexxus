@@ -16,12 +16,23 @@ import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
 // How much of the thread the model sees, and how long a page it may write.
-// A whole site — a products section included — is a great deal more output
+// A whole site — several pages behind one shell — is a great deal more output
 // than a conversational reply, so a build is given its own ceiling. A
 // provider whose own cap is lower says so, and `complete` retries inside it.
+//
+// A reasoning model bills its thinking inside that same ceiling: `max_tokens`
+// caps the thinking and the answer together, so room that only fits the page
+// leaves the page unwritten, which is the empty reply below. A one-page build
+// on this deployment's model measured 15,592 tokens of thinking beside 11,344
+// of page, and a site in pages is longer than that, so both ceilings hold the
+// thinking as well as the answer. Neither is a spend: a reply that needs less
+// costs less, and nothing is billed for room that goes unused.
 const HISTORY_LIMIT = 32;
-const DEFAULT_MAX_TOKENS = 16000;
-const BUILD_MAX_TOKENS = 24000;
+const DEFAULT_MAX_TOKENS = 32000;
+const BUILD_MAX_TOKENS = 96000;
+// Where a second go lands when the first came back as thinking and no answer,
+// unless the provider has already named a cap below it.
+const ROOM_TO_ANSWER = 64000;
 // What to drop to when a provider refuses the length without naming its cap.
 const SAFE_MAX_TOKENS = 8192;
 const REASON_LIMIT = 300;
@@ -92,6 +103,9 @@ const EDIT_IMAGE_LIMIT = 2;
 const CALL_TIMEOUT_MS = 240000;
 const TEXT_BUDGET_MS = 400000;
 const CONTINUE_FLOOR_MS = 45000;
+// A second go at a whole site is another long call, so one is only started
+// while there is real time left to finish it in.
+const ANSWER_FLOOR_MS = 90000;
 const MAX_CONTINUATIONS = 2;
 const MAX_COMPLETE_LOOPS = 5;
 const RETRY_WAIT_MS = 1500;
@@ -124,6 +138,13 @@ export function chatRoute(purpose: "chat" | "build" = "chat") {
   };
 }
 
+// The ceiling one reply is given, thinking included. `AI_MAX_TOKENS` is the
+// deployment's own cap and wins where it is set; unset, a build gets room for
+// a whole site and a conversation gets room for an answer.
+export function maxTokensFor(purpose: "chat" | "build") {
+  return Number(process.env.AI_MAX_TOKENS) || (purpose === "build" ? BUILD_MAX_TOKENS : DEFAULT_MAX_TOKENS);
+}
+
 // Which model each kind of work goes to, for whoever runs the deployment:
 // `npx convex run generate:routing`. Names and hosts only, never a key.
 export const routing = internalQuery({
@@ -133,8 +154,8 @@ export const routing = internalQuery({
     const build = chatRoute("build");
     const image = imageRoute();
     return {
-      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl) ?? null },
-      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: reasoningEffort(build.baseUrl) ?? null },
+      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl) ?? null, maxTokens: maxTokensFor("chat") },
+      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: reasoningEffort(build.baseUrl) ?? null, maxTokens: maxTokensFor("build") },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -606,11 +627,27 @@ function buildMessages(
 type Route = ReturnType<typeof chatRoute>;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// What a model is told after it spent a whole ceiling thinking. The ceiling is
+// the half of that Forge can change on its own; this is the half the model can.
+const ANSWER_NOW =
+  "Your last reply hit the length limit while you were still thinking, so it carried no answer at all. " +
+  "Keep the planning short this time and write the reply itself, in full, in the format the rules above ask for.";
+
+// One more instruction, in front of the request it is about, which is where
+// the rest of this build puts them.
+function withNudge(messages: ChatMessage[], nudge: string): ChatMessage[] {
+  const last = messages[messages.length - 1];
+  const note = { role: "system" as const, content: nudge };
+  return last ? [...messages.slice(0, -1), note, last] : [note];
+}
+
 // One chat completion. A provider that stumbles -- a dropped connection, a
 // rate limit, a 5xx -- is asked once more before the build is called failed,
 // and one whose output cap is lower than what was asked for says what its cap
-// is, so the same request goes again inside it. A call that ran out its clock
-// is not repeated: a second slow answer would only spend the build's time.
+// is, so the same request goes again inside it. A reply that is all thinking
+// and no answer goes again too, inside a ceiling wide enough to answer in. A
+// call that ran out its clock is not repeated: a second slow answer would
+// only spend the build's time.
 async function complete(
   route: Route,
   messages: ChatMessage[],
@@ -620,6 +657,11 @@ async function complete(
   meta?: { continuation?: number },
 ) {
   let limit = maxTokens;
+  // The most this provider will take, once it has said so itself. Widening
+  // after an all-thinking reply stops here: asking again above a cap the
+  // provider has already refused would only spend the loop.
+  let ceiling = Number.POSITIVE_INFINITY;
+  let widened = false;
   let host = route.baseUrl;
   try { host = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
   for (let attempt = 0; attempt < MAX_COMPLETE_LOOPS; attempt += 1) {
@@ -653,7 +695,7 @@ async function complete(
         method: "POST",
         signal: clock.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${route.apiKey}` },
-        body: JSON.stringify(completionBody(route, messages, limit)),
+        body: JSON.stringify(completionBody(route, widened ? withNudge(messages, ANSWER_NOW) : messages, limit)),
       });
       bodyText = await response.text();
     } catch (error) {
@@ -682,6 +724,7 @@ async function complete(
         response.status === 400 && /max_?(?:output_?)?tokens/i.test(bodyText) && limit > SAFE_MAX_TOKENS;
       if ((named && Number(named[1]) > 0 && Number(named[1]) < limit) || overLength) {
         limit = named ? Number(named[1]) : SAFE_MAX_TOKENS;
+        ceiling = limit;
         await trace?.note({
           phase: "provider_cap",
           label: "Lowered the model's length limit",
@@ -732,10 +775,38 @@ async function complete(
     if (typeof content !== "string" || !content.trim()) {
       // A reasoning model puts its thinking in its own field and counts it
       // against the same length budget, so a long enough think leaves nothing
-      // to say and the page never starts. Asking again buys the same answer a
-      // minute later, so this one stops here: what has to change is the model
-      // or the limit, and neither is something another attempt can reach.
+      // to say and the page never starts. The same request would buy the same
+      // answer a minute later, but this one does not go again as it was: the
+      // ceiling rises to a length worth answering in -- never above a cap the
+      // provider has already named -- and the model is told to keep the
+      // planning short and write the reply. That is a different request, and
+      // it is the one that finishes. One go at it, while there is time. After
+      // that what has to change is the model or the deployment's limit, and
+      // neither is something another attempt can reach.
       const spentThinking = reasoning.length > 0 || finishReason === "length";
+      const room = Math.min(ceiling, Math.max(limit, ROOM_TO_ANSWER));
+      if (spentThinking && !widened && deadline - Date.now() > ANSWER_FLOOR_MS) {
+        widened = true;
+        const grew = room > limit;
+        limit = room;
+        await trace?.note({
+          phase: "provider_room",
+          label: grew ? "Giving the model more room to answer" : "Asking the model again for an answer",
+          level: "warn",
+          detail: {
+            httpStatus: 200,
+            attempt,
+            durationMs: Date.now() - started,
+            errorClass: "reasoning_budget",
+            finishReason,
+            reasoningChars: reasoning.length || undefined,
+            tokensAsked: limit,
+            host,
+            model: route.model,
+          },
+        });
+        continue;
+      }
       await trace?.note({
         phase: "provider_error",
         label: spentThinking
@@ -804,9 +875,7 @@ export async function callProvider(
     });
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
-  const maxTokens =
-    tokenLimit ??
-    (Number(process.env.AI_MAX_TOKENS) || (purpose === "build" ? BUILD_MAX_TOKENS : DEFAULT_MAX_TOKENS));
+  const maxTokens = tokenLimit ?? maxTokensFor(purpose);
   const deadline = Date.now() + Math.min(budgetMs, TEXT_BUDGET_MS);
   let reply = await complete(route, messages, maxTokens, deadline, trace);
   let content = reply.content;

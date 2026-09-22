@@ -24,7 +24,9 @@ export const MEMORY_LIMIT = 60;
 export const MEMORY_CHARS = 240;
 // The reflection is a small call with a small answer: the exchange in, a few
 // lines of JSON out. It never sees a page, so a long turn costs it nothing.
-const REFLECT_MAX_TOKENS = 600;
+// The room is larger than the answer because a reasoning model's thinking is
+// billed inside it, and a ceiling that only fits the JSON returns none of it.
+const REFLECT_MAX_TOKENS = 8000;
 const REFLECT_BUDGET_MS = 90000;
 const EXCHANGE_CHARS = 6000;
 
