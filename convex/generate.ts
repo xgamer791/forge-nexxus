@@ -11,6 +11,7 @@ import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
 import { memoryEnabled, memoryNote } from "./memory";
+import { hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
 
@@ -140,8 +141,8 @@ export const routing = internalQuery({
 });
 
 // The platform contract, and nothing else. Every line here is a fact about
-// what this deployment can store, serve or parse -- `parseReply` wants one
-// fenced document, `siteVersions.html` holds one string, the published CSP
+// what this deployment can store, serve or parse -- `parseReply` wants a shell
+// and its pages in fenced blocks, `siteVersions` holds them, the published CSP
 // runs no scripts and allows only two font hosts, and `images.ts` reads the
 // forge-image markers. How a page looks is not decided here: that belongs to
 // FORGE_MD and the design files it carries, so nothing in this file can
@@ -176,17 +177,17 @@ function systemPrompt(imageLimit: number, purpose: "chat" | "build") {
 
 You give one of two kinds of reply, and what the user asked for decides which.
 
-BUILD — when they describe a site to make, or ask for a change to the page.
+BUILD — when they describe a site to make, or ask for a change to it.
 What this platform can serve, which is not a matter of taste:
-- One self-contained document: <!doctype html> … </html>, with a lang, a <title>, a meta description, a meta viewport, and all CSS in one <style> block in the <head>. Only this one file is stored and served, so everything the site has is in it.
-- Every link between sections is an in-page anchor. There is no second page to link to.
+- A site is one shell and one or more pages. The shell is a complete document — <!doctype html> … </html>, with a lang, a <title>, a meta description, a meta viewport, all CSS in one <style> block in the <head>, and whatever every page shares, like the nav and footer — holding the comment <!--forge-page--> exactly where a page's own markup goes. A page is only that markup, with no html, head or body of its own. Each page is served at its path with the shell around it.
+- Every page has a path: the home page is / and the others are short lowercase paths like /about. A link between pages is its path; a link within a page is an in-page anchor. Link only to pages you return.
 - No JavaScript runs on a published site — the server sends a policy that blocks it — so no scripts and no frameworks. Build in HTML and CSS alone, including anything interactive: a menu, a disclosure or a tab set has to work through CSS, or not be there. A form is static markup.
 - Because nothing is wired up behind the page, let every action lead somewhere true: an in-page anchor, or an external store, booking or contact link the brief supplies. Never render a cart, a checkout, a payment form, a signed-in account or a confirmed order as though it worked, and never invent a price, a stock count, a delivery promise, a review or a customer.
 - Google Fonts and Fontshare are the only external stylesheets this policy allows.
 
 ${pictures}
 
-Reply with one sentence saying what you built or changed, then the complete HTML in a single \`\`\`html code block, and nothing after it. The document must end with </html> inside that block or the build is rejected. When the user asks for a change, apply it to the current file and return the whole updated file, keeping everything they did not ask to change.
+Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change.
 
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
@@ -269,13 +270,14 @@ export const run = action({
       // that came back on a talk-only turn is about to be dropped: it gets none.
       let imageWanted = 0;
       let imageMade = 0;
-      let html = parsed.html ?? undefined;
-      if (parsed.html && job.requestKind !== "chat") {
-        if (wantsImages(parsed.html)) {
+      let site = builtSite(parsed);
+      if (site && job.requestKind !== "chat") {
+        const parts = siteParts(site);
+        if (wantsImages(parts.join("\n"))) {
           await trace.note({ phase: "images", label: "Making pictures", status: "images" });
         }
-        const pictures = await fulfilImages(ctx, { html: parsed.html, userId, siteId: job.siteId, epoch: job.epoch, limit: job.imageLimit });
-        html = pictures.html;
+        const pictures = await fulfilImages(ctx, { parts, userId, siteId: job.siteId, epoch: job.epoch, limit: job.imageLimit });
+        site = withParts(site, pictures.parts);
         imageWanted = pictures.wanted;
         imageMade = pictures.made;
         if (pictures.wanted) {
@@ -286,18 +288,19 @@ export const run = action({
           });
         }
       }
+      const siteChars = site ? siteParts(site).join("").length : undefined;
       await trace.note({
         phase: "saving",
         label: job.requestKind === "chat" ? "Saving the reply" : "Saving your website",
         status: "saving",
-        detail: { htmlChars: html?.length, requestKind: job.requestKind },
+        detail: { htmlChars: siteChars, requestKind: job.requestKind },
       });
       const finished = await ctx.runMutation(internal.generate.finish, {
         assistantId: job.assistantId,
         siteId: job.siteId,
         holdId: job.holdId,
         requestKind: job.requestKind,
-        html,
+        ...site,
         summary: parsed.summary,
         blockedNote: job.blockedNote,
         epoch: job.epoch,
@@ -313,7 +316,7 @@ export const run = action({
       await ctx.runMutation(internal.diagnostics.close, {
         runId,
         status: "complete",
-        htmlChars: html?.length,
+        htmlChars: siteChars,
         imageWanted,
         imageMade,
       });
@@ -394,7 +397,7 @@ export const begin = internalMutation({
     await ctx.scheduler.runAfter(RUN_WATCHDOG_MS, internal.generate.expire, { assistantId, holdId });
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const imageLimit = current ? EDIT_IMAGE_LIMIT : BUILD_IMAGE_LIMIT;
-    const messages = buildMessages(site.name, current?.html ?? null, recent.reverse(), prompt, talkOnly, imageLimit, kind === "chat" ? "chat" : "build", await memoryNote(ctx, userId));
+    const messages = buildMessages(site.name, current ?? null, recent.reverse(), prompt, talkOnly, imageLimit, kind === "chat" ? "chat" : "build", await memoryNote(ctx, userId));
     if (setup) messages.splice(3, 0, { role: "system", content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
     return {
       siteId: site._id,
@@ -442,8 +445,11 @@ export const finish = internalMutation({
     siteId: v.id("sites"),
     holdId: v.id("creditHolds"),
     requestKind,
-    // Absent when the model answered instead of building.
+    // Absent when the model answered instead of building. A build from before
+    // pages existed is `html` alone; a build with pages is `shell` and `pages`.
     html: v.optional(v.string()),
+    shell: v.optional(v.string()),
+    pages: v.optional(v.array(v.object({ path: v.string(), title: v.string(), body: v.string() }))),
     summary: v.string(),
     // Set when the turn was talk-only because a build was out of reach.
     blockedNote: v.optional(v.string()),
@@ -451,7 +457,7 @@ export const finish = internalMutation({
     attempt: v.optional(v.number()),
     epoch: v.optional(v.number()),
   },
-  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, summary, blockedNote, onboardingId, attempt, epoch }) => {
+  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, shell, pages, summary, blockedNote, onboardingId, attempt, epoch }) => {
     const now = Date.now();
     const site = await ctx.db.get(siteId);
     if (epoch !== undefined && (site?.buildEpoch ?? 0) !== epoch) {
@@ -468,8 +474,10 @@ export const finish = internalMutation({
     // chat rate because a build was unaffordable, in which case a page that
     // came back anyway is dropped rather than handed over for a credit. Either
     // way the site keeps the version it had and the hold settles as a chat.
-    if (html === undefined || kind === "chat") {
-      const body = html === undefined ? summary : (blockedNote ?? summary);
+    const built: BuiltSite = hasPages({ shell, pages }) ? { shell, pages } : { html };
+    const nothingBuilt = siteParts(built).length === 0;
+    if (nothingBuilt || kind === "chat") {
+      const body = nothingBuilt ? summary : (blockedNote ?? summary);
       if (await ctx.db.get(assistantId)) {
         await ctx.db.patch(assistantId, { body, status: undefined });
       }
@@ -485,7 +493,7 @@ export const finish = internalMutation({
     const versionId = await ctx.db.insert("siteVersions", {
       userId: site.userId,
       siteId,
-      html,
+      ...built,
       summary,
       requestKind: kind,
       createdAt: now,
@@ -549,7 +557,7 @@ export const expire = internalMutation({
 
 function buildMessages(
   siteName: string,
-  currentHtml: string | null,
+  current: BuiltSite | null,
   history: Doc<"messages">[],
   prompt: string,
   // Set when the balance cannot cover a build, which makes this turn TALK.
@@ -568,10 +576,13 @@ function buildMessages(
     { role: "system", content: systemPrompt(imageLimit, purpose) },
   ];
   if (memory) messages.push({ role: "system", content: memory });
-  if (currentHtml) {
+  // The site as the model last wrote it, in the same blocks it is asked to
+  // return, so an edit is a change to what is there and not a fresh build.
+  const shown = current ? serializeSite(current) : null;
+  if (shown) {
     messages.push({
       role: "system",
-      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated file.\n\n\`\`\`html\n${currentHtml}\n\`\`\``,
+      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form.\n\n${shown}`,
     });
   }
   if (talkOnly) {
@@ -832,7 +843,83 @@ export async function callProvider(
 // reply that is nothing but a document still counts. A reply that never
 // reaches for a page at all is an answer rather than a build, and comes back
 // with `html: null` so the caller charges for a conversation instead.
-export function parseReply(content: string) {
+export type ParsedReply = { html: string | null; shell?: string; pages?: SitePage[]; summary: string };
+
+// What a reply built, or null when it answered instead of building.
+export function builtSite(parsed: ParsedReply): BuiltSite | null {
+  if (parsed.shell && parsed.pages?.length) return { shell: parsed.shell, pages: parsed.pages };
+  return parsed.html ? { html: parsed.html } : null;
+}
+
+// Every fenced block in a reply: what followed its opening backticks, its
+// text, and whether it was closed. The last block of a reply the token cap
+// cut off has no closing fence, and that is the difference between a site
+// and most of one.
+function fencedBlocks(content: string) {
+  const blocks: { info: string; body: string; closed: boolean; index: number }[] = [];
+  const fence = /```[ \t]*([^\n]*)\n([\s\S]*?)(```|$)/g;
+  for (let match = fence.exec(content); match; match = fence.exec(content)) {
+    blocks.push({ info: match[1].trim(), body: match[2].trim(), closed: match[3] === "```", index: match.index });
+    if (!match[3]) break;
+  }
+  return blocks;
+}
+
+function fenceAttr(info: string, name: string) {
+  return (
+    info.match(new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i"))?.[1] ??
+    info.match(new RegExp(`\\b${name}\\s*=\\s*'([^']*)'`, "i"))?.[1] ??
+    null
+  );
+}
+
+// A page's title when its fence did not carry one: its heading, else its
+// address, else the home page. The tab needs something either way.
+function titleFor(body: string, path: string) {
+  const heading = body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  if (heading) return heading.slice(0, 120);
+  const last = path.split("/").filter(Boolean).pop();
+  return last ? last.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Home";
+}
+
+// The sentence before the first block, as the summary of what was built.
+function summaryBefore(content: string, opened: number | undefined) {
+  const before = opened === undefined ? "" : content.slice(0, opened).trim();
+  return (before.split(/\n+/).find((line) => line.trim()) ?? "")
+    .replace(/^[\s\-*#>\d.)]+/, "")
+    .trim()
+    .slice(0, REASON_LIMIT);
+}
+
+export function parseReply(content: string): ParsedReply {
+  const blocks = fencedBlocks(content);
+  const shellBlock = blocks.find((block) => /^html\s+shell\b/i.test(block.info));
+  const pageBlocks = blocks.filter(
+    (block) => /^html\b/i.test(block.info) && (fenceAttr(block.info, "path") !== null || /^html\s+\/\S*/i.test(block.info)),
+  );
+  if (shellBlock || pageBlocks.length) {
+    // A site in blocks. Everything named has to be there and whole: a shell
+    // or a page the token cap cut off is a broken build, not a smaller one.
+    if (!shellBlock || !shellBlock.closed || !/<html[\s>]/i.test(shellBlock.body) || !/<\/html>\s*$/i.test(shellBlock.body)) {
+      throw new Error("The model did not return a complete site: the shell is missing or unfinished");
+    }
+    const pages: SitePage[] = [];
+    for (const block of pageBlocks) {
+      if (!block.closed) throw new Error("The model did not return a complete site: a page was cut off");
+      const path = normalizePath(fenceAttr(block.info, "path") ?? block.info.match(/^html\s+(\/\S*)/i)?.[1] ?? "/");
+      if (path === null) throw new Error("The model did not return a complete site: a page has an address that cannot be served");
+      // The first page at an address is the page; a repeat is the model saying
+      // the same thing twice, not a second page.
+      if (pages.some((page) => page.path === path)) continue;
+      pages.push({ path, title: (fenceAttr(block.info, "title") ?? titleFor(block.body, path)).trim(), body: block.body });
+    }
+    if (!pages.some((page) => page.path === "/")) {
+      throw new Error("The model did not return a complete site: there is no home page");
+    }
+    return { html: null, shell: shellBlock.body, pages, summary: summaryBefore(content, blocks[0].index) };
+  }
+  // One document and no blocks: a reply in the form builds took before pages
+  // existed, which the model may still give and which is still a whole site.
   const fence =
     content.match(/```html\s*\n?([\s\S]*?)```/i) ?? content.match(/```\s*\n?(<!doctype[\s\S]*?)```/i);
   // A reply that opens a page holds to the whole-page rule, so a document cut
@@ -863,13 +950,7 @@ export function parseReply(content: string) {
   if (!html || !/<html[\s>]/i.test(html) || !/<\/html>\s*$/i.test(html)) {
     throw new Error("The model did not return a complete page");
   }
-  const opened = fence?.index ?? unfenced?.index;
-  const before = opened === undefined ? "" : content.slice(0, opened).trim();
-  const summary = (before.split(/\n+/).find((line) => line.trim()) ?? "")
-    .replace(/^[\s\-*#>\d.)]+/, "")
-    .trim()
-    .slice(0, REASON_LIMIT);
-  return { html, summary };
+  return { html, summary: summaryBefore(content, fence?.index ?? unfenced?.index) };
 }
 
 // Where a reasoning model keeps its thinking. It is not an answer and never

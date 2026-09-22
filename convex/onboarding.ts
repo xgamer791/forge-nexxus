@@ -5,10 +5,10 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireMemberId } from "./access";
-import { designSource } from "./pages";
+import { designSource, siteParts, withParts, type BuiltSite } from "./pages";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import { failOpenRun, openRun, providerTrace } from "./diagnostics";
-import { BUILD_IMAGE_LIMIT, callProvider, chatRoute, describe, parseReply } from "./generate";
+import { BUILD_IMAGE_LIMIT, builtSite, callProvider, chatRoute, describe, parseReply } from "./generate";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
@@ -542,11 +542,12 @@ async function writePage(
         "build",
       );
       const parsed = parseReply(reply);
-      if (parsed.html) {
-        const duplicate = discardedDesignHashes.includes(await designHash(parsed.html));
-        const requestedPicture = (parsed.html.match(/<img\b[^>]*>/gi) ?? [])
+      const site = builtSite(parsed);
+      if (site) {
+        const duplicate = discardedDesignHashes.includes(await designHash(designSource(site)));
+        const requestedPicture = (siteParts(site).join("\n").match(/<img\b[^>]*>/gi) ?? [])
           .some(tag => /\bdata-forge-image\s*=\s*["'][^"']+/i.test(tag));
-        if (!duplicate && (!redesign?.requireImages || requestedPicture)) return { html: parsed.html, summary: parsed.summary };
+        if (!duplicate && (!redesign?.requireImages || requestedPicture)) return { site, summary: parsed.summary };
         if (!duplicate) {
           shortfall = new Error("The rebuild did not include its required new imagery. Try rebuilding again.");
           continue;
@@ -557,7 +558,7 @@ async function writePage(
       }
       shortfall = new Error("The agent did not return a website");
     } catch (error) {
-      if (error instanceof ConvexError || !(error instanceof Error) || !/complete page|empty reply/i.test(error.message)) throw error;
+      if (error instanceof ConvexError || !(error instanceof Error) || !/complete page|complete site|empty reply/i.test(error.message)) throw error;
       shortfall = error;
     }
   }
@@ -637,14 +638,14 @@ export const build = internalAction({
       row.discardedDesignHashes !== undefined ? { requireImages: Boolean(imageRoute().apiKey) } : undefined);
       // The pictures the page asked for are made before it is saved, so the
       // first version a member opens is the finished one.
-      let html = page.html;
+      let site: BuiltSite = page.site;
       let imageWanted = 0;
       let imageMade = 0;
-      if (wantsImages(html)) {
+      if (wantsImages(siteParts(site).join("\n"))) {
         if (!await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Page written" })) return;
         await trace.note({ phase: "images", label: "Making pictures", status: "images" });
-        const pictures = await fulfilImages(ctx, { html, userId: row.userId, siteId: row.siteId, epoch: job.result.epoch, limit: BUILD_IMAGE_LIMIT });
-        html = pictures.html;
+        const pictures = await fulfilImages(ctx, { parts: siteParts(site), userId: row.userId, siteId: row.siteId, epoch: job.result.epoch, limit: BUILD_IMAGE_LIMIT });
+        site = withParts(site, pictures.parts);
         imageWanted = pictures.wanted;
         imageMade = pictures.made;
         if (pictures.made) await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Pictures made for your site" });
@@ -661,8 +662,9 @@ export const build = internalAction({
         await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
         return;
       }
-      await trace.note({ phase: "saving", label: "Saving your website", status: "saving", detail: { htmlChars: html.length } });
-      const finished = await ctx.runMutation(internal.generate.finish, { ...job.result, html, summary: page.summary || "Your first website is ready.", onboardingId: id, attempt });
+      const siteChars = siteParts(site).join("").length;
+      await trace.note({ phase: "saving", label: "Saving your website", status: "saving", detail: { htmlChars: siteChars } });
+      const finished = await ctx.runMutation(internal.generate.finish, { ...job.result, ...site, summary: page.summary || "Your first website is ready.", onboardingId: id, attempt });
       if (finished === "cancelled") {
         await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "Build cancelled" });
         return;
@@ -670,7 +672,7 @@ export const build = internalAction({
       await ctx.runMutation(internal.diagnostics.close, {
         runId,
         status: "complete",
-        htmlChars: html.length,
+        htmlChars: siteChars,
         imageWanted,
         imageMade,
       });

@@ -133,11 +133,18 @@ export function wantsImages(html: string) {
 // failed costs nothing and a thin balance makes fewer pictures rather than no
 // site. Whatever could not be made becomes the quiet wash above, and the page
 // that comes back never points at anything that does not exist.
+//
+// It takes the site as the flat strings `siteParts` gives out -- the one
+// document of an older build, or a shell and each page's markup -- and looks
+// at them together: a picture asked for in the shell is one picture however
+// many pages show it, the limit is one limit for the site, and the same tag
+// on two pages costs one call. Each string comes back changed in place.
 export async function fulfilImages(
   ctx: ActionCtx,
-  { html, userId, siteId, epoch, limit }: { html: string; userId: Id<"users">; siteId: Id<"sites">; epoch: number; limit: number },
+  { parts, userId, siteId, epoch, limit }: { parts: string[]; userId: Id<"users">; siteId: Id<"sites">; epoch: number; limit: number },
 ) {
-  if (!wantsImages(html)) return { html, wanted: 0, made: 0 };
+  const html = parts.join("\n");
+  if (!wantsImages(html)) return { parts, wanted: 0, made: 0 };
   const tags = [...new Set(html.match(IMG_TAG) ?? [])].filter(
     (tag) => attribute(tag, "data-forge-image") !== null || /^forge-image:/i.test(attribute(tag, "src") ?? ""),
   );
@@ -179,13 +186,15 @@ export async function fulfilImages(
       }
     }),
   );
-  let page = html;
-  jobs.forEach((job, index) => {
-    page = page.split(job.tag).join(withSrc(job.tag, sources[index] ?? FALLBACK_SRC));
+  const finished = parts.map((part) => {
+    let page = part;
+    jobs.forEach((job, index) => {
+      page = page.split(job.tag).join(withSrc(job.tag, sources[index] ?? FALLBACK_SRC));
+    });
+    // Anything still reaching for a picture from CSS gets the wash as well.
+    return page.replace(/url\(\s*['"]?forge-image:[^)]*\)/gi, `url(${FALLBACK_SRC})`);
   });
-  // Anything still reaching for a picture from CSS gets the wash as well.
-  page = page.replace(/url\(\s*['"]?forge-image:[^)]*\)/gi, `url(${FALLBACK_SRC})`);
-  return { html: page, wanted: jobs.length, made: sources.filter(Boolean).length };
+  return { parts: finished, wanted: jobs.length, made: sources.filter(Boolean).length };
 }
 
 // Never the key, never more than a line.

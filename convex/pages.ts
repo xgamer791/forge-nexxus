@@ -77,9 +77,15 @@ function escapeTitle(title: string) {
 }
 
 function spliceIntoShell(shell: string, page: { title: string; body: string }) {
+  // The page's title replaces whatever the shell's <title> holds, marker or
+  // not, so a model that wrote the business name there and named each page
+  // in its fence still gets a title per page. A page with no title of its own
+  // leaves the shell's alone.
   const titled = shell.includes(TITLE_MARKER)
     ? shell.split(TITLE_MARKER).join(escapeTitle(page.title))
-    : shell;
+    : page.title
+      ? shell.replace(/<title>[\s\S]*?<\/title>/i, () => `<title>${escapeTitle(page.title)}</title>`)
+      : shell;
   if (titled.includes(BODY_MARKER)) return titled.split(BODY_MARKER).join(page.body);
   // A shell that came back without its marker has a head, a nav and a footer
   // and nowhere named for the page. Serving the frame alone would show the
@@ -104,4 +110,50 @@ export function designSource(version: VersionPages) {
     return [shell, ...ordered.map((page) => `${page.path}\n${page.body}`)].join("\n");
   }
   return version.html ?? "";
+}
+
+// One page of a build, before it is stored.
+export type SitePage = { path: string; title: string; body: string };
+
+// What a build produced: either the one document builds made before pages
+// existed, or a shell and the pages that go in it.
+export type BuiltSite = { html?: string; shell?: string; pages?: SitePage[] };
+
+export function hasPages(site: BuiltSite): site is BuiltSite & { shell: string; pages: SitePage[] } {
+  return Boolean(site.shell && site.pages?.length);
+}
+
+// The markup a build is made of, as flat strings. Pictures are asked for in
+// markup, and a picture asked for in the shell belongs to every page, so the
+// whole site is fulfilled in one pass rather than page by page: one image
+// limit for the site, and a repeated tag costs one picture, not one per page.
+export function siteParts(site: BuiltSite): string[] {
+  if (hasPages(site)) return [site.shell, ...site.pages.map((page) => page.body)];
+  return site.html === undefined ? [] : [site.html];
+}
+
+// The same site with those strings put back, in the order `siteParts` gave
+// them out. A count that does not match means the caller changed the shape
+// rather than the markup, which is a bug here and not a build to store.
+export function withParts(site: BuiltSite, parts: string[]): BuiltSite {
+  if (hasPages(site)) {
+    if (parts.length !== site.pages.length + 1) throw new Error("Site parts do not match the site");
+    const [shell, ...bodies] = parts;
+    return { shell, pages: site.pages.map((page, index) => ({ ...page, body: bodies[index] })) };
+  }
+  if (parts.length !== (site.html === undefined ? 0 : 1)) throw new Error("Site parts do not match the site");
+  return { html: parts[0] };
+}
+
+// The site as the model wrote it, to hand back on the turn that edits it. It
+// is the same shape the reply is parsed from, so a model reading its own last
+// answer sees what it wrote and can return the same thing changed.
+export function serializeSite(site: BuiltSite): string | null {
+  if (hasPages(site)) {
+    const blocks = site.pages.map(
+      (page) => `\`\`\`html path="${page.path}" title="${page.title.replace(/"/g, "'")}"\n${page.body}\n\`\`\``,
+    );
+    return [`\`\`\`html shell\n${site.shell}\n\`\`\``, ...blocks].join("\n\n");
+  }
+  return site.html ? `\`\`\`html\n${site.html}\n\`\`\`` : null;
 }
