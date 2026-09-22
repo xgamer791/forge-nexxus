@@ -6,7 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import http from "./http";
 import { composePage, designSource, diskLinks, fileNameFor, normalizePath, relativeFileLink, rewriteRootLinks } from "./pages";
 import schema from "./schema";
-import { SCREEN_FLOOR, withScreenFloor } from "./sites";
+import { SCREEN_FLOOR, VIEWPORT_FLOOR, withScreenFloor } from "./sites";
 
 const modules = import.meta.glob("./**/*.*s");
 const fresh = () => convexTest(schema, modules);
@@ -400,11 +400,12 @@ describe("a page's links, wherever the page goes", () => {
 });
 
 describe("the screen floor", () => {
-  const DOC = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shop</title></head><body><main><section>Hi</section></main></body></html>';
+  const DOC = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shop</title></head><body><main><section>Hi</section></main></body></html>';
 
   test("goes first in the head, once, however often the page is served", () => {
     const once = withScreenFloor(DOC);
     expect(once).toContain(`<head><style data-forge-floor>`);
+    expect(once.match(/name="viewport"/g)).toHaveLength(1);
     expect(withScreenFloor(once)).toBe(once);
     expect(once.match(/data-forge-floor/g)).toHaveLength(1);
   });
@@ -416,9 +417,18 @@ describe("the screen floor", () => {
   });
 
   test("never outranks the page's own rules: every selector has no specificity", () => {
-    const rules = SCREEN_FLOOR.replace(/^.*?\{/, "").match(/[^{}]+(?=\{)/g) ?? [];
+    const rules = (SCREEN_FLOOR.replace(/<\/?style[^>]*>/g, "").match(/[^{};]+(?=\{)/g) ?? []).filter((rule) => !rule.startsWith("@"));
     expect(rules.length).toBeGreaterThan(0);
     for (const selector of rules) expect(selector.startsWith(":where(")).toBe(true);
+  });
+
+  test("gives a page with no viewport tag one, and leaves a page's own alone", () => {
+    const bare = '<!doctype html><html><head><title>Shop</title></head><body></body></html>';
+    expect(withScreenFloor(bare)).toContain(`<head>${VIEWPORT_FLOOR}<style data-forge-floor>`);
+    const own = '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body></body></html>';
+    const served = withScreenFloor(own);
+    expect(served).not.toContain(VIEWPORT_FLOOR);
+    expect(served.match(/name="viewport"/g)).toHaveLength(1);
   });
 
   test("leaves a fragment without a head alone", () => {

@@ -298,5 +298,7 @@ export default defineSchema({
     // Unset means on. Off stops Forge reading and adding memories; what is
     // saved stays until the member forgets it.
     memory: v.optional(v.boolean()),
+    // Which screen the desktop preview shows a site on.
+    previewDevice: v.optional(v.union(v.literal("iphone"), v.literal("iphone-max"), v.literal("pixel"), v.literal("ipad"), v.literal("desktop"))),
   }).index("by_user", ["userId"]),
 });

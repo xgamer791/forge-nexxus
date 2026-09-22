@@ -28,13 +28,21 @@ function withBadge(html: string) {
 // build already saved and never becomes part of what the model is shown or
 // what a rebuild's duplicate check compares.
 export const SCREEN_FLOOR =
-  "<style data-forge-floor>@media (max-width:767px){" +
+  "<style data-forge-floor>:where(html){-webkit-text-size-adjust:100%;text-size-adjust:100%}@media (max-width:767px){" +
   ":where(main>section:first-of-type){box-sizing:border-box;min-height:calc(100svh - 64px);align-content:center}" +
   ":where(main>section:not(:first-of-type)){box-sizing:border-box;min-height:85svh;align-content:center}" +
   "}</style>";
+// A page with no viewport tag is laid out by a phone as a 980px desktop page
+// shrunk to fit, which no stylesheet can undo. The contract asks for one; this
+// is the floor when a build leaves it out. It does not ask for
+// viewport-fit=cover, which only a page padded for the notch should have.
+export const VIEWPORT_FLOOR = '<meta name="viewport" content="width=device-width, initial-scale=1">';
 export function withScreenFloor(html: string) {
   if (html.includes("data-forge-floor")) return html;
-  return /<head\b[^>]*>/i.test(html) ? html.replace(/<head\b[^>]*>/i, (head) => head + SCREEN_FLOOR) : html;
+  const head = /<head\b[^>]*>/i;
+  if (!head.test(html)) return html;
+  const viewport = /<meta\b[^>]*name\s*=\s*["']?viewport/i.test(html) ? "" : VIEWPORT_FLOOR;
+  return html.replace(head, (tag) => tag + viewport + SCREEN_FLOOR);
 }
 
 // The page as a visitor sees it: the version's HTML with the screen floor,

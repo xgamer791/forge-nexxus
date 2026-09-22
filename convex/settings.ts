@@ -14,6 +14,7 @@ const fields = {
   uiFont: v.optional(v.string()),
   codeFont: v.optional(v.string()),
   memory: v.optional(v.boolean()),
+  previewDevice: v.optional(v.union(v.literal("iphone"), v.literal("iphone-max"), v.literal("pixel"), v.literal("ipad"), v.literal("desktop"))),
 };
 
 export async function settingsFor(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {

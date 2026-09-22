@@ -196,7 +196,10 @@ const SETTING_DEFAULTS = {
   uiFont: 'Satoshi',
   codeFont: 'System monospace',
   memory: true,
+  previewDevice: 'desktop',
 };
+// Set once the preview exists; applying settings reaches it through this.
+let applyPreviewDevice = null;
 function knownSettings(values) {
   if (!values || typeof values !== 'object') return {};
   return Object.fromEntries(
@@ -334,6 +337,7 @@ function applySettings(values) {
   applyTransparency(values.reduceTransparency === true);
   // Off is the only state worth a sentence; on is what the toggle already says.
   document.querySelectorAll('.memory-paused').forEach(note => { note.hidden = values.memory !== false; });
+  applyPreviewDevice?.();
   document.querySelectorAll('.font-select[data-setting]').forEach(select => {
     const label = select.querySelector('span');
     if (!label) return;
@@ -1990,6 +1994,15 @@ if (forge?.sites && previewScreen) {
     const showing = pages.find(page => page.path === open);
     frame.title = showing ? `Your website: ${showing.title || showing.path}` : 'Your website';
   }
+  // A phone's scrollbar floats over the page and takes no width; a computer's
+  // can take 15px of it, which would lay a 393px phone out at 378. While a
+  // device is shown, the frame's copy of the page hides it. The saved site is
+  // never touched.
+  const PHONE_SCROLLBAR = '<style data-forge-preview>html{scrollbar-width:none}html::-webkit-scrollbar{display:none}</style>';
+  function framed(html) {
+    if (!previewScreen.classList.contains('is-device')) return html;
+    return /<head\b[^>]*>/i.test(html) ? html.replace(/<head\b[^>]*>/i, tag => tag + PHONE_SCROLLBAR) : PHONE_SCROLLBAR + html;
+  }
   function renderPreview() {
     // The screen is the site and nothing else. What used to sit above and
     // below it — the name, the build summary, the address, publish, unpublish,
@@ -1997,6 +2010,9 @@ if (forge?.sites && previewScreen) {
     // standing on top of the thing being looked at.
     const built = Boolean(activeSite?.currentVersionId);
     empty.hidden = built && current !== null;
+    let address = activeSite?.name || 'Your website';
+    try { if (activeSite?.publishedUrl) address = new URL(activeSite.publishedUrl).host; } catch { /* keep the name */ }
+    previewScreen.querySelectorAll('[data-device-address]').forEach(field => { field.textContent = address; });
     if (!built) { frame.removeAttribute('srcdoc'); current = null; }
     renderPages();
   }
@@ -2017,7 +2033,7 @@ if (forge?.sites && previewScreen) {
       // being shown; the server says which one it served, so the strip marks
       // what is actually in the frame.
       if (current?.path) shownPath = current.path;
-      if (current) frame.srcdoc = current.html;
+      if (current) frame.srcdoc = framed(current.html);
       renderPreview();
     }, shownPath === '/' ? undefined : shownPath);
   }
@@ -2049,9 +2065,71 @@ if (forge?.sites && previewScreen) {
     showOverlay(previewScreen);
     watch();
     renderPreview();
+    applyPreviewDevice?.();
   };
 
   previewScreen.querySelector('.preview-back').addEventListener('click', closeMenu);
+
+  // Real viewports, on a computer. Each is the browser area the device
+  // actually gives a page, in CSS pixels, beside the bars that take the rest
+  // of its screen: iPhone 16 is 393x852 with Safari's status and bottom bars
+  // leaving 393x659, which is what 100svh measures there. The frame is laid
+  // out at that size and the device is scaled to fit, so the page inside
+  // measures the phone, not this window. On a phone the preview already is
+  // the phone, so this only runs where the choice is on screen.
+  const PREVIEW_DEVICES = {
+    iphone: {w: 393, h: 852, top: 59, bar: 0, bottom: 134, radius: 55, chrome: 'ios'},
+    'iphone-max': {w: 440, h: 956, top: 59, bar: 0, bottom: 134, radius: 60, chrome: 'ios'},
+    pixel: {w: 412, h: 915, top: 52, bar: 56, bottom: 24, radius: 44, chrome: 'android'},
+    ipad: {w: 820, h: 1180, top: 24, bar: 50, bottom: 0, radius: 18, chrome: 'ipados'},
+    desktop: null,
+  };
+  const BEZEL = 10;
+  const wide = window.matchMedia('(min-width:900px)');
+  const deviceBox = previewScreen.querySelector('[data-preview-box]');
+  const device = previewScreen.querySelector('[data-preview-device]');
+  const deviceButtons = [...previewScreen.querySelectorAll('[data-preview-devices] [data-device]')];
+  const stage = previewScreen.querySelector('.preview-frame');
+  function chosenDevice() {
+    return settings.previewDevice in PREVIEW_DEVICES ? settings.previewDevice : SETTING_DEFAULTS.previewDevice;
+  }
+  function fitDevice() {
+    const spec = wide.matches ? PREVIEW_DEVICES[chosenDevice()] : null;
+    if (!spec || previewScreen.hidden) return;
+    const room = stage.getBoundingClientRect();
+    const style = getComputedStyle(stage);
+    const across = room.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const down = room.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    const scale = Math.min(1, across / (spec.w + BEZEL * 2), down / (spec.h + BEZEL * 2));
+    device.style.setProperty('--device-scale', String(Math.max(scale, 0.2)));
+    deviceBox.style.width = `${(spec.w + BEZEL * 2) * scale}px`;
+    deviceBox.style.height = `${(spec.h + BEZEL * 2) * scale}px`;
+  }
+  applyPreviewDevice = () => {
+    const key = chosenDevice();
+    const spec = wide.matches ? PREVIEW_DEVICES[key] : null;
+    deviceButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.device === key)));
+    const was = previewScreen.classList.contains('is-device');
+    previewScreen.classList.toggle('is-device', Boolean(spec));
+    if (was !== Boolean(spec) && current) frame.srcdoc = framed(current.html);
+    if (spec) {
+      previewScreen.dataset.chrome = spec.chrome;
+      for (const [name, value] of Object.entries({w: spec.w, h: spec.h, top: spec.top, bar: spec.bar, bottom: spec.bottom, radius: spec.radius})) {
+        device.style.setProperty(`--device-${name}`, String(value));
+      }
+      fitDevice();
+    } else {
+      delete previewScreen.dataset.chrome;
+      deviceBox.style.width = '';
+      deviceBox.style.height = '';
+    }
+  };
+  deviceButtons.forEach(button => button.addEventListener('click', () => {
+    if (button.dataset.device !== chosenDevice()) saveSettings({previewDevice: button.dataset.device});
+  }));
+  wide.addEventListener('change', () => applyPreviewDevice());
+  new ResizeObserver(fitDevice).observe(stage);
+  applyPreviewDevice();
   // The icon row goes while the preview is open and comes back when it
   // closes, whichever way it closed — the back control, Escape, the system
   // back gesture, or another screen opening over it. Watching the attribute

@@ -8,8 +8,8 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
-<meta name="app-version" content="281971138663894564c2266565ad1d220c0ba597">
-<meta name="app-build" content="62">
+<meta name="app-version" content="74180ba59277783240edaa2d3ac25c9b7ed68109">
+<meta name="app-build" content="63">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">
@@ -30,7 +30,7 @@ defined( 'ABSPATH' ) || exit;
 <main class="app" hidden inert>
 <header class="chrome">
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
-<span class="build-stamp" data-build-stamp aria-label="Version 62">62</span>
+<span class="build-stamp" data-build-stamp aria-label="Version 63">63</span>
 <button class="globe-button" type="button" aria-label="Domains" data-open="address" aria-haspopup="dialog"><svg><use href="#globe"/></svg></button>
 <button class="website-preview-button" type="button" aria-label="Preview website" aria-haspopup="dialog" aria-expanded="false"><svg><use href="#preview-eye"/></svg></button>
 </header>
@@ -262,9 +262,9 @@ defined( 'ABSPATH' ) || exit;
 </div>
 </section>
 <section class="overlay preview" data-back=".preview-back" role="dialog" aria-modal="true" aria-label="Website preview" hidden>
-<button class="preview-exit preview-back" type="button" aria-label="Back to the dashboard"><svg aria-hidden="true"><use href="#arrow-left"/></svg></button>
+<div class="preview-bar"><button class="preview-exit preview-back" type="button" aria-label="Back to the dashboard"><svg aria-hidden="true"><use href="#arrow-left"/></svg></button><div class="preview-devices" role="group" aria-label="Preview on" data-preview-devices><button type="button" data-device="iphone" aria-pressed="false">iPhone 16</button><button type="button" data-device="iphone-max" aria-pressed="false">iPhone 16 Pro Max</button><button type="button" data-device="pixel" aria-pressed="false">Pixel 9</button><button type="button" data-device="ipad" aria-pressed="false">iPad Air</button><button type="button" data-device="desktop" aria-pressed="false">Desktop</button></div></div>
 <nav class="preview-pages" data-preview-pages aria-label="Pages in this site" hidden></nav>
-<div class="preview-frame"><iframe class="preview-iframe" title="Your website" data-preview-frame sandbox="" referrerpolicy="no-referrer"></iframe><p class="preview-empty" hidden>Nothing built yet. Describe your site and Forge will make a first version.</p></div>
+<div class="preview-frame"><div class="preview-device-box" data-preview-box><div class="preview-device" data-preview-device><div class="device-status" aria-hidden="true"><span class="device-time">9:41</span><span class="device-cutout"></span><span class="device-battery"></span></div><div class="device-toolbar device-toolbar-top" aria-hidden="true"><span class="device-address" data-device-address></span></div><iframe class="preview-iframe" title="Your website" data-preview-frame sandbox="" referrerpolicy="no-referrer"></iframe><div class="device-toolbar device-toolbar-bottom" aria-hidden="true"><span class="device-address" data-device-address></span><span class="device-home"></span></div></div></div><p class="preview-empty" hidden>Nothing built yet. Describe your site and Forge will make a first version.</p></div>
 </section>
 </main>
 <?php wp_footer(); ?>
