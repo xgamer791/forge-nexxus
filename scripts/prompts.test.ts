@@ -42,29 +42,24 @@ describe("one instruction, in one place", () => {
     expect(stack.length).toBeLessThan(35000);
   });
 
-  test("type lives in DESIGN_GOD: Satoshi or Switzer from Fontshare", () => {
-    expect(DESIGN_GOD).toContain("One typeface for the entire build");
-    expect(DESIGN_GOD).toContain("Use **Satoshi** or **Switzer** from Fontshare only");
-    expect(DESIGN_GOD).toContain("https://www.fontshare.com/fonts/satoshi");
-    expect(DESIGN_GOD).toContain("https://www.fontshare.com/fonts/switzer");
-    expect(DESIGN_GOD).toContain("No more than one font per site");
-    expect(FORGE_MD).not.toMatch(/There is no preferred family/);
-    expect(FORGE_MD).not.toMatch(/Fontshare and Google Fonts are both available/);
+  test("type lives in DESIGN_GOD, as guidance: Satoshi and Switzer are a start, not a rule", () => {
+    expect(DESIGN_GOD).toContain("## Type");
+    expect(DESIGN_GOD).toContain("Fontshare and Google Fonts are both available");
+    expect(DESIGN_GOD).toContain("Satoshi and Switzer from Fontshare are good starting points, not requirements");
+    expect(DESIGN_GOD).not.toContain("One typeface for the entire build");
+    expect(DESIGN_GOD).not.toContain("from Fontshare only");
     expect(FORGE_MD).not.toContain("https://www.fontshare.com/fonts/satoshi");
-    expect(FED).not.toContain("https://www.fontshare.com/fonts/satoshi");
-    // The contract does not restate the type rule: design instruction has one
-    // home, and repeating it there is how two homes start disagreeing.
-    expect(contract).not.toContain("Satoshi or Switzer");
-    expect(stack).not.toMatch(/at most two (Google Fonts )?families/i);
+    // The contract does not restate type: design instruction has one home.
+    expect(contract).not.toContain("Satoshi");
   });
 
-  test("layout and color live in DESIGN_GOD: no cards, no accent text, full width", () => {
-    expect(DESIGN_GOD).toContain("No card-style layouts");
-    expect(DESIGN_GOD).toContain("No accent color on text");
-    expect(DESIGN_GOD).toContain("Always use full page width layouts");
-    expect(DESIGN_GOD).toContain("even a SaaS brief does not get the card kit");
-    expect(FED).not.toContain("No card-style layouts");
-    expect(FORGE_MD).not.toContain("No card-style layouts");
+  test("layout lives in DESIGN_GOD, and the content decides its shape", () => {
+    expect(DESIGN_GOD).toContain("## Layout");
+    expect(DESIGN_GOD).toContain("Let the content decide the shape");
+    for (const ban of ["No card-style layouts", "No accent color on text", "Always use full page width layouts"]) {
+      expect(DESIGN_GOD).not.toContain(ban);
+    }
+    expect(FORGE_MD).not.toMatch(/\bcards?\b/);
   });
 
   test("the site covers the job the brief names, including selling", () => {
@@ -139,8 +134,9 @@ describe("FED is the frontend-design skill, and is never edited", () => {
     // The skill offers a typeface pairing and names the looks AI design falls
     // into. Both stay in it; DESIGN_GOD is what overrides them.
     expect(FED).toMatch(/use one family or two/i);
-    expect(DESIGN_GOD).toContain("Never pair two families");
-    expect(DESIGN_GOD).toContain("Where this file and FED disagree, follow this file");
+    expect(DESIGN_GOD).toContain("One family is often enough; two works when they are clearly different");
+    // Anti-slop is the part of DESIGN_GOD that outranks FED.
+    expect(DESIGN_GOD).toContain("Where one of them and anything else you have been told disagree, including FED, this section wins");
     expect(DESIGN_GOD).toContain("never a menu to choose from");
   });
 
@@ -166,51 +162,47 @@ describe("the contract sets a floor, not a mould", () => {
     // Design instruction is DESIGN_GOD's, behaviour is FORGE_MD's, and the
     // contract keeps neither: it says what this platform can store and serve.
     expect(DESIGN_GOD).toContain("Semantic landmarks");
-    expect(DESIGN_GOD).toContain("Mobile-first and responsive from 320px");
-    expect(DESIGN_GOD).toContain("a nav that stays usable on a phone without JavaScript");
+    expect(DESIGN_GOD).toContain("it can be navigated without a script");
+    expect(DESIGN_GOD).toContain("design the narrow layout first");
     expect(FORGE_MD).toContain("What every page owes, whatever shape it takes");
-    expect(contract).not.toContain("Mobile-first and responsive from 320px");
+    expect(contract).not.toContain("Semantic landmarks");
   });
 
   test("navigation is designed, and DESIGN_GOD is where that is said", () => {
     expect(DESIGN_GOD).toContain("## Navigation");
-    expect(DESIGN_GOD).toContain("A bar with the name on the left and links on the right is one answer, not the answer");
+    expect(DESIGN_GOD).toContain("a bar with the name on the left and links on the right is one answer, not the answer");
     expect(DESIGN_GOD).toContain("at least 44px");
   });
 
-  test("a phone always gets a header bar and a Menu dropdown, never the desktop row", () => {
-    // Every build came back with the wide nav wrapped onto a phone, because
-    // the floor said to "let it wrap or scroll sideways" and a dropdown was
-    // only owed past however many links the agent decided a row could carry.
-    expect(DESIGN_GOD).toContain("On a phone: a header bar and a Menu button, on every build");
-    expect(DESIGN_GOD).toContain("However few links there are, they never show as a row on a phone");
+  test("a phone menu works without a script, and the Menu dropdown is the default", () => {
+    expect(DESIGN_GOD).toContain("A published site runs no scripts");
+    expect(DESIGN_GOD).toContain("a Menu button that opens a dropdown is the reliable default below 768px wide");
     expect(DESIGN_GOD).not.toMatch(/wrap or scroll sideways/);
-    expect(DESIGN_GOD).not.toMatch(/More links than a phone can carry/);
-    // The phone nav has to work without a script, because a published site
-    // runs none: one checkbox and its label, phone-first, revealed wide.
+    // The checkbox pattern is kept as a working reference.
     expect(DESIGN_GOD).toContain('<input class="nav-toggle" type="checkbox" id="nav-toggle">');
     expect(DESIGN_GOD).toContain('<label class="nav-button" for="nav-toggle">');
     expect(DESIGN_GOD).toContain(".nav-toggle:checked ~ .site-nav{display:block}");
     expect(DESIGN_GOD).toContain("@media (min-width:768px)");
-    // Nothing can close the menu after a tap, so it must scroll away.
-    expect(DESIGN_GOD).toContain("On a phone the header is neither fixed nor sticky");
+    expect(DESIGN_GOD).toContain("better not fixed or sticky");
   });
 
-  test("the phone floor names what a phone layout has to hold", () => {
+  test("the floor that makes a page work stays, and is not optional", () => {
+    expect(DESIGN_GOD).toContain("These make a page work, and they are not optional");
     expect(DESIGN_GOD).toContain("Nothing scrolls sideways");
-    expect(DESIGN_GOD).toContain("Text and controls keep 16–24px from the edge of the screen");
-    expect(DESIGN_GOD).toContain("Every split, grid and row of columns becomes one column");
-    expect(DESIGN_GOD).toContain("Body text is 16–18px and never smaller");
+    expect(DESIGN_GOD).toContain("Body text is at least 16px");
+    expect(DESIGN_GOD).toContain("It is accessible");
   });
 
-  test("the palette is taken from the business, not from a ban list", () => {
+  test("the palette is taken from the business, and a light page is white", () => {
     expect(DESIGN_GOD).toContain("## Colour");
     expect(DESIGN_GOD).toContain("Take the palette from the business");
     expect(DESIGN_GOD).toContain("Decide light or dark from the subject");
-    expect(DESIGN_GOD).toContain("Two sites on the same family must not read the same");
-    // FED names the default looks. DESIGN_GOD says what to do with that list,
-    // rather than FED being edited to remove it.
+    expect(DESIGN_GOD).toContain("Two sites set in the same family should still not read the same");
     expect(DESIGN_GOD).toContain("never a menu to choose from");
+    // The white rule is anti-slop, which stays strict.
+    const antiSlop = DESIGN_GOD.slice(DESIGN_GOD.indexOf("## Anti-slop"), DESIGN_GOD.indexOf("## The floor every page meets"));
+    expect(antiSlop).toContain("**Light means white.**");
+    expect(antiSlop).toContain("**These are rules, not suggestions.**");
     expect(FED).toContain("warm cream background");
   });
 
