@@ -28,15 +28,41 @@ const REASON_LIMIT = 300;
 // the one-line summary that rides along with a build.
 const TALK_LIMIT = 4000;
 
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+
 // Where conversation and site building go when the deployment says nothing.
 // `AI_BASE_URL`, `AI_MODEL`, `AI_BUILD_MODEL` and `AI_API_KEY` name the real
 // route, and any provider that speaks the OpenAI chat shape serves it. These
 // are only the fallbacks, so an unset variable lands on the model this
-// deployment actually runs rather than nowhere. Pictures have a route of their
-// own in `images.ts`, and text never goes to it.
-const CHAT_BASE_URL = "https://api.deepseek.com/v1";
-const CHAT_MODEL = "deepseek-flash";
-const CHAT_MODEL_LABEL = "DeepSeek v4.1 Flash";
+// deployment actually runs rather than nowhere. `AI_REASONING_EFFORT` is sent
+// as `reasoning_effort` on every chat and build call; unset, it is high.
+// Pictures have a route of their own in `images.ts`, and text never goes to it.
+const CHAT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+const CHAT_MODEL = "gemini-3.8-flash";
+const CHAT_MODEL_LABEL = "Gemini 3.8 Flash";
+// Gemini 3.8 Flash's OpenAI-compat thinking levels. `high` is the default
+// this deployment wants. `minimal` and `none` error on this model, so an
+// unknown or empty `AI_REASONING_EFFORT` lands on high rather than being sent.
+export type ReasoningEffort = "low" | "medium" | "high";
+const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
+
+export function reasoningEffort(): ReasoningEffort {
+  const wanted = process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "";
+  return wanted === "low" || wanted === "medium" || wanted === "high" ? wanted : DEFAULT_REASONING_EFFORT;
+}
+
+// The OpenAI-shaped body every chat and build call sends — `complete`, the
+// probe, and anything else that shares this route, memory included. Pictures
+// never go through here.
+export function completionBody(route: { model: string }, messages: ChatMessage[], maxTokens: number) {
+  return {
+    model: route.model,
+    messages,
+    temperature: 0.7,
+    max_tokens: maxTokens,
+    reasoning_effort: reasoningEffort(),
+  };
+}
 
 // How many new pictures one reply may ask for. A first build carries a hero
 // and then whatever the page is actually about — products need one each, and
@@ -91,9 +117,10 @@ export const routing = internalQuery({
     const chat = chatRoute();
     const build = chatRoute("build");
     const image = imageRoute();
+    const effort = reasoningEffort();
     return {
-      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey) },
-      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model },
+      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: effort },
+      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: effort },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -171,8 +198,6 @@ const PENDING_LABELS: Record<RequestKind, string> = {
   image: "Making an image…",
   video: "Making a video…",
 };
-
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 // One prompt in, one build out. The credits are held before the provider is
 // called and settled or released after, so a failed build costs nothing and a
@@ -607,7 +632,7 @@ async function complete(
         method: "POST",
         signal: clock.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${route.apiKey}` },
-        body: JSON.stringify({ model: route.model, messages, temperature: 0.7, max_tokens: limit }),
+        body: JSON.stringify(completionBody(route, messages, limit)),
       });
       bodyText = await response.text();
     } catch (error) {
