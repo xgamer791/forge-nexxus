@@ -327,14 +327,19 @@ describe("a brand new build, start to finish", () => {
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    // The words: every chat and build turn on DeepSeek's OpenAI-compatible path.
-    // A Gemini-only reasoning_effort field must not ride along.
+    // The words: every chat and build turn on DeepSeek's OpenAI-compatible path,
+    // each asking to think at the level AI_REASONING_EFFORT names — one value,
+    // every turn, because a level the operator sets is not a default to split.
+    // Temperature is not sent at all: this model documents it as inert while
+    // thinking is on, and thinking is on by default.
     const chat = providers.chatCalls();
     expect(chat.length).toBeGreaterThan(0);
     for (const call of chat) {
       expect(call.url).toBe("https://api.deepseek.com/v1/chat/completions");
       expect(call.body.model).toBe("deepseek-flash");
-      expect(call.body.reasoning_effort).toBeUndefined();
+      expect(call.body.reasoning_effort).toBe("high");
+      expect(call.body.thinking).toEqual({ type: "enabled" });
+      expect(call.body.temperature).toBeUndefined();
     }
 
     // The pictures: their own native route, their own model, never the chat one.

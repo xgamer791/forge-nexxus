@@ -124,16 +124,17 @@ const EFFORT_MODELS = new Set(["deepseek-flash", "deepseek-v4-pro"]);
 export function reasoningEffort(
   baseUrl: string,
   model = "",
-  purpose: "chat" | "build" = "chat",
+  purpose: Purpose = "chat",
 ): ReasoningEffort | undefined {
   const gemini = isGeminiChatHost(baseUrl);
   const takes = gemini ? GEMINI_EFFORTS : EFFORT_MODELS.has(model) ? DEEPSEEK_EFFORTS : null;
   if (!takes) return undefined;
-  // Both turns ask for it, at different levels. Writing a whole site is what
-  // the top of the range is for; a reply, the strategist's brief and the
-  // memory note are worth thinking about but not worth the longest think
-  // there is, so they sit at high -- which is also what this provider does
-  // when asked for nothing, said out loud so the request means it.
+  // Every turn asks for it, at the level the work is worth. Writing a site is
+  // what the top of the range is for, and so is the brief that build is going
+  // to follow -- a strategist that thought lightly hands a build a thin brief
+  // and no amount of effort downstream gets it back. A reply and the memory
+  // note sit at high, which is also what this provider does when asked for
+  // nothing, said out loud so the request means it.
   const wanted = (process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "") as ReasoningEffort;
   if (takes.includes(wanted)) return wanted;
   // A name this route does not have. Gemini is the narrower vocabulary, so
@@ -144,14 +145,14 @@ export function reasoningEffort(
   // above high, a build takes it and everything else stays at high; setting
   // AI_REASONING_EFFORT overrides both, since that is the operator's word.
   if (gemini) return "high";
-  return purpose === "build" ? "max" : "high";
+  return purpose === "chat" ? "high" : "max";
 }
 
 // The OpenAI-shaped body every chat and build call sends — `complete`, the
 // probe, and anything else that shares this route, memory included. Pictures
 // never go through here. `reasoning_effort` is present only for Gemini.
 export function completionBody(
-  route: { model: string; baseUrl?: string; purpose?: "chat" | "build" },
+  route: { model: string; baseUrl?: string; purpose?: Purpose },
   messages: ChatMessage[],
   maxTokens: number,
 ) {
@@ -201,7 +202,11 @@ const RUN_WATCHDOG_MS = 610000;
 // point builds at a stronger model with `AI_BUILD_MODEL` and leave chat on
 // `AI_MODEL`. Unset, a build runs on exactly the model chat does, so nothing
 // changes for a deployment that has not chosen.
-export function chatRoute(purpose: "chat" | "build" = "chat") {
+// The three kinds of turn this route carries. They differ in what they are
+// worth thinking about and, for a build, which model may answer.
+export type Purpose = "chat" | "build" | "strategy";
+
+export function chatRoute(purpose: Purpose = "chat") {
   const baseUrl = (process.env.AI_BASE_URL?.trim() || CHAT_BASE_URL).replace(/\/+$/, "");
   const model =
     (purpose === "build" ? process.env.AI_BUILD_MODEL?.trim() : "") ||
@@ -223,7 +228,7 @@ export function chatRoute(purpose: "chat" | "build" = "chat") {
 // The ceiling one reply is given, thinking included. `AI_MAX_TOKENS` is the
 // deployment's own cap and wins where it is set; unset, a build gets room for
 // a whole site and a conversation gets room for an answer.
-export function maxTokensFor(purpose: "chat" | "build") {
+export function maxTokensFor(purpose: Purpose) {
   return Number(process.env.AI_MAX_TOKENS) || (purpose === "build" ? BUILD_MAX_TOKENS : DEFAULT_MAX_TOKENS);
 }
 
@@ -234,10 +239,12 @@ export const routing = internalQuery({
   handler: async () => {
     const chat = chatRoute();
     const build = chatRoute("build");
+    const strategy = chatRoute("strategy");
     const image = imageRoute();
     return {
       chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl, chat.model, "chat") ?? null, maxTokens: maxTokensFor("chat") },
       build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: reasoningEffort(build.baseUrl, build.model, "build") ?? null, maxTokens: maxTokensFor("build") },
+      strategy: { host: new URL(strategy.baseUrl).host, model: strategy.model, reasoningEffort: reasoningEffort(strategy.baseUrl, strategy.model, "strategy") ?? null },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -953,7 +960,7 @@ export async function callProvider(
   tokenLimit?: number,
   budgetMs = TEXT_BUDGET_MS,
   trace?: ProviderTrace,
-  purpose: "chat" | "build" = "chat",
+  purpose: Purpose = "chat",
 ) {
   const route = chatRoute(purpose);
   if (!route.apiKey) {

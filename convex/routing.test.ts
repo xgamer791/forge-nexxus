@@ -72,6 +72,16 @@ describe("the route is whatever the deployment names", () => {
     }
   });
 
+  test("the strategist runs on the chat model, however hard it thinks", () => {
+    // Its output is a brief, not a site: `AI_BUILD_MODEL` is the build's.
+    process.env.AI_BASE_URL = DEEPSEEK;
+    process.env.AI_MODEL = "deepseek-flash";
+    process.env.AI_BUILD_MODEL = "deepseek-v4-pro";
+    expect(chatRoute("strategy").model).toBe("deepseek-flash");
+    expect(chatRoute("build").model).toBe("deepseek-v4-pro");
+    delete process.env.AI_BUILD_MODEL;
+  });
+
   test("builds can take a stronger model than chat does", () => {
     process.env.AI_BASE_URL = GOOGLE_OPENAI;
     process.env.AI_MODEL = "gemini-3.8-flash";
@@ -106,9 +116,9 @@ describe("reasoning_effort goes where it has been measured to work", () => {
       .toBeUndefined();
   });
 
-  test("a build asks for max and everything else for high, beside the thinking field", () => {
+  test("a build and the brief it follows ask for max; a reply asks for high", () => {
     delete process.env.AI_REASONING_EFFORT;
-    for (const [purpose, effort] of [["chat", "high"], ["build", "max"]] as const) {
+    for (const [purpose, effort] of [["chat", "high"], ["strategy", "max"], ["build", "max"]] as const) {
       expect(reasoningEffort(DEEPSEEK, "deepseek-flash", purpose)).toBe(effort);
       expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose }, messages, 200)).toEqual({
         model: "deepseek-flash",
@@ -149,6 +159,7 @@ describe("reasoning_effort goes where it has been measured to work", () => {
     process.env.AI_REASONING_EFFORT = "turbo";
     expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("high");
     expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("max");
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "strategy")).toBe("max");
     expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "chat")).toBe("high");
   });
 

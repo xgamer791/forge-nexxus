@@ -29,7 +29,7 @@ export const chat = internalAction({
     // reproduce what a real build sees.
     maxTokens: v.optional(v.number()),
     prompt: v.optional(v.string()),
-    purpose: v.optional(v.union(v.literal("chat"), v.literal("build"))),
+    purpose: v.optional(v.union(v.literal("chat"), v.literal("build"), v.literal("strategy"))),
     // Extra body fields to try, as JSON. A provider's own switches -- a
     // thinking budget, an effort level -- are not in the OpenAI shape, and
     // the only way to learn whether this route takes one is to send it and
