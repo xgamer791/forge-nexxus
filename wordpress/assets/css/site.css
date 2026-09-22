@@ -68,13 +68,13 @@ p{margin:0}
 .nav-open .nav-toggle span:last-child{transform:translateY(-4px) rotate(-45deg)}
 html.is-member [data-member-hide]{display:none}
 
-/* Hero: the composer is the product — the same pill as the mobile app,
-   docked 25px from the section floor. It lives in the hero and scrolls away
-   with the page; it is not sticky. */
+/* Hero: the composer is the product — the same pill as the mobile app.
+   It rests as one line, fixed to the bottom of the first screen. A click
+   opens it and brings in add-media and the microphone. */
 .hero{position:relative;height:100vh;height:100svh;min-height:100svh;max-height:100svh;overflow:hidden;isolation:isolate;background:#0b0c10}
 .hero-background-video{position:absolute;z-index:0;left:50%;top:50%;width:100%;height:100vh;height:100lvh;min-width:100%;min-height:100%;max-width:none;object-fit:cover;object-position:center;transform:translate(-50%,-50%)}
 .hero::after{content:"";position:absolute;z-index:1;inset:0;background:rgba(0,0,0,.1);pointer-events:none}
-.hero-stage{--hero-composer-height:97px;--hero-floor:25px;position:relative;z-index:2;min-height:100vh;min-height:100svh;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;padding-top:var(--header);padding-bottom:var(--hero-floor)}
+.hero-stage{--hero-composer-height:54px;--hero-floor:max(12px,env(safe-area-inset-bottom));position:relative;z-index:2;height:100%;min-height:0;padding-top:var(--header);padding-bottom:0}
 .hero-message-rotator{position:absolute;left:50%;bottom:calc(var(--hero-floor) + var(--hero-composer-height) + clamp(34px,5svh,52px) - 54px);width:min(calc(100% - (var(--gutter) * 2)),760px);height:clamp(150px,25svh,235px);transform:translateX(-50%);overflow:hidden;color:#fff;pointer-events:none}
 .hero-message{position:absolute;inset:0;margin:0;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;column-gap:.26em;row-gap:.06em;padding:0 4px;font-family:var(--font-display);font-size:23px;font-weight:800;letter-spacing:-.035em;line-height:1.02;text-align:center;text-wrap:balance;opacity:0;visibility:hidden}
 .hero-message.is-active,.hero-message.is-leaving{opacity:1;visibility:visible}
@@ -88,15 +88,22 @@ html.is-member [data-member-hide]{display:none}
 .is-home .site-header:not(.is-scrolled):not(.nav-open) .nav-toggle span{background:#fff}
 html.hero-is-typing{overflow:hidden;overscroll-behavior:none}
 html.hero-is-typing body{position:fixed;top:var(--locked-scroll-top,0px);left:0;right:0;width:100%;overflow:hidden;overscroll-behavior:none}
-html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px))}
-.hero-composer{width:100%;max-width:640px;margin:0 auto;height:97px;display:block;background:#fff;border:1px solid #d1d1d6;border-radius:27px;padding:14px 16px 12px;text-align:left;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:17px;color:#1c1c1e}
+html.hero-is-typing .hero-composer{transform:translateX(-50%) translateY(var(--composer-shift,0px))}
+.hero-composer{position:absolute;z-index:3;left:50%;bottom:var(--hero-floor,12px);width:min(640px,calc(100% - 32px));height:var(--hero-composer-height,54px);margin:0;display:flex;align-items:center;transform:translateX(-50%);background:#fff;border:1px solid #d1d1d6;border-radius:27px;padding:0 20px;text-align:left;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;font-size:17px;color:#1c1c1e;transition:height .18s ease,padding .18s ease}
+.hero-stage:has(.hero-composer:focus-within),
+.hero-stage:has(.hero-composer.is-open){--hero-composer-height:97px}
+.hero-composer:focus-within,
+.hero-composer.is-open{display:block;height:var(--hero-composer-height);padding:14px 16px 12px}
 .hero-composer textarea{display:block;width:100%;height:26px;border:0;background:none;resize:none;padding:0;line-height:23px;font:inherit;color:inherit;letter-spacing:0;outline:none;scroll-margin:0}
+.hero-composer:not(:focus-within):not(.is-open) textarea{height:100%;line-height:52px}
 .hero-composer textarea::placeholder{color:#3a3a3c;opacity:1}
-.hero-composer .toolbar{display:flex;align-items:center;height:24px;margin-top:16px;gap:15px}
-.hero-composer .toolbar button{display:flex;align-items:center;justify-content:center;width:auto;min-height:0;padding:0;border:0;border-radius:0;background:none;color:#1c1c1e}
-.hero-composer .add{width:23px;height:24px}
+.hero-composer .toolbar{display:none;align-items:center;height:24px;margin-top:16px;gap:15px}
+.hero-composer:focus-within .toolbar,
+.hero-composer.is-open .toolbar{display:flex}
+.hero-composer .toolbar button{display:flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:44px;margin:-10px 0;padding:0;border:0;border-radius:0;background:none;color:#1c1c1e}
+.hero-composer .add{width:44px}
 .hero-composer .add svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.hero-composer .microphone{margin-left:auto;width:21px;height:24px}
+.hero-composer .microphone{margin-left:auto;width:44px}
 .hero-composer .microphone svg{width:18px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .hero-composer .microphone[aria-pressed=true]{color:#1c1c1e}
 .hero-visual{display:block;margin:0;background:var(--plate)}
@@ -292,11 +299,14 @@ html.hero-is-typing .hero-composer{transform:translateY(var(--composer-shift,0px
   .cost-num{grid-column:2;grid-row:1}
 }
 @media (min-width:900px){
-  .hero-stage{--hero-composer-height:104px}
   .hero-message-rotator{width:min(calc(100% - (var(--gutter) * 2)),1040px);height:clamp(190px,28svh,320px)}
   .hero-message{font-size:23px}
-  .hero-composer{max-width:860px;height:104px;padding:16px 20px 12px}
+  .hero-composer{width:min(860px,calc(100% - 64px))}
+  .hero-stage:has(.hero-composer:focus-within),
+  .hero-stage:has(.hero-composer.is-open){--hero-composer-height:104px}
+  .hero-composer:focus-within,
+  .hero-composer.is-open{padding:16px 20px 12px}
 }
 @media (prefers-reduced-motion:reduce){
-  .button,.site-header,.nav-toggle span{transition:none}
+  .button,.site-header,.nav-toggle span,.hero-composer{transition:none}
 }

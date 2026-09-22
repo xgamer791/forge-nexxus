@@ -57,7 +57,7 @@ $spread_sm  = add_query_arg( 'ver', $spread_ver, forge_img( 'hero-spread-1200.jp
 				<li><?php echo esc_html( $message ); ?></li>
 			<?php endforeach; ?>
 		</ul>
-		<form class="hero-composer" action="<?php echo esc_url( home_url( '/app/' ) ); ?>" method="get" data-hero-composer>
+		<form class="hero-composer" action="<?php echo esc_url( home_url( '/app/' ) ); ?>" method="get" data-hero-composer aria-expanded="false">
 			<label class="visually-hidden" for="hero-prompt">Describe the site you want</label>
 			<textarea id="hero-prompt" name="prompt" rows="1" placeholder="Describe the site you want…" aria-label="Describe your site" autocapitalize="sentences" autocomplete="off" spellcheck="true" maxlength="600"></textarea>
 			<div class="toolbar">
