@@ -176,8 +176,31 @@ describe("the contract sets a floor, not a mould", () => {
     expect(DESIGN_GOD).toContain("## Navigation");
     expect(DESIGN_GOD).toContain("A bar with the name on the left and links on the right is one answer, not the answer");
     expect(DESIGN_GOD).toContain("at least 44px");
-    // The phone nav has to work without a script, because a published site runs none.
-    expect(DESIGN_GOD).toMatch(/checkbox or `<details>`/);
+  });
+
+  test("a phone always gets a header bar and a Menu dropdown, never the desktop row", () => {
+    // Every build came back with the wide nav wrapped onto a phone, because
+    // the floor said to "let it wrap or scroll sideways" and a dropdown was
+    // only owed past however many links the agent decided a row could carry.
+    expect(DESIGN_GOD).toContain("On a phone: a header bar and a Menu button, on every build");
+    expect(DESIGN_GOD).toContain("However few links there are, they never show as a row on a phone");
+    expect(DESIGN_GOD).not.toMatch(/wrap or scroll sideways/);
+    expect(DESIGN_GOD).not.toMatch(/More links than a phone can carry/);
+    // The phone nav has to work without a script, because a published site
+    // runs none: one checkbox and its label, phone-first, revealed wide.
+    expect(DESIGN_GOD).toContain('<input class="nav-toggle" type="checkbox" id="nav-toggle">');
+    expect(DESIGN_GOD).toContain('<label class="nav-button" for="nav-toggle">');
+    expect(DESIGN_GOD).toContain(".nav-toggle:checked ~ .site-nav{display:block}");
+    expect(DESIGN_GOD).toContain("@media (min-width:768px)");
+    // Nothing can close the menu after a tap, so it must scroll away.
+    expect(DESIGN_GOD).toContain("On a phone the header is neither fixed nor sticky");
+  });
+
+  test("the phone floor names what a phone layout has to hold", () => {
+    expect(DESIGN_GOD).toContain("Nothing scrolls sideways");
+    expect(DESIGN_GOD).toContain("Text and controls keep 16–24px from the edge of the screen");
+    expect(DESIGN_GOD).toContain("Every split, grid and row of columns becomes one column");
+    expect(DESIGN_GOD).toContain("Body text is 16–18px and never smaller");
   });
 
   test("the palette is taken from the business, not from a ban list", () => {
