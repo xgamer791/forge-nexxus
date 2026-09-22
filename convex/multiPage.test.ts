@@ -237,6 +237,29 @@ describe("a build with pages, start to finish", () => {
     expect(versions).toHaveLength(2);
     expect(versions[1].pages!.find((page) => page.path === "/about")!.body).toContain("Founded in 2019.");
     expect(await (await t.fetch(`/sites/${site.slug}/about`)).text()).toContain("Founded in 2019.");
+    // An answered turn reflects on itself afterwards; let it, so it cannot
+    // reach the next test's provider and take the reply meant for its build.
+    await t.finishAllScheduledFunctions(() => {});
+  });
+
+  test("a first build that stopped short of a whole site is asked again for one in blocks, not one document", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    // The last page never closed, which writePage asks for once more.
+    const providers = stubProviders((call) => (call === 1 ? siteReply("Built it.").slice(0, -3) : siteReply("Built it.")));
+    await onboarded(t, member);
+
+    const builds = providers.builds().filter((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)));
+    expect(builds).toHaveLength(2);
+    const told = (call: (typeof builds)[number]) =>
+      call.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
+    expect(told(builds[0])).toContain("A site is one shell and one or more pages");
+    expect(told(builds[1])).toContain("did not contain a complete website");
+    expect(told(builds[1])).toContain("```html shell block");
+    expect(told(builds[1])).not.toContain("single ```html code block");
+
+    const [version] = await t.run((ctx) => ctx.db.query("siteVersions").collect());
+    expect(version.pages!.map((page) => page.path)).toEqual(["/", "/about"]);
   });
 });
 

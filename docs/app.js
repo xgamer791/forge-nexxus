@@ -1980,6 +1980,41 @@ if (forge?.sites && previewScreen) {
   // site's pages are; this is only which of them was asked for, and it goes
   // back to the home page whenever a different site is opened.
   let shownPath = '/';
+  // Whether the frame still holds the page this code put there. A link inside
+  // it can open another page of the live site in the frame, and which one the
+  // app cannot see — the frame is another origin — so once it has moved on its
+  // own the strip marks no page rather than the wrong one.
+  let placing = false;
+  let wandered = false;
+  function place(html) {
+    placing = true;
+    wandered = false;
+    if (html === null) frame.removeAttribute('srcdoc'); else frame.srcdoc = html;
+  }
+  frame.addEventListener('load', () => {
+    if (placing) { placing = false; return; }
+    if (wandered || !current) return;
+    wandered = true;
+    renderPages();
+  });
+  // What the strip calls a page. Its title is the page's <title>, which a
+  // build often writes as the page and the business together — "Our story |
+  // Harbor Roasters" — and inside that business's own preview the business
+  // half says nothing. The home page is Home, whatever its title says.
+  function pageLabel(page) {
+    if (page.path === '/') return 'Home';
+    const title = (page.title || '').trim() || page.path;
+    const name = (activeSite?.name || '').trim().toLowerCase();
+    const isName = part => {
+      const text = part.trim().toLowerCase();
+      return Boolean(name && text) && (name.startsWith(text) || text.startsWith(name));
+    };
+    const trailing = title.match(/^(.*\S)\s+[|·•–—-]\s+(.+)$/);
+    if (trailing && isName(trailing[2])) return trailing[1];
+    const leading = title.match(/^(.+?)\s+[|·•–—-]\s+(.*\S)$/);
+    if (leading && isName(leading[1])) return leading[2];
+    return title;
+  }
   // A site's pages, as the member's own titles. One page lists nothing —
   // there is nowhere else to go, so the strip is not there at all.
   function renderPages() {
@@ -1989,16 +2024,25 @@ if (forge?.sites && previewScreen) {
     const pages = current?.pages ?? [];
     pageStrip.hidden = pages.length < 2;
     if (pages.length < 2) { pageStrip.replaceChildren(); return; }
-    const open = current?.path ?? shownPath;
+    const open = wandered ? null : (current?.path ?? shownPath);
     pageStrip.replaceChildren(...pages.map(page => {
       const button = document.createElement('button');
+      const label = document.createElement('span');
       button.type = 'button';
       button.className = 'preview-page';
-      button.textContent = page.title || page.path;
+      label.textContent = pageLabel(page);
+      button.append(label);
+      if (page.title && page.title !== label.textContent) button.title = page.title;
       button.dataset.previewPage = page.path;
       if (page.path === open) button.setAttribute('aria-current', 'page');
       return button;
     }));
+    // More pages than the screen is wide scroll sideways, and the page on
+    // show is kept in sight rather than left past the edge.
+    const marked = pageStrip.querySelector('[aria-current]');
+    if (marked && pageStrip.scrollWidth > pageStrip.clientWidth) {
+      pageStrip.scrollLeft = marked.offsetLeft - (pageStrip.clientWidth - marked.offsetWidth) / 2;
+    }
     const showing = pages.find(page => page.path === open);
     frame.title = showing ? `Your website: ${showing.title || showing.path}` : 'Your website';
   }
@@ -2007,9 +2051,20 @@ if (forge?.sites && previewScreen) {
   // device is shown, the frame's copy of the page hides it. The saved site is
   // never touched.
   const PHONE_SCROLLBAR = '<style data-forge-preview>html{scrollbar-width:none}html::-webkit-scrollbar{display:none}</style>';
+  // A page given as srcdoc reads its links against this app's own address, so
+  // `#menu` would load the app into the frame and `/about` the app's 404. A
+  // base of about:srcdoc keeps an in-page link on its page. A link to another
+  // page opens it at the site's address while the build on show is the one
+  // live there. Before then it points at nothing on its own page, so a press
+  // stays put — left as it was, it would blank the frame — and the strip is
+  // what moves between pages.
+  const FRAME_BASE = '<base href="about:srcdoc">';
+  const ROOT_LINK = /(\bhref\s*=\s*)(["'])(\/(?!\/)[^"']*)\2/gi;
   function framed(html) {
-    if (!previewScreen.classList.contains('is-device')) return html;
-    return /<head\b[^>]*>/i.test(html) ? html.replace(/<head\b[^>]*>/i, tag => tag + PHONE_SCROLLBAR) : PHONE_SCROLLBAR + html;
+    const live = current?.published && activeSite?.publishedUrl ? activeSite.publishedUrl.replace(/\/+$/, '') : null;
+    const linked = html.replace(ROOT_LINK, (_, lead, quote, path) => `${lead}${quote}${live ? live + path : `#${path}`}${quote}`);
+    const head = FRAME_BASE + (previewScreen.classList.contains('is-device') ? PHONE_SCROLLBAR : '');
+    return /<head\b[^>]*>/i.test(linked) ? linked.replace(/<head\b[^>]*>/i, tag => tag + head) : head + linked;
   }
   function renderPreview() {
     // The screen is the site and nothing else. What used to sit above and
@@ -2021,7 +2076,7 @@ if (forge?.sites && previewScreen) {
     let address = activeSite?.name || 'Your website';
     try { if (activeSite?.publishedUrl) address = new URL(activeSite.publishedUrl).host; } catch { /* keep the name */ }
     previewScreen.querySelectorAll('[data-device-address]').forEach(field => { field.textContent = address; });
-    if (!built) { frame.removeAttribute('srcdoc'); current = null; }
+    if (!built) { place(null); current = null; }
     renderPages();
   }
   function watch() {
@@ -2033,7 +2088,7 @@ if (forge?.sites && previewScreen) {
     stopHtml = null;
     shownKey = siteId ? { siteId, key } : null;
     current = null;
-    frame.removeAttribute('srcdoc');
+    place(null);
     if (!siteId) { renderPreview(); return; }
     stopHtml = forge.sites.currentHtml(siteId, next => {
       current = next ?? null;
@@ -2041,7 +2096,7 @@ if (forge?.sites && previewScreen) {
       // being shown; the server says which one it served, so the strip marks
       // what is actually in the frame.
       if (current?.path) shownPath = current.path;
-      if (current) frame.srcdoc = framed(current.html);
+      if (current) place(framed(current.html));
       renderPreview();
     }, shownPath === '/' ? undefined : shownPath);
   }
@@ -2049,7 +2104,13 @@ if (forge?.sites && previewScreen) {
     const button = event.target.closest('[data-preview-page]');
     if (!button) return;
     const path = button.dataset.previewPage;
-    if (!path || path === shownPath) return;
+    if (!path) return;
+    // The page last chosen here is still the one on show, unless the site's
+    // own links have taken the frame elsewhere since; then it comes back.
+    if (path === shownPath) {
+      if (wandered && current) { place(framed(current.html)); renderPages(); }
+      return;
+    }
     shownPath = path;
     watch();
   });
@@ -2119,7 +2180,7 @@ if (forge?.sites && previewScreen) {
     deviceButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.device === key)));
     const was = previewScreen.classList.contains('is-device');
     previewScreen.classList.toggle('is-device', Boolean(spec));
-    if (was !== Boolean(spec) && current) frame.srcdoc = framed(current.html);
+    if (was !== Boolean(spec) && current) place(framed(current.html));
     if (spec) {
       previewScreen.dataset.chrome = spec.chrome;
       for (const [name, value] of Object.entries({w: spec.w, h: spec.h, top: spec.top, bar: spec.bar, bottom: spec.bottom, radius: spec.radius})) {
@@ -2155,7 +2216,7 @@ if (forge?.sites && previewScreen) {
     renderPreview();
   });
   document.addEventListener('forge:billing', () => {
-    if (summary?.plan.key === 'free') { frame.removeAttribute('srcdoc'); current = null; if (!previewScreen.hidden) closeMenu(); }
+    if (summary?.plan.key === 'free') { place(null); current = null; if (!previewScreen.hidden) closeMenu(); }
     else if (!previewScreen.hidden) renderPreview();
   });
 }

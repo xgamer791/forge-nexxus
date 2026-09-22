@@ -297,9 +297,15 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .preview-exit:focus-visible{outline:2px solid #8e8e93;outline-offset:2px}
 /* On a phone the preview is the phone: the device choices are for a computer. */
 .preview-devices{display:none}
-.preview-pages{position:absolute;left:0;right:0;bottom:0;z-index:6;display:flex;justify-content:center;gap:8px;overflow-x:auto;scrollbar-width:none;padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 12px);pointer-events:none}
+.preview-pages{position:absolute;left:0;right:0;bottom:0;z-index:6;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 12px);pointer-events:none}
 .preview-pages::-webkit-scrollbar{display:none}
-.preview-page{pointer-events:auto;flex-shrink:0;height:36px;padding:0 15px;border-radius:18px;background:#fff;color:#3a3a3c;font-size:15px;line-height:36px;white-space:nowrap;box-shadow:0 1px 6px rgba(0,0,0,.18)}
+/* Centred while the pages fit, and scrolled from the first when they do not:
+   auto margins give way where justify-content:center pushes the first pages
+   past an edge no scroll can reach. */
+.preview-page:first-child{margin-left:auto}
+.preview-page:last-child{margin-right:auto}
+.preview-page{pointer-events:auto;flex-shrink:0;max-width:240px;height:36px;padding:0 15px;border-radius:18px;background:#fff;color:#3a3a3c;font-size:15px;line-height:36px;white-space:nowrap;box-shadow:0 1px 6px rgba(0,0,0,.18)}
+.preview-page span{display:block;overflow:hidden;text-overflow:ellipsis}
 .preview-page[aria-current=page]{background:#1c1c1e;color:#fff;font-weight:500}
 .preview-page:focus-visible{outline:2px solid #8e8e93;outline-offset:2px}
 .preview-frame{flex:1;min-height:0;position:relative;background:#fff}

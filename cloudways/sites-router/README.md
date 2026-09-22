@@ -11,8 +11,8 @@ The main site is not touched. Every rule here is guarded by the hostname, and
 ```
 visitor  →  <slug>.sites.forgenexxus.com     (GoDaddy: *.sites → 138.197.83.241)
          →  Cloudways nginx → Apache → public_html/.htaccess
-         →  forge-sites-router.php           (extracts <slug>)
-         →  polished-ram-883.convex.site/sites/<slug>
+         →  forge-sites-router.php           (extracts <slug>, keeps the path)
+         →  polished-ram-883.convex.site/sites/<slug>/<path>
          →  the page, passed back unchanged
 ```
 
@@ -23,6 +23,7 @@ visitor  →  <slug>.sites.forgenexxus.com     (GoDaddy: *.sites → 138.197.83.
 | `forge-sites-router.php` | `/home/master/applications/ghxskkxdmf/public_html/forge-sites-router.php` |
 | `htaccess-snippet.txt` | pasted into `/home/master/applications/ghxskkxdmf/public_html/.htaccess`, above `# BEGIN WordPress` |
 | `nginx-proxy.conf` | not used by default — see the file |
+| not in this repo | `/home/master/applications/ghxskkxdmf/public_html/wp-content/mu-plugins/forge-sites-router-boot.php` runs the router for a member host before WordPress's canonical redirect can send it to `forgenexxus.com` |
 
 ## Steps
 
@@ -152,6 +153,10 @@ pointed it here, before it serves anything.
 - **A member site shows the WordPress home page.** The rewrite did not fire:
   either the snippet is below `# BEGIN WordPress`, or the hostname is not
   mapped to this application in Cloudways.
+- **A member site, or one of its pages, redirects to `forgenexxus.com`.**
+  WordPress answered and made its canonical redirect before the router ran:
+  check that `wp-content/mu-plugins/forge-sites-router-boot.php` is still
+  there. The check script reports this as a redirect.
 - **"This site isn't loading right now."** The router reached this server but
   not Convex. `error_log` in the application's PHP log has the reason.
 - **"Nothing here yet."** The router worked and Convex says that slug is not

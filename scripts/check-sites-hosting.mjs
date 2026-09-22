@@ -46,9 +46,20 @@ async function resolves(host) {
   return { ok: false, detail: "no A, AAAA or CNAME record (NXDOMAIN)" };
 }
 
-async function serves(url) {
+// A member host has to be answered by the sites router, which says so in a
+// header of its own. WordPress answering instead shows as a redirect to the
+// apex, or as a page without that header -- both look like success by status
+// alone.
+async function serves(url, { viaRouter = false } = {}) {
   try {
     const response = await fetch(url, { redirect: "manual" });
+    if (viaRouter && response.status >= 300 && response.status < 400) {
+      const to = response.headers.get("location") ?? "nowhere";
+      return { ok: false, detail: `HTTP ${response.status} to ${to}: WordPress answered, not the sites router` };
+    }
+    if (viaRouter && !response.headers.get("x-forge-sites-router")) {
+      return { ok: false, detail: `HTTP ${response.status} without X-Forge-Sites-Router: something other than the sites router answered` };
+    }
     // 404 is the deployment answering: it served our "Nothing here yet" page
     // for a slug that is not published, which is the routing working.
     return { ok: response.status < 500, detail: `HTTP ${response.status}` };
@@ -78,8 +89,13 @@ if (!domain) {
   if (wildcard.ok) {
     // A name that resolves but has no certificate is the second half of this:
     // DNS done, nothing issued for the name yet.
-    const served = await serves(`https://${slug}.${domain}/`);
+    const served = await serves(`https://${slug}.${domain}/`, { viaRouter: true });
     say(served.ok, `https://${slug}.${domain}/ serves`, served.detail);
+    // A site is built in pages, and each one is its own address on the host.
+    // A page the site does not have still has to reach the router, which
+    // passes on the deployment's 404.
+    const inner = await serves(`https://${slug}.${domain}/about`, { viaRouter: true });
+    say(inner.ok, `https://${slug}.${domain}/about reaches the router (a site's other pages)`, inner.detail);
   }
   if (!wildcard.ok) {
     lines.push("");

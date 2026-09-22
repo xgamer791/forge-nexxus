@@ -49,6 +49,30 @@ install: the files, the exact paths on the server, and the order.** In short:
 The main WordPress site is not touched. Every rule is guarded by hostname and
 `forgenexxus.com` never matches.
 
+### Where it stands
+
+Live since 2026-09-22 on application `ghxskkxdmf`:
+
+- `SITES_DOMAIN` is `sites.forgenexxus.com`, and `check-sites-hosting.mjs`
+  passes for DNS and HTTPS on the wildcard.
+- Every address on a member host reaches the router, not WordPress, and the
+  router passes the path to Convex, which answers for the pages the site has.
+  That is what lets a site be built in pages: `/about` on
+  `<slug>.sites.forgenexxus.com` is that site's About page.
+- The certificate is a Custom SSL upload covering `forgenexxus.com`, `www`,
+  `sites` and `*.sites`, issued with acme.sh. Cloudways does not renew a
+  certificate it was handed, and Let's Encrypt's last 90 days, so it has to
+  be issued and uploaded again before it runs out. This says when it does,
+  from any machine that reaches the server directly:
+  ```
+  openssl s_client -connect <slug>.sites.forgenexxus.com:443 \
+    -servername <slug>.sites.forgenexxus.com </dev/null | openssl x509 -noout -enddate
+  ```
+- `wp-content/mu-plugins/forge-sites-router-boot.php` runs the router for a
+  member host before WordPress can redirect it to the apex. It is on the
+  server only, not in this repository.
+- Varnish is off.
+
 ### Why not Convex custom domains
 
 Convex can serve a custom domain itself, which would drop the proxy hop —
