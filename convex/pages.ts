@@ -59,7 +59,15 @@ export function composePage(
     const page = pages.find((candidate) => normalizePath(candidate.path) === path);
     return page ? spliceIntoShell(shell, page) : null;
   }
-  return path === "/" ? (version.html ?? null) : null;
+  // A version from before pages existed is one document and no shell, and that
+  // document is the whole site. Every address on such a site already served it:
+  // the route took the slug and dropped the rest, so `/sites/<slug>/anything`
+  // answered with the home page. That stays true here, so no site published
+  // before pages existed answers differently after them.
+  //
+  // A site that does have pages is a different matter: it knows which
+  // addresses it has, and the ones it does not have are nothing.
+  return version.html ?? null;
 }
 
 // The title sits inside the shell's own <title>, so it is text there and not

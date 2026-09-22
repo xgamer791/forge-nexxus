@@ -145,10 +145,18 @@ describe("a site built before pages existed is untouched", () => {
   const PAGE = '<!doctype html><html lang="en"><head><title>Shop</title></head><body><h1>Shop</h1></body></html>';
   const old = { html: PAGE, shell: undefined, pages: undefined };
 
-  test("its one document is its home page, and it has no others", () => {
+  // Before pages existed the route took the slug and dropped the rest, so every
+  // address on a one-page site served that page. Keeping that is what makes
+  // this change invisible to every site already published.
+  test("its one document answers on every address, exactly as it did", () => {
     expect(composePage(old, "/")).toBe(PAGE);
     expect(composePage(old, "/index.html")).toBe(PAGE);
-    expect(composePage(old, "/about")).toBe(null);
+    expect(composePage(old, "/about")).toBe(PAGE);
+    expect(composePage(old, "/anything/at/all")).toBe(PAGE);
+  });
+
+  test("but a traversal still names nothing, on any version", () => {
+    expect(composePage(old, "/../secrets")).toBe(null);
   });
 
   test("a version with nothing in it serves nothing", () => {
@@ -322,9 +330,12 @@ describe("a published site answers on every page it has", () => {
 
     expect(await (await t.fetch("/sites/shop")).text()).toBe(PAGE);
     expect(await (await t.fetch("/", { headers: { host: "shop.sites.forgenexxus.com" } })).text()).toBe(PAGE);
-    // It has one page, so every other address on it is still nothing.
-    expect((await t.fetch("/sites/shop/about")).status).toBe(404);
-    expect((await t.fetch("/about", { headers: { host: "shop.sites.forgenexxus.com" } })).status).toBe(404);
+    // Every address on it served that one document before pages existed, and
+    // still does. This is the case that must not change for anyone.
+    expect(await (await t.fetch("/sites/shop/about")).text()).toBe(PAGE);
+    expect(
+      await (await t.fetch("/about", { headers: { host: "shop.sites.forgenexxus.com" } })).text(),
+    ).toBe(PAGE);
     // And the preview shows the same document it always did.
     expect((await as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE);
   });
