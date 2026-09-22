@@ -104,8 +104,13 @@ describe("reasoning_effort goes where it has been measured to work", () => {
       .toEqual({ model: "some-model", messages, temperature: 0.7, max_tokens: 200 });
   });
 
-  test("a chat turn on DeepSeek stays plain; a build asks for effort", () => {
+  test("a model that ignores the field is never sent it", () => {
     delete process.env.AI_REASONING_EFFORT;
+    // Flash drops it: nine runs of one puzzle overlapped whatever was sent,
+    // and `enable_thinking: false` did not stop it thinking either.
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBeUndefined();
+    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose: "build" }, messages, 200).reasoning_effort)
+      .toBeUndefined();
     // A conversational reply, the strategist and the memory note all ride the
     // chat route, and none of them wants to pay for a long think.
     expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "chat")).toBeUndefined();

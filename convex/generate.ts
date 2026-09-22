@@ -89,20 +89,28 @@ export function isGeminiChatHost(baseUrl: string): boolean {
   }
 }
 
-// The thinking control, where the route is known to take one. It used to be
-// Gemini's alone, on the grounds that the field broke every other provider.
-// That is no longer true of the route this deployment runs: asked the same
-// puzzle, `deepseek-v4-pro` thought 1,409-1,617 characters at `low` and
-// 4,702-15,856 at `high`, and `deepseek-flash` 2,574 against 6,836, both
-// answering 200 either way. So the field is sent where it has been measured
-// to work and nowhere else -- an unknown provider still gets a plain body,
-// which is the safety the old rule was really buying.
+// The thinking control, on the routes that answer to one. It was Gemini's
+// alone, on the grounds that the field broke every other provider; what is
+// true is narrower than that and narrower than a first measurement suggested.
+//
+// `deepseek-flash` ignores it. Asked one puzzle nine times it thought
+// 1,431-4,609 characters with no field, 2,043-3,026 at `high`, and
+// 1,282-2,035 with `enable_thinking: false` -- overlapping ranges, and a
+// switch that cannot even stop it thinking is a switch it is not reading.
+// Every call still answered 200: this provider accepts unknown fields and
+// drops them, so a reply tells you nothing unless you compare runs. Flash is
+// therefore sent a plain body, because a field that does nothing is a claim
+// in the code that is not true of the request.
+//
+// `deepseek-v4-pro` does appear to read it -- 1,409 and 1,617 characters at
+// `low` against 4,702 and 15,856 at `high`, no overlap -- but that is two
+// runs a side and wants re-measuring before anything is built on it.
 //
 // `low` / `medium` / `high` are accepted; unset lands on high; unknown values
 // are not sent as themselves (`minimal` and `none` error on Gemini 3.8 Flash).
 export type ReasoningEffort = "low" | "medium" | "high";
 const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
-const EFFORT_MODELS = new Set(["deepseek-flash", "deepseek-v4-pro"]);
+const EFFORT_MODELS = new Set(["deepseek-v4-pro"]);
 
 export function reasoningEffort(
   baseUrl: string,
