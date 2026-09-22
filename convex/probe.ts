@@ -30,8 +30,14 @@ export const chat = internalAction({
     maxTokens: v.optional(v.number()),
     prompt: v.optional(v.string()),
     purpose: v.optional(v.union(v.literal("chat"), v.literal("build"))),
+    // Extra body fields to try, as JSON. A provider's own switches -- a
+    // thinking budget, an effort level -- are not in the OpenAI shape, and
+    // the only way to learn whether this route takes one is to send it and
+    // read the answer. Never part of a real turn: `completionBody` decides
+    // those, and this is how something gets tested before it is wired in.
+    extra: v.optional(v.string()),
   },
-  handler: async (_ctx, { maxTokens, prompt, purpose }) => {
+  handler: async (_ctx, { maxTokens, prompt, purpose, extra }) => {
     const route = chatRoute(purpose ?? "build");
     const trimmed = route.apiKey?.trim() ?? "";
     const key = route.apiKey
@@ -56,9 +62,10 @@ export const chat = internalAction({
       response = await fetch(`${route.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${route.apiKey}` },
-        body: JSON.stringify(
-          completionBody(route, [{ role: "user", content: prompt ?? "Reply with the exact word: ok" }], maxTokens ?? 200),
-        ),
+        body: JSON.stringify({
+          ...completionBody(route, [{ role: "user", content: prompt ?? "Reply with the exact word: ok" }], maxTokens ?? 200),
+          ...(extra ? (JSON.parse(extra) as Record<string, unknown>) : {}),
+        }),
       });
       body = await response.text();
     } catch (error) {

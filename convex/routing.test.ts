@@ -36,6 +36,7 @@ describe("the route is whatever the deployment names", () => {
     expect(chatRoute()).toEqual({
       baseUrl: GOOGLE_OPENAI,
       model: "gemini-3.8-flash",
+      purpose: "chat",
       apiKey: "sk-test",
       // The pretty name belongs to the DeepSeek fallback id, so a configured
       // Gemini reports itself rather than borrowing that name.
@@ -94,23 +95,37 @@ describe("the route is whatever the deployment names", () => {
 const DEEPSEEK = "https://api.deepseek.com/v1";
 const messages = [{ role: "user" as const, content: "ok" }];
 
-describe("reasoning_effort is Gemini-only", () => {
-  test("DeepSeek and other hosts never send it, even if AI_REASONING_EFFORT is set", () => {
-    delete process.env.AI_REASONING_EFFORT;
-    expect(reasoningEffort(DEEPSEEK)).toBeUndefined();
-    expect(reasoningEffort("https://ai.example/v1")).toBeUndefined();
+describe("reasoning_effort goes where it has been measured to work", () => {
+  test("a provider nobody has measured never gets the field", () => {
     process.env.AI_REASONING_EFFORT = "high";
-    expect(reasoningEffort(DEEPSEEK)).toBeUndefined();
-    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK }, messages, 200)).toEqual({
+    // An unknown model on an unknown host: a plain body, whatever is set.
+    expect(reasoningEffort("https://ai.example/v1", "some-model", "build")).toBeUndefined();
+    expect(completionBody({ model: "some-model", baseUrl: "https://ai.example/v1", purpose: "build" }, messages, 200))
+      .toEqual({ model: "some-model", messages, temperature: 0.7, max_tokens: 200 });
+  });
+
+  test("a chat turn on DeepSeek stays plain; a build asks for effort", () => {
+    delete process.env.AI_REASONING_EFFORT;
+    // A conversational reply, the strategist and the memory note all ride the
+    // chat route, and none of them wants to pay for a long think.
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "chat")).toBeUndefined();
+    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose: "chat" }, messages, 200)).toEqual({
       model: "deepseek-flash",
       messages,
       temperature: 0.7,
       max_tokens: 200,
     });
+    // Writing a whole site is where thinking earns its cost. Unset is high.
+    expect(reasoningEffort(DEEPSEEK, "deepseek-v4-pro", "build")).toBe("high");
+    expect(completionBody({ model: "deepseek-v4-pro", baseUrl: DEEPSEEK, purpose: "build" }, messages, 200).reasoning_effort)
+      .toBe("high");
+    process.env.AI_REASONING_EFFORT = "low";
+    expect(reasoningEffort(DEEPSEEK, "deepseek-v4-pro", "build")).toBe("low");
   });
 
   test("a Gemini host defaults to high; low and medium are accepted", () => {
     delete process.env.AI_REASONING_EFFORT;
+    // Gemini takes it on every turn, which is how it has always behaved.
     expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
     process.env.AI_REASONING_EFFORT = "HIGH";
     expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
@@ -127,7 +142,7 @@ describe("reasoning_effort is Gemini-only", () => {
     expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
   });
 
-  test("the OpenAI-shaped body includes reasoning_effort only for Gemini", () => {
+  test("the OpenAI-shaped body carries the field for the routes that take it", () => {
     delete process.env.AI_REASONING_EFFORT;
     expect(completionBody({ model: "gemini-3.8-flash", baseUrl: GOOGLE_OPENAI }, messages, 200)).toEqual({
       model: "gemini-3.8-flash",
@@ -138,7 +153,8 @@ describe("reasoning_effort is Gemini-only", () => {
     });
     process.env.AI_REASONING_EFFORT = "low";
     expect(completionBody({ model: "gemini-3.8-flash", baseUrl: GOOGLE_OPENAI }, messages, 200).reasoning_effort).toBe("low");
-    // A model id that happens to say gemini is not enough — the host decides.
+    // A model id that happens to say gemini is not enough — a Gemini host, or
+    // a model measured on its own route, is what puts the field in the body.
     expect(completionBody({ model: "gemini-3.8-flash", baseUrl: DEEPSEEK }, messages, 200).reasoning_effort).toBeUndefined();
   });
 });

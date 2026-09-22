@@ -89,17 +89,33 @@ export function isGeminiChatHost(baseUrl: string): boolean {
   }
 }
 
-// Gemini's OpenAI-compat thinking control. Only a Gemini chat host gets this
-// field: DeepSeek (the default) and every other provider omit it, even when
-// `AI_REASONING_EFFORT` is set, because a forced high-effort field breaks
-// those requests. On Gemini, unset lands on high; `low` / `medium` / `high`
-// are accepted; unknown values are not sent as themselves (`minimal` and
-// `none` error on Gemini 3.8 Flash).
+// The thinking control, where the route is known to take one. It used to be
+// Gemini's alone, on the grounds that the field broke every other provider.
+// That is no longer true of the route this deployment runs: asked the same
+// puzzle, `deepseek-v4-pro` thought 1,409-1,617 characters at `low` and
+// 4,702-15,856 at `high`, and `deepseek-flash` 2,574 against 6,836, both
+// answering 200 either way. So the field is sent where it has been measured
+// to work and nowhere else -- an unknown provider still gets a plain body,
+// which is the safety the old rule was really buying.
+//
+// `low` / `medium` / `high` are accepted; unset lands on high; unknown values
+// are not sent as themselves (`minimal` and `none` error on Gemini 3.8 Flash).
 export type ReasoningEffort = "low" | "medium" | "high";
 const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
+const EFFORT_MODELS = new Set(["deepseek-flash", "deepseek-v4-pro"]);
 
-export function reasoningEffort(baseUrl: string): ReasoningEffort | undefined {
-  if (!isGeminiChatHost(baseUrl)) return undefined;
+export function reasoningEffort(
+  baseUrl: string,
+  model = "",
+  purpose: "chat" | "build" = "chat",
+): ReasoningEffort | undefined {
+  const gemini = isGeminiChatHost(baseUrl);
+  if (!gemini && !EFFORT_MODELS.has(model)) return undefined;
+  // Writing a whole site is where thinking earns its cost. A conversational
+  // reply wants an answer rather than a long deliberation, and the strategist
+  // and the memory note ride the chat route too, so effort is a build's.
+  // Gemini keeps it on both, which is how it has always behaved there.
+  if (!gemini && purpose !== "build") return undefined;
   const wanted = process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "";
   return wanted === "low" || wanted === "medium" || wanted === "high" ? wanted : DEFAULT_REASONING_EFFORT;
 }
@@ -107,8 +123,12 @@ export function reasoningEffort(baseUrl: string): ReasoningEffort | undefined {
 // The OpenAI-shaped body every chat and build call sends — `complete`, the
 // probe, and anything else that shares this route, memory included. Pictures
 // never go through here. `reasoning_effort` is present only for Gemini.
-export function completionBody(route: { model: string; baseUrl?: string }, messages: ChatMessage[], maxTokens: number) {
-  const effort = reasoningEffort(route.baseUrl ?? "");
+export function completionBody(
+  route: { model: string; baseUrl?: string; purpose?: "chat" | "build" },
+  messages: ChatMessage[],
+  maxTokens: number,
+) {
+  const effort = reasoningEffort(route.baseUrl ?? "", route.model, route.purpose ?? "chat");
   return {
     model: route.model,
     messages,
@@ -157,6 +177,7 @@ export function chatRoute(purpose: "chat" | "build" = "chat") {
   return {
     baseUrl,
     model,
+    purpose,
     apiKey: process.env.AI_API_KEY,
     // What the agent says it runs on. The marketing name belongs to exactly
     // one model id, so any other id reports itself rather than borrowing it:
@@ -182,8 +203,8 @@ export const routing = internalQuery({
     const build = chatRoute("build");
     const image = imageRoute();
     return {
-      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl) ?? null, maxTokens: maxTokensFor("chat") },
-      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: reasoningEffort(build.baseUrl) ?? null, maxTokens: maxTokensFor("build") },
+      chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl, chat.model, "chat") ?? null, maxTokens: maxTokensFor("chat") },
+      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: reasoningEffort(build.baseUrl, build.model, "build") ?? null, maxTokens: maxTokensFor("build") },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
