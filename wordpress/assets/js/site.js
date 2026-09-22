@@ -150,27 +150,6 @@
     field.addEventListener('touchstart', prepareTyping, { passive: true });
     field.addEventListener('focus', startTyping);
     field.addEventListener('blur', stopTyping);
-    // The resting bar is one line. Focus opens it; the toolbar buttons keep
-    // that focus so a tap on add or the microphone is not swallowed by a blur.
-    const setComposerOpen = open => {
-      composer.classList.toggle('is-open', open);
-      composer.setAttribute('aria-expanded', String(open));
-    };
-    composer.addEventListener('pointerdown', event => {
-      if (event.target.closest('.toolbar button')) event.preventDefault();
-      setComposerOpen(true);
-    });
-    composer.addEventListener('click', event => {
-      if (!event.target.closest('button')) field.focus({ preventScroll: true });
-    });
-    composer.addEventListener('focusin', () => setComposerOpen(true));
-    composer.addEventListener('focusout', () => {
-      window.setTimeout(() => {
-        const voiceOn = microphone?.getAttribute('aria-pressed') === 'true';
-        if (voiceOn || composer.contains(document.activeElement)) return;
-        setComposerOpen(false);
-      }, 0);
-    });
     window.visualViewport?.addEventListener('resize', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
     navigator.virtualKeyboard?.addEventListener('geometrychange', () => { if (root.classList.contains('hero-is-typing')) holdHero(); });
     field.addEventListener('keydown', event => {
