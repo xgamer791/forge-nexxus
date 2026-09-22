@@ -2,14 +2,20 @@
 // together with FORGE_MD and FED — never on image generation.
 // Convex actions cannot read the filesystem at runtime.
 //
-// Add new visual training here. Type lives here, not in FED.
+// All design instruction lives here. FORGE_MD holds behaviour — what a site is
+// made of and what it must cover. FED is the frontend-design skill and is
+// never edited: where it and this file disagree, this file wins, and that is
+// how its guidance is bent to Forge rather than by changing it.
+//
+// Add new visual training here. Type, colour, layout, navigation and the floor
+// every page meets all live in this file.
 
 export const DESIGN_GOD = [
   "# Design God — custom design requirements",
   "",
   "Load and follow this file on every chat, strategy, and build turn, together with FORGE_MD and FED. The image model does not load this file.",
   "",
-  "This file owns type and the visual rules we add over time. FORGE_MD still owns coverage, honesty and safety. FED still owns method — how to reach a palette, a layout and copy. Where this file and FED disagree, follow this file.",
+  "This file owns design: type, colour, layout, navigation, and the floor every page meets. FORGE_MD still owns coverage, honesty and safety. FED still owns method — how to reach a palette, a layout and copy. Where this file and FED disagree, follow this file.",
   "",
   "## Fonts",
   "",
@@ -26,6 +32,20 @@ export const DESIGN_GOD = [
   "",
   "Always provide a readable generic fallback matching the selected family, and size the layout so it holds before the webfont arrives.",
   "",
+  "**Two sites on the same family must not read the same.** One typeface is not one look: weight, size, case, measure, tracking and how far the display sits from the body are where it becomes this business's rather than the last one's. A heading set tight and heavy at 72px and a heading set light and wide at 34px share a font and nothing else.",
+  "",
+  "## Colour",
+  "",
+  "**Take the palette from the business.** Before writing any CSS, decide where each value comes from: the material the thing is made of, the light in the place it happens, what it sells, what its trade has always looked like. A palette you cannot trace back to this brief is the default wearing this business's name.",
+  "",
+  "- Four to six values, each with a job: the page, the ink, one surface that is not the page, one accent, one edge or rule. Declare them as custom properties at the top of the stylesheet.",
+  "- **Decide light or dark from the subject.** Light is not the default and dark is not a risk; it is a choice about this business, and a dark page is right more often than it is used.",
+  "- The accent earns its place on one kind of thing — a filled control, a rule, a mark, a surface — and appears seldom enough to still register by the bottom of the page.",
+  "",
+  "FED names the looks AI design falls into. That list is a set of failures to check your work against, never a menu to choose from.",
+  "",
+  "**Before you write the CSS, say where each value came from.** \"It felt warm\" is not a source. If the palette would sit just as happily on the last site you built, or on a business in an entirely different trade, it is not this business's palette — go back to the subject and choose again.",
+  "",
   "## Layout and color",
   "",
   "**No card-style layouts.** Do not chop the page into rounded cards, equal tiles, or boxed units with shared borders and shadows. Stack, split and bleed the content across the canvas. Product lists, feature rows and testimonials stay open — no card chrome around each item. This is a ban, not a default to avoid: even a SaaS brief does not get the card kit.",
@@ -33,4 +53,22 @@ export const DESIGN_GOD = [
   "**No accent color on text.** Headings, body, labels, nav, links and buttons-as-text stay in the ink palette — black, white, or a near-neutral from the same family. An accent belongs on a surface, a rule, a mark or a filled control, never on a word. Do not color a headline, a single word in a headline, or a body passage with the accent.",
   "",
   "**Always use full page width layouts.** The composition spans the viewport. No skinny centered column with empty side margins. Inner padding and readable measure are fine; the page itself is full-bleed on phone and desktop.",
+  "",
+  "## Navigation",
+  "",
+  "The nav is designed, like everything else on the page, and it is the first thing a visitor uses.",
+  "",
+  "- It carries the destinations this business actually has, named in its own words: \"Book a table\" and \"This week's roast\", not \"Services\" and \"Products\".",
+  "- **A bar with the name on the left and links on the right is one answer, not the answer.** It can sit under the masthead, run down a column, stack over the hero, or lead the footer. Decide it for this business like any other part of the composition.",
+  "- Mark where the visitor is, so the nav says where they are as well as where they can go.",
+  "- Anything a thumb has to hit is at least 44px, with space around it.",
+  "- More links than a phone can carry in one row become a disclosure built from a checkbox or `<details>` — never a script, and never a row that runs off the edge with no way to reach the end.",
+  "",
+  "## The floor every page meets",
+  "",
+  "Mobile-first and responsive from 320px to a wide desktop, with CSS grid and flexbox, fluid type through clamp(), and a nav that stays usable on a phone without JavaScript — let it wrap or scroll sideways, never hide it behind a script.",
+  "",
+  "Semantic landmarks (header, nav, main, section, footer), one h1, headings in order, alt text on every image, visible :focus-visible styles, and a prefers-reduced-motion rule if anything moves.",
+  "",
+  "A phone is where most of these sites are read. Design the narrow layout first and let the wide one be the variation, rather than shrinking a desktop composition until it fits.",
 ].join("\n");

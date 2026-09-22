@@ -22,7 +22,7 @@ const houseRulesOnly = FORGE_MD.slice(0, FORGE_MD.indexOf("## Design quality (ma
 describe("the agent reads three prompt files on every text turn", () => {
   test("house rules, custom design and FED are wired together", () => {
     expect(contract.length).toBeGreaterThan(500);
-    expect(FORGE_MD).toContain("standing instructions for the website agent");
+    expect(FORGE_MD).toContain("standing rules for the website agent");
     expect(FORGE_MD).toContain("All design work must follow FED and DESIGN_GOD");
     expect(FED).toContain("Approach this as the design lead at a design studio");
     expect(DESIGN_GOD).toContain("# Design God — custom design requirements");
@@ -52,8 +52,9 @@ describe("one instruction, in one place", () => {
     expect(FORGE_MD).not.toMatch(/Fontshare and Google Fonts are both available/);
     expect(FORGE_MD).not.toContain("https://www.fontshare.com/fonts/satoshi");
     expect(FED).not.toContain("https://www.fontshare.com/fonts/satoshi");
-    expect(contract).toContain("one typeface for the whole site");
-    expect(contract).toContain("Satoshi or Switzer");
+    // The contract does not restate the type rule: design instruction has one
+    // home, and repeating it there is how two homes start disagreeing.
+    expect(contract).not.toContain("Satoshi or Switzer");
     expect(stack).not.toMatch(/at most two (Google Fonts )?families/i);
   });
 
@@ -120,18 +121,27 @@ describe("nothing claims to know which model is running", () => {
   });
 });
 
-describe("FED fits the reply Forge is allowed to give", () => {
-  test("it never invites a question, a narrated plan, or a memory Forge lacks", () => {
-    expect(FED).not.toMatch(/confirm with the client|as a proposal/i);
-    expect(FED).not.toMatch(/say what you changed and why/i);
-    expect(FED).not.toMatch(/information in your memory|jot down notes/i);
-    expect(FED).toContain("you never put the question to the member");
-    expect(FED).toContain("Do this silently");
+describe("FED is the frontend-design skill, and is never edited", () => {
+  // FED used to be edited to fit Forge — a line removed here, a Forge
+  // sentence added there — and every edit was a fork of a file that keeps
+  // being updated upstream. It is carried verbatim now. Where it says
+  // something Forge does differently, DESIGN_GOD says so and wins, which is
+  // the only place that override belongs.
+  test("it is byte-for-byte the vendored skill", () => {
+    const skill = read(".claude/skills/frontend-design/SKILL.md");
+    const template = read("convex/fed.ts").match(/export const FED = `([\s\S]*)`;\s*$/);
+    expect(template).not.toBeNull();
+    const carried = template![1].replace(/\\`/g, "`").replace(/\\\$\{/g, "${");
+    expect(carried.trim()).toBe(skill.trim());
   });
 
-  test("it does not offer a typeface pairing DESIGN_GOD forbids", () => {
-    expect(FED).not.toMatch(/use one family or two/i);
-    expect(FED).toContain("Forge uses one family for the whole site");
+  test("what Forge does differently is said in DESIGN_GOD, not edited into FED", () => {
+    // The skill offers a typeface pairing and names the looks AI design falls
+    // into. Both stay in it; DESIGN_GOD is what overrides them.
+    expect(FED).toMatch(/use one family or two/i);
+    expect(DESIGN_GOD).toContain("Never pair two families");
+    expect(DESIGN_GOD).toContain("Where this file and FED disagree, follow this file");
+    expect(DESIGN_GOD).toContain("never a menu to choose from");
   });
 
   test("the vendored frontend-design skill has no Forge Fonts addendum", () => {
@@ -152,12 +162,33 @@ describe("the contract sets a floor, not a mould", () => {
     expect(contract).toContain("Two businesses must not come out with the same skeleton");
   });
 
-  test("the quality floor is still stated outright", () => {
-    expect(contract).toContain("What every page owes, whatever shape it takes");
-    expect(contract).toContain("Semantic landmarks");
-    expect(contract).toContain("Mobile-first and responsive from 320px");
-    expect(contract).toContain("Cover every job the brief says the site has to do");
-    expect(contract).toContain("a products section");
+  test("the quality floor is still stated outright, where design and behaviour live", () => {
+    // Design instruction is DESIGN_GOD's, behaviour is FORGE_MD's, and the
+    // contract keeps neither: it says what this platform can store and serve.
+    expect(DESIGN_GOD).toContain("Semantic landmarks");
+    expect(DESIGN_GOD).toContain("Mobile-first and responsive from 320px");
+    expect(DESIGN_GOD).toContain("a nav that stays usable on a phone without JavaScript");
+    expect(FORGE_MD).toContain("What every page owes, whatever shape it takes");
+    expect(contract).not.toContain("Mobile-first and responsive from 320px");
+  });
+
+  test("navigation is designed, and DESIGN_GOD is where that is said", () => {
+    expect(DESIGN_GOD).toContain("## Navigation");
+    expect(DESIGN_GOD).toContain("A bar with the name on the left and links on the right is one answer, not the answer");
+    expect(DESIGN_GOD).toContain("at least 44px");
+    // The phone nav has to work without a script, because a published site runs none.
+    expect(DESIGN_GOD).toMatch(/checkbox or `<details>`/);
+  });
+
+  test("the palette is taken from the business, not from a ban list", () => {
+    expect(DESIGN_GOD).toContain("## Colour");
+    expect(DESIGN_GOD).toContain("Take the palette from the business");
+    expect(DESIGN_GOD).toContain("Decide light or dark from the subject");
+    expect(DESIGN_GOD).toContain("Two sites on the same family must not read the same");
+    // FED names the default looks. DESIGN_GOD says what to do with that list,
+    // rather than FED being edited to remove it.
+    expect(DESIGN_GOD).toContain("never a menu to choose from");
+    expect(FED).toContain("warm cream background");
   });
 
   test("forgeMd gives the skeleton to the skill", () => {

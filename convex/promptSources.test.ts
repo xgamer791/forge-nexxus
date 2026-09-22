@@ -106,10 +106,19 @@ describe("only the sanctioned files steer the agent", () => {
     // of it looks is the design files'.
     expect(forge).toMatch(/Rebuild means a different design/);
     expect(forge).toMatch(/Every link into the site is its own page/);
+    // Behaviour is this file's: what a site is made of, and what a page has to
+    // cover whatever shape the design gives it.
+    expect(forge).toMatch(/What every page owes, whatever shape it takes/);
     // It carried the whole design skill once. If it grows back past a few
-    // rules, design has two homes again and they will disagree.
+    // rules, design has two homes again and they will disagree. The room here
+    // is for behaviour; design instruction belongs in designgod.ts.
     const text = forge.slice(forge.indexOf('FORGE_MD = "'));
-    expect(text.length).toBeLessThan(1500);
+    expect(text.length).toBeLessThan(1900);
+    // It may name a palette or a type treatment only to say not to carry one
+    // forward, which is behaviour. What it must never do is choose one.
+    for (const instruction of ["Satoshi", "clamp(", "custom properties", "Mobile-first"]) {
+      expect(forge).not.toContain(instruction);
+    }
   });
 
   test("memory never becomes a fourth design voice", () => {

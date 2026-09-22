@@ -182,3 +182,40 @@ export const site = internalAction({
     };
   },
 });
+
+// What the chat provider says it serves, for whoever runs the deployment:
+// `npx convex run probe:models`. `AI_MODEL` and `AI_BUILD_MODEL` name a model
+// id and nothing checks it until a build fails with the provider's own words,
+// so this is the list to choose an id from rather than guessing one.
+//
+// Ids only. No key leaves here, and the key is scrubbed from anything the
+// provider echoes back.
+type ModelList = { host: string; httpStatus?: number; models?: string[]; error?: string };
+
+export const models = internalAction({
+  args: {},
+  handler: async (): Promise<ModelList> => {
+    const route = chatRoute("build");
+    const host = hostOf(route.baseUrl);
+    if (!route.apiKey) return { host, error: "No API key is set on this deployment" };
+    let response: Response;
+    let body: string;
+    try {
+      response = await fetch(`${route.baseUrl}/models`, {
+        headers: { accept: "application/json", authorization: `Bearer ${route.apiKey}` },
+      });
+      body = await response.text();
+    } catch (error) {
+      return { host, error: scrub(error) };
+    }
+    try {
+      const data = JSON.parse(body) as { data?: { id?: unknown }[] };
+      const ids = (data?.data ?? [])
+        .map((row) => (typeof row?.id === "string" ? row.id : null))
+        .filter((id): id is string => id !== null);
+      return { host, httpStatus: response.status, models: ids.sort() };
+    } catch {
+      return { host, httpStatus: response.status, error: scrub(body).slice(0, 200) };
+    }
+  },
+});
