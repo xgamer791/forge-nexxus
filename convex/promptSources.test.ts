@@ -19,7 +19,7 @@ const modules = readdirSync(new URL(".", here))
 // `forgeMd.ts` is not here: it writes nothing, it supplies the text these
 // three wrap, which is what makes it the single place design lives.
 const WRITERS = {
-  "generate.ts": "the platform contract: reply format, one document, no JavaScript, image markers",
+  "generate.ts": "the platform contract: reply format, shell and pages, what a published page can run, image markers",
   "onboarding.ts": "build/retry mechanics and the saved brief",
   "memory.ts": "what Forge remembers, carried as untrusted content",
 };

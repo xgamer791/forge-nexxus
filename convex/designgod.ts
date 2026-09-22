@@ -50,7 +50,7 @@ export const DESIGN_GOD = [
   "",
   "- It carries the destinations this business actually has, in its own words: \"Book a table\" and \"This week's roast\", not \"Services\" and \"Products\".",
   "- Anything a thumb has to hit is at least 44px, with space around it.",
-  "- **A published site runs no scripts**, so a phone menu has to open with CSS. A header bar with the name and a Menu button that opens a dropdown is the reliable default below 768px wide; two or three short links that fit on one line at 360px can simply stay in the bar. The checkbox pattern below is one way to build the dropdown, and its structure is what makes it work without a script:",
+  "- **A phone menu that opens with CSS keeps working if a script fails to load**, which makes it the safe choice even though a published site can run scripts. A header bar with the name and a Menu button that opens a dropdown is the reliable default below 768px wide; two or three short links that fit on one line at 360px can simply stay in the bar. The checkbox pattern below is one way to build the dropdown, and its structure is what makes it work without a script:",
   "",
   "```html",
   "<header class=\"site-header\">",

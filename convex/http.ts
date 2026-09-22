@@ -26,9 +26,12 @@ const PAGE_HEADERS = {
   // Cloudways Varnish keep a HIT for hours; no-store is what stops that.
   "cache-control": "private, no-store, max-age=0, must-revalidate",
   "surrogate-control": "no-store",
+  // This only stops a browser from reading the page as some other kind of
+  // file. It limits nothing the page does.
   "x-content-type-options": "nosniff",
-  "content-security-policy":
-    "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com; font-src https://fonts.gstatic.com https://cdn.fontshare.com; img-src data: https:; base-uri 'none'; form-action 'none'",
+  // No content-security-policy, by the owner's decision: a published page runs
+  // its scripts, loads from any host and submits its forms, as a page on any
+  // ordinary host does.
 } as const;
 
 function page(html: string | null) {
@@ -72,9 +75,7 @@ http.route({ path: "/index.html", method: "GET", handler: byHost });
 http.route({ pathPrefix: "/", method: "GET", handler: byHost });
 
 // Published sites are served from the deployment's own origin at
-// /sites/<slug>, and their other pages at /sites/<slug>/<path>. The policy
-// keeps a page to markup, styles and fonts, so a stray script in a build can
-// never run on this origin.
+// /sites/<slug>, and their other pages at /sites/<slug>/<path>.
 http.route({
   pathPrefix: "/sites/",
   method: "GET",

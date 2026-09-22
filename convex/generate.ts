@@ -254,8 +254,8 @@ export const routing = internalQuery({
 
 // The platform contract, and nothing else. Every line here is a fact about
 // what this deployment can store, serve or parse -- `parseReply` wants a shell
-// and its pages in fenced blocks, `siteVersions` holds them, the published CSP
-// runs no scripts and allows only two font hosts, and `images.ts` reads the
+// and its pages in fenced blocks, `siteVersions` holds them, a published page
+// runs its scripts and loads from any host, and `images.ts` reads the
 // forge-image markers. How a page looks is not decided here: that belongs to
 // FORGE_MD and the design files it carries, so nothing in this file can
 // outrank them.
@@ -293,9 +293,8 @@ BUILD — when they describe a site to make, or ask for a change to it.
 What this platform can serve, which is not a matter of taste:
 - A site is one shell and one or more pages. The shell is a complete document — <!doctype html> … </html>, with a lang, a <title>, a meta description, a meta viewport, all CSS in one <style> block in the <head>, and whatever every page shares, like the nav and footer — holding the comment <!--forge-page--> exactly where a page's own markup goes. A page is only that markup, with no html, head or body of its own. Each page is served at its path with the shell around it.
 - Every page has a path: the home page is / and the others are short lowercase paths like /about. A link between pages is its path; a link within a page is an in-page anchor. Link only to pages you return.
-- No JavaScript runs on a published site — the server sends a policy that blocks it — so no scripts and no frameworks. Build in HTML and CSS alone, including anything interactive: a menu, a disclosure or a tab set has to work through CSS, or not be there. A form is static markup.
+- JavaScript runs on a published site, and scripts, stylesheets, fonts and libraries may load from any host. Use a script wherever the site is better for one — a menu, tabs, a gallery, a slider, a filter, a calculator — in a <script> element in the shell or in the page it belongs to. A form has no service behind it yet, so what it sends does not reach the business.
 - Because nothing is wired up behind the page, let every action lead somewhere true: an in-page anchor, a page of this site, or an external store, booking or contact link the brief supplies. Never render a cart, a checkout, a payment form, a signed-in account or a confirmed order as though it worked, and never invent a price, a stock count, a delivery promise, a review or a customer.
-- Google Fonts and Fontshare are the only external stylesheets this policy allows.
 
 ${pictures}
 

@@ -175,7 +175,9 @@ describe("the contract sets a floor, not a mould", () => {
   });
 
   test("a phone menu works without a script, and the Menu dropdown is the default", () => {
-    expect(DESIGN_GOD).toContain("A published site runs no scripts");
+    expect(DESIGN_GOD).toContain("A phone menu that opens with CSS keeps working if a script fails to load");
+    // Published sites run scripts now; nothing may tell the agent otherwise.
+    expect(DESIGN_GOD).not.toMatch(/runs no scripts/);
     expect(DESIGN_GOD).toContain("a Menu button that opens a dropdown is the reliable default below 768px wide");
     expect(DESIGN_GOD).not.toMatch(/wrap or scroll sideways/);
     // The checkbox pattern is kept as a working reference.

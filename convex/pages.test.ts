@@ -269,7 +269,8 @@ describe("a published site answers on every page it has", () => {
     expect(text).toContain("<h1>Our story</h1>");
     expect(text).toContain("<title>About</title>");
     expect(text).toContain("<nav>Forge</nav>");
-    expect(about.headers.get("content-security-policy")).toContain("default-src 'none'");
+    // No policy is sent: a published page runs its scripts and submits its forms.
+    expect(about.headers.get("content-security-policy")).toBe(null);
 
     expect((await t.fetch("/sites/bakery/nowhere")).status).toBe(404);
     expect((await t.fetch("/sites/nobody-home/about")).status).toBe(404);
