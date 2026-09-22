@@ -124,6 +124,53 @@ bump — there is no skip for prompt-only or backend-only work. Increment the
 number there, paint it on both surfaces, say `Latest version: N` at the end of
 every completed task, and push to `main`. That file is the source of truth.
 
+## Rule 6: do not test your work unless you are asked to
+
+**No test run is part of finishing.** Do not run `npm test`, do not run
+`npm run typecheck`, and do not write a test to satisfy yourself that a change
+works. Ship it. The member asks for a test run when they want one, and only
+then is it part of the job.
+
+This is a deliberate reversal of the habit, and it wins over anything else in
+this file or in a skill that asks for verification first:
+
+- A change is finished when it is written, the version is bumped, and it is
+  deployed. Nothing waits on a green suite.
+- When a change alters behaviour a test already asserts, update that test in
+  the same commit — writing the new truth down is not a test run.
+- `npm run build` is not a test. It is how `src/` reaches the browser, so it is
+  still required whenever `src/` changed; without it the client ships stale.
+- `npx convex deploy` runs TypeScript itself, so a type error stops the deploy
+  and says so. That is the check, and it happens at the deploy rather than
+  before it.
+
+If something is too risky to ship unverified, say so in the summary and ask —
+do not quietly run the suite instead.
+
+## Rule 7: deploy the moment the work is done
+
+**Every completed change is deployed in the same session, to Convex and to
+GitHub, without being asked.** A change that is only committed is not shipped:
+nobody sees it, and the next session inherits a deployment behind the code.
+
+This is standing permission to push to `main` and to deploy. Do not ask for it
+again.
+
+- **Convex** — `npx convex deploy --yes --typecheck disable --codegen disable`
+  with `CONVEX_DEPLOY_KEY` from the environment. It lands on
+  `polished-ram-883`. A session that cannot reach `convex.cloud` ships it by
+  merging to `main`, where the Actions Convex step runs the same command with
+  the repository secret.
+- **GitHub** — commit, then push `main`. Pages deploys `docs/` from there, and
+  the same run deploys Convex again, which is a no-op when the code is already
+  up. Work done on a feature branch is fast-forwarded into `main` to ship;
+  push the branch too, so nothing lives only on this machine.
+- **Both, every time.** Backend-only work still ships the client, because the
+  version number on both surfaces moved with it (Rule 5). Frontend-only work
+  still deploys Convex, because a no-op deploy costs nothing and a skipped one
+  is how a deployment drifts behind `main`.
+- Say what was deployed at the end of the task, and name the version.
+
 ## The name
 
 The product is **Forge Nexxus**. Do not rename or rebrand it — not the title,
@@ -147,23 +194,32 @@ the sign-in hero, the sender name, the badge, the docs, or anything else.
    they sign in.
 7. Run `npm run build` to rebuild `docs/forge-data.js`. `src/` changes do not
    reach the browser without it.
-8. Say in your summary that `npx convex deploy` is still required: pushing to
-   `main` deploys `docs/` through GitHub Pages, but schema and function changes
-   only reach the Convex deployment when someone with the deploy key pushes
-   them.
+8. Deploy it — Rule 7. A schema or function change reaches nobody through
+   Pages, so `npx convex deploy` is the half of the release that carries it,
+   and pushing `main` is the half that carries `docs/`. Say in your summary
+   that both happened.
 
 ## Tests
+
+The suite exists and is kept truthful, but running it is not part of finishing
+a change — Rule 6. Run `npm test` when the member asks for it, and when a
+change makes an existing assertion wrong, correct that assertion in the same
+commit rather than leaving it to fail for whoever comes next.
 
 Every Convex test file loads the whole directory with
 `import.meta.glob("./**/*.*s")`. No module uses `"use node"`; keep it that way
 unless something genuinely needs Node, and if it ever does, exclude that file
 from the glob so convex-test can still load the rest.
 
-## Checks before pushing
+## Before pushing
 
-- `npm run typecheck` — `convex/`
-- `npm run build` — required whenever `src/` changed
-- `npm test` — Convex functions and the session lifecycle
+- `npm run build` — required whenever `src/` changed, because that is what puts
+  `src/` in front of the browser. Not a check; part of the change.
+- The version bumped and painted on both surfaces — Rule 5.
+- Then deploy Convex and push `main` — Rule 7.
+
+`npm run typecheck` and `npm test` are run on request only. The deploy
+typechecks `convex/` on its way out, so a type error still stops it.
 
 ## Standing access: Convex + DeepSeek + Gemini (every Claude session)
 
