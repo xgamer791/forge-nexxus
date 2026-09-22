@@ -8,8 +8,8 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
-<meta name="app-version" content="d6a6f8f66cf27d511ae698c3ce2e62680829d0ff">
-<meta name="app-build" content="44">
+<meta name="app-version" content="dda44e8480a3cb835fa4008bd94668a537236837">
+<meta name="app-build" content="45">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">
@@ -30,7 +30,7 @@ defined( 'ABSPATH' ) || exit;
 <main class="app" hidden inert>
 <header class="chrome">
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
-<span class="build-stamp" data-build-stamp aria-label="Version 44">44</span>
+<span class="build-stamp" data-build-stamp aria-label="Version 45">45</span>
 <button class="globe-button" type="button" aria-label="Domains" data-open="address" aria-haspopup="dialog"><svg><use href="#globe"/></svg></button>
 <button class="website-preview-button" type="button" aria-label="Preview website" aria-haspopup="dialog" aria-expanded="false"><svg><use href="#preview-eye"/></svg></button>
 </header>
@@ -261,16 +261,10 @@ defined( 'ABSPATH' ) || exit;
 <p class="overlay-error" role="alert" hidden></p>
 </div>
 </section>
-<section class="overlay preview" data-back=".preview-back" role="dialog" aria-modal="true" aria-labelledby="preview-title" hidden>
-<header class="appearance-header"><button class="appearance-back preview-back" type="button" aria-label="Back to the thread"><svg><use href="#arrow-left"/></svg></button><h2 id="preview-title" data-site-name>Preview</h2></header>
+<section class="overlay preview" data-back=".preview-back" role="dialog" aria-modal="true" aria-label="Website preview" hidden>
+<button class="preview-exit preview-back" type="button" aria-label="Back to the dashboard"><svg aria-hidden="true"><use href="#arrow-left"/></svg></button>
 <nav class="preview-pages" data-preview-pages aria-label="Pages in this site" hidden></nav>
 <div class="preview-frame"><iframe class="preview-iframe" title="Your website" data-preview-frame sandbox="" referrerpolicy="no-referrer"></iframe><p class="preview-empty" hidden>Nothing built yet. Describe your site and Forge will make a first version.</p></div>
-<footer class="preview-footer">
-<p class="preview-status" data-preview-status></p>
-<a class="preview-link" data-preview-link href="#" target="_blank" rel="noopener" hidden></a>
-<div class="preview-actions"><button class="chip-button preview-publish" type="button">Publish</button><button class="row-button preview-download" type="button" hidden>Download code</button><button class="row-button preview-unpublish" type="button" hidden>Unpublish</button></div>
-<p class="overlay-error" role="alert" hidden></p>
-</footer>
 </section>
 </main>
 <?php wp_footer(); ?>

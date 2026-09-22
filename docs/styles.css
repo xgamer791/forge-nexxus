@@ -122,8 +122,10 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 /* Appearance and the other full-screen settings screens share one shell. */
 .appearance,.overlay{position:fixed;z-index:5;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(var(--shell),100vw);max-width:var(--shell);background:#fff;color:#1c1c1e;display:flex;flex-direction:column}
 .appearance,.overlay:not(.preview){z-index:7}
-.overlay.preview{top:var(--header);z-index:5;background:#fff;color:#1c1c1e}
-.overlay.preview .appearance-header{margin-top:0}
+/* Preview is the site, edge to edge: no header above it and no publish bar
+   below. Everything those carried — the name, the summary, the address,
+   publish, unpublish, download — is on the site's own menu. */
+.overlay.preview{top:0;z-index:5;background:#fff;color:#1c1c1e}
 .appearance.is-open,.overlay.is-open{animation:overlay-in .7s cubic-bezier(.22,1,.36,1) both}
 @keyframes overlay-in{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
 .appearance-header{flex-shrink:0;height:56px;margin-top:max(0px,env(safe-area-inset-top));display:grid;grid-template-columns:56px 1fr 56px;align-items:center;padding:0 8px}
@@ -282,21 +284,19 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
    strip is written in the light palette's own values rather than the themed
    tokens: chrome around a page reads as paper, not as the app. One page lists
    nothing — the strip is hidden, and the screen is what it was. */
-.preview-pages{flex-shrink:0;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:8px 16px 10px;border-bottom:1px solid #e5e5ea;background:#fff}
+/* Dark disc for a light page, white ring for a dark one: the control carries
+   its own contrast in both directions rather than trusting the site under it. */
+.preview-exit{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);left:12px;z-index:6;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:#1c1c1e;color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.28),0 0 0 1.5px rgba(255,255,255,.7)}
+.preview-exit svg{width:24px;height:24px}
+.preview-exit:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.preview-pages{position:absolute;left:0;right:0;bottom:0;z-index:6;display:flex;justify-content:center;gap:8px;overflow-x:auto;scrollbar-width:none;padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 12px);pointer-events:none}
 .preview-pages::-webkit-scrollbar{display:none}
-.preview-page{flex-shrink:0;height:36px;padding:0 15px;border-radius:18px;background:#f2f2f7;color:#3a3a3c;font-size:15px;line-height:36px;white-space:nowrap}
+.preview-page{pointer-events:auto;flex-shrink:0;height:36px;padding:0 15px;border-radius:18px;background:#fff;color:#3a3a3c;font-size:15px;line-height:36px;white-space:nowrap;box-shadow:0 1px 6px rgba(0,0,0,.18)}
 .preview-page[aria-current=page]{background:#1c1c1e;color:#fff;font-weight:500}
 .preview-page:focus-visible{outline:2px solid #8e8e93;outline-offset:2px}
 .preview-frame{flex:1;min-height:0;position:relative;background:#fff}
 .preview-iframe{display:block;width:100%;height:100%;border:0;background:#fff}
 .preview-empty{position:absolute;inset:0;margin:0;display:grid;place-items:center;padding:32px;text-align:center;color:#6e6e73;background:#fff;font-size:17px;line-height:23px}
-.preview-footer{flex-shrink:0;border-top:1px solid #e5e5ea;padding:12px 16px max(12px,env(safe-area-inset-bottom));display:grid;gap:8px;background:#fff}
-.preview-status{margin:0;font-size:14px;line-height:18px;color:#6e6e73}
-.preview-link{font-size:15px;line-height:20px;color:#1c1c1e;text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.preview-actions{display:flex;align-items:center;gap:12px}
-.preview-actions .chip-button{flex:1;height:44px;justify-content:center;font-size:17px;background:#1c1c1e;color:#fff}
-.preview-actions .row-button{width:auto;min-height:44px;padding:0 14px;color:#6e6e73}
-.preview-footer .overlay-error{margin:0}
 .thread::-webkit-scrollbar{display:none}
 .app.has-thread .thread{display:flex}
 .app.has-thread .greeting{display:none}
@@ -543,7 +543,6 @@ a.onboarding-primary:focus-visible{outline:2px solid var(--focus);outline-offset
   /* The drawer stays on the shell's left edge so a push keeps it flush
      with the dashboard instead of leaving a gap to the window. */
   .navigation{width:var(--drawer);box-shadow:0 0 40px rgba(0,0,0,.12)}
-  .preview-actions .chip-button{flex:0 0 auto;min-width:180px}
   /* A built site is a website: preview it at a website's width. */
   .overlay.preview{width:min(1180px,calc(100vw - 64px));max-width:none;left:50%;margin-left:calc(min(1180px,100vw - 64px)/-2)}
 }

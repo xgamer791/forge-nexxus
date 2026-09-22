@@ -1955,13 +1955,7 @@ const previewScreen = document.querySelector('.overlay.preview');
 if (forge?.sites && previewScreen) {
   const frame = previewScreen.querySelector('.preview-iframe');
   const empty = previewScreen.querySelector('.preview-empty');
-  const status = previewScreen.querySelector('[data-preview-status]');
-  const link = previewScreen.querySelector('[data-preview-link]');
   const pageStrip = previewScreen.querySelector('[data-preview-pages]');
-  const publishButton = previewScreen.querySelector('.preview-publish');
-  const unpublishButton = previewScreen.querySelector('.preview-unpublish');
-  const downloadButton = previewScreen.querySelector('.preview-download');
-  const error = previewScreen.querySelector('.overlay-error');
   let stopHtml = null;
   let shownKey = null;
   let current = null;
@@ -1992,28 +1986,14 @@ if (forge?.sites && previewScreen) {
     frame.title = showing ? `Your website: ${showing.title || showing.path}` : 'Your website';
   }
   function renderPreview() {
-    const site = activeSite;
-    const built = Boolean(site?.currentVersionId);
-    const addressable = Boolean(summary?.plan.publicAddress);
+    // The screen is the site and nothing else. What used to sit above and
+    // below it — the name, the build summary, the address, publish, unpublish,
+    // download — is all on the site's own menu, where it is reachable without
+    // standing on top of the thing being looked at.
+    const built = Boolean(activeSite?.currentVersionId);
     empty.hidden = built && current !== null;
     if (!built) { frame.removeAttribute('srcdoc'); current = null; }
-    publishButton.disabled = !built || !addressable;
-    publishButton.textContent = site?.status === 'published'
-      ? (current && !current.published ? 'Publish latest build' : 'Published')
-      : 'Publish';
-    if (site?.status === 'published' && current?.published) publishButton.disabled = true;
-    unpublishButton.hidden = site?.status !== 'published';
-    downloadButton.hidden = !(built && current && summary?.plan.codeDownload);
-    link.hidden = !site?.publishedUrl;
-    if (site?.publishedUrl) { link.href = liveUrl() ?? site.publishedUrl; link.textContent = site.publishedUrl.replace(/^https?:\/\//, ''); }
     renderPages();
-    status.textContent = !built
-      ? ''
-      : !addressable
-        ? 'Publishing to an address of your own comes with a paid plan.'
-        : current
-          ? `${current.summary || 'Latest build'} · ${new Date(current.createdAt).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}`
-          : 'Loading the latest build…';
   }
   function watch() {
     const siteId = activeSite?._id ?? null;
@@ -2049,8 +2029,9 @@ if (forge?.sites && previewScreen) {
   // the grounds that the real site is the better preview — true when the
   // address answers, and no help at all when it does not, or before a site is
   // published. Either way it showed one page: a site built in four looked
-  // like a site of one. So this opens the frame, the strip lists the pages,
-  // and the address is a link inside for the real thing.
+  // like a site of one. So this opens the frame, and the frame is the whole
+  // screen: what a member came to look at is the site, not Forge's opinion of
+  // it, and the way back is the one thing left on top.
   openPreview = () => {
     if (!window.ForgeOnboarding?.canPreview()) return;
     if (!previewScreen.hidden) { closeMenu(); return; }
@@ -2062,44 +2043,7 @@ if (forge?.sites && previewScreen) {
   };
 
   previewScreen.querySelector('.preview-back').addEventListener('click', closeMenu);
-  publishButton.addEventListener('click', async () => {
-    if (!activeSite || publishButton.disabled) return;
-    showNote(error, '');
-    publishButton.disabled = true;
-    try {
-      await forge.sites.publish(activeSite._id);
-    } catch (caught) {
-      reportError(caught);
-      showNote(error, messageOf(caught));
-      publishButton.disabled = false;
-    }
-  });
-  // The site as files: the same download the site menu offers.
-  downloadButton.addEventListener('click', () => {
-    if (!current || !activeSite) return;
-    const site = activeSite;
-    fetchSiteFiles(site, files => saveSiteCode(site, files));
-  });
-  unpublishButton.addEventListener('click', async () => {
-    if (!activeSite) return;
-    if (!confirm('Take this site offline? The address is kept for when you publish again.')) return;
-    showNote(error, '');
-    try {
-      await forge.sites.unpublish(activeSite._id);
-    } catch (caught) {
-      reportError(caught);
-      showNote(error, messageOf(caught));
-    }
-  });
-  document.addEventListener('forge:active-site', () => {
-    if (previewScreen.hidden) return;
-    watch();
-    renderPreview();
-  });
-  document.addEventListener('forge:billing', () => {
-    if (summary?.plan.key === 'free') { frame.removeAttribute('srcdoc'); current = null; if (!previewScreen.hidden) closeMenu(); }
-    else if (!previewScreen.hidden) renderPreview();
-  });
+
 }
 
 // Free members keep the dashboard, with the eye visibly disabled.
