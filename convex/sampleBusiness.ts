@@ -73,7 +73,7 @@ Reply with one JSON object and nothing else, with exactly these keys:
   "goal": one of ${JSON.stringify(options("goal"))},
   "difference": "the one thing visitors should remember, 1-3 sentences",
   "features": an array of one to three of ${JSON.stringify(options("features"))},
-  "brand": "brand colours or fonts if the owner has any, or an empty string",
+  "brand": "",
   "references": "",
   "content": "address, phone, email, hours, owners' names and anything else that must be on the site",
   "catalogue": "one product or service per line, each with a price"
@@ -95,6 +95,9 @@ export function sampleAnswers(reply: string, draw: SampleDraw): string[] {
   const answers = QUESTIONS.map((question) => {
     const value = parsed[question.id];
     if (question.id === "feel") return draw.feel;
+    // An invented owner's colours would outrank the design rules the way a
+    // real member's do, so a test business never brings any.
+    if (question.id === "brand") return "";
     if (question.id === "features") {
       const chosen = (Array.isArray(value) ? value : [value]).map(text).filter((v) => options("features").includes(v));
       return [...new Set(chosen)].join("\n");
