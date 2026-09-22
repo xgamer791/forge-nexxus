@@ -6,6 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import http from "./http";
 import { composePage, designSource, diskLinks, fileNameFor, normalizePath, relativeFileLink, rewriteRootLinks } from "./pages";
 import schema from "./schema";
+import { SCREEN_FLOOR, withScreenFloor } from "./sites";
 
 const modules = import.meta.glob("./**/*.*s");
 const fresh = () => convexTest(schema, modules);
@@ -325,8 +326,10 @@ describe("a published site answers on every page it has", () => {
 
   test("a site published before pages existed serves exactly what it served", async () => {
     const t = fresh();
-    const PAGE = '<!doctype html><html lang="en"><head><title>Shop</title></head><body><h1>Shop</h1></body></html>';
-    const { siteId, as } = await publishedSite(t, "shop", { html: PAGE });
+    const STORED = '<!doctype html><html lang="en"><head><title>Shop</title></head><body><h1>Shop</h1></body></html>';
+    // What it served, plus the screen floor every page is now served with.
+    const PAGE = withScreenFloor(STORED);
+    const { siteId, as } = await publishedSite(t, "shop", { html: STORED });
 
     expect(await (await t.fetch("/sites/shop")).text()).toBe(PAGE);
     expect(await (await t.fetch("/", { headers: { host: "shop.sites.forgenexxus.com" } })).text()).toBe(PAGE);
@@ -393,5 +396,32 @@ describe("a page's links, wherever the page goes", () => {
     expect(out).toContain('href="../about.html#team"');
     expect(out).toContain("href='shirts.html?size=m'");
     expect(out).toContain('href="#top"');
+  });
+});
+
+describe("the screen floor", () => {
+  const DOC = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shop</title></head><body><main><section>Hi</section></main></body></html>';
+
+  test("goes first in the head, once, however often the page is served", () => {
+    const once = withScreenFloor(DOC);
+    expect(once).toContain(`<head><style data-forge-floor>`);
+    expect(withScreenFloor(once)).toBe(once);
+    expect(once.match(/data-forge-floor/g)).toHaveLength(1);
+  });
+
+  test("sets a phone's opening to its first screen and later sections to most of one", () => {
+    expect(SCREEN_FLOOR).toContain("@media (max-width:767px)");
+    expect(SCREEN_FLOOR).toContain("main>section:first-of-type){box-sizing:border-box;min-height:calc(100svh - 64px)");
+    expect(SCREEN_FLOOR).toContain("main>section:not(:first-of-type)){box-sizing:border-box;min-height:85svh");
+  });
+
+  test("never outranks the page's own rules: every selector has no specificity", () => {
+    const rules = SCREEN_FLOOR.replace(/^.*?\{/, "").match(/[^{}]+(?=\{)/g) ?? [];
+    expect(rules.length).toBeGreaterThan(0);
+    for (const selector of rules) expect(selector.startsWith(":where(")).toBe(true);
+  });
+
+  test("leaves a fragment without a head alone", () => {
+    expect(withScreenFloor("<h1>Only a fragment</h1>")).toBe("<h1>Only a fragment</h1>");
   });
 });

@@ -20,15 +20,33 @@ function withBadge(html: string) {
   return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${badge}</body>`) : html + badge;
 }
 
-// The page as a visitor sees it: the version's HTML, plus the badge unless the
-// owner's plan removes it.
+// The height a phone gives the opening and the sections after it, whatever the
+// model wrote. DESIGN_GOD asks for these; this is the floor when a build does
+// not meet them. Every selector is inside :where(), so it has no specificity:
+// any height or placement the page sets for itself, however it selects the
+// element, wins. It goes in as served, like the badge, so it reaches every
+// build already saved and never becomes part of what the model is shown or
+// what a rebuild's duplicate check compares.
+export const SCREEN_FLOOR =
+  "<style data-forge-floor>@media (max-width:767px){" +
+  ":where(main>section:first-of-type){box-sizing:border-box;min-height:calc(100svh - 64px);align-content:center}" +
+  ":where(main>section:not(:first-of-type)){box-sizing:border-box;min-height:85svh;align-content:center}" +
+  "}</style>";
+export function withScreenFloor(html: string) {
+  if (html.includes("data-forge-floor")) return html;
+  return /<head\b[^>]*>/i.test(html) ? html.replace(/<head\b[^>]*>/i, (head) => head + SCREEN_FLOOR) : html;
+}
+
+// The page as a visitor sees it: the version's HTML with the screen floor,
+// plus the badge unless the owner's plan removes it.
 export async function renderedHtml(
   ctx: QueryCtx | MutationCtx,
   site: Doc<"sites">,
   html: string,
 ) {
   const plan = await currentPlan(ctx, site.userId);
-  return plan.removeBadge ? html : withBadge(html);
+  const floored = withScreenFloor(html);
+  return plan.removeBadge ? floored : withBadge(floored);
 }
 
 const DEFAULT_NAME = "Untitled site";
