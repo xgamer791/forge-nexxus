@@ -854,3 +854,57 @@ describe("a rebuild starts the plan over, not just the page", () => {
     expect(onboarding).not.toMatch(/conversion goal, page structure, copy priorities/);
   });
 });
+
+// fed-only block: the default while the owner tests the agent on its own.
+describe("with agent direction off, the agent is sent FED and the answers alone", () => {
+  beforeEach(() => { delete process.env.AGENT_DIRECTION; });
+  afterEach(() => { process.env.AGENT_DIRECTION = "on"; });
+
+  test("an onboarding build carries FED, then the answers, and nothing Forge wrote", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
+
+    // The strategist never ran, so the only text call is the build.
+    const calls = providers.chatCalls();
+    expect(calls).toHaveLength(1);
+    const messages = calls[0].body.messages;
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toEqual({ role: "system", content: FED });
+    expect(messages[1].role).toBe("user");
+    const answers = messages[1].content;
+    expect(answers).toContain("What do you sell, and what does it cost?");
+    expect(answers).toContain("Pier Roast 250g — £11");
+    for (const held of ["Builder instructions", "beautiful", "design defaults", "strategy", "Choose a suitable default", "SVG artwork", "website-build-brief.md"]) {
+      expect(answers).not.toContain(held);
+    }
+    for (const held of [FORGE_MD, DESIGN_GOD]) {
+      expect(JSON.stringify(messages)).not.toContain(JSON.stringify(held).slice(1, 80));
+    }
+  });
+
+  test("a thread turn carries FED, the answers, the thread and the request", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const providers = stubProviders(() => built("Harbor Roasters"));
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+    const site = (await t.run(async (ctx) => ctx.db.get((await ctx.db.get(id))!.siteId!)))!;
+
+    await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Make the hero bolder" });
+
+    const messages = providers.chatCalls().at(-1)!.body.messages;
+    const systems = messages.filter((m: any) => m.role === "system").map((m: any) => m.content);
+    expect(systems).toHaveLength(2);
+    expect(systems[0]).toBe(FED);
+    expect(systems[1].startsWith("# Onboarding answers")).toBe(true);
+    expect(messages.at(-1)).toEqual({ role: "user", content: "Make the hero bolder" });
+    expect(JSON.stringify(messages)).not.toContain("You are Forge, the website-building agent");
+    expect(JSON.stringify(messages)).not.toContain("currently looks like this");
+  });
+});

@@ -11,6 +11,7 @@ import { failOpenRun, openRun, providerTrace, recordLastSign } from "./diagnosti
 import { BUILD_IMAGE_LIMIT, builtSite, callProvider, chatRoute, describe, parseReply } from "./generate";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
+import { fedOnly } from "./fedOnly";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
@@ -475,6 +476,8 @@ export const strategize = internalAction({
   handler: async (ctx, { id, revision, answers }): Promise<void> => {
     const row = await ctx.runQuery(internal.onboarding.load, { id });
     if (!row || row.dismissed || row.revision !== revision) return;
+    // fed-only block: the strategist is not run, so nothing is held for it.
+    if (fedOnly()) return;
     let hold;
     try { hold = await ctx.runMutation(internal.onboarding.strategyHold, { id, revision }); } catch { return; }
     if (!hold) return;
@@ -541,8 +544,8 @@ async function writePage(
     try {
       const reply = await callProvider(
         [...messages.slice(0, -1),
-          ...(redesign?.requireImages ? [{ role: "system" as const, content: "Include at least one new subject-relevant photograph or illustration using an img with src=\"forge-image:1\" and a detailed data-forge-image prompt. Do not substitute an inline SVG diagram, CSS drawing, gradient or decorative icon for the principal subject image. Respect the image limit in the build rules." }] : []),
-          ...(round > 0 ? [{ role: "system" as const, content: repeated ? DIFFERENT_BUILD : BUILD_AGAIN }] : []),
+          ...(redesign?.requireImages && !fedOnly() ? [{ role: "system" as const, content: "Include at least one new subject-relevant photograph or illustration using an img with src=\"forge-image:1\" and a detailed data-forge-image prompt. Do not substitute an inline SVG diagram, CSS drawing, gradient or decorative icon for the principal subject image. Respect the image limit in the build rules." }] : []),
+          ...(round > 0 && !fedOnly() ? [{ role: "system" as const, content: repeated ? DIFFERENT_BUILD : BUILD_AGAIN }] : []),
           messages[messages.length - 1],
         ],
         undefined,
@@ -556,7 +559,8 @@ async function writePage(
         const duplicate = discardedDesignHashes.includes(await designHash(designSource(site)));
         const requestedPicture = (siteParts(site).join("\n").match(/<img\b[^>]*>/gi) ?? [])
           .some(tag => /\bdata-forge-image\s*=\s*["'][^"']+/i.test(tag));
-        if (!duplicate && (!redesign?.requireImages || requestedPicture)) return { site, summary: parsed.summary };
+        // fed-only block: nothing asks for a picture, so none is required.
+        if (!duplicate && (!redesign?.requireImages || fedOnly() || requestedPicture)) return { site, summary: parsed.summary };
         if (!duplicate) {
           shortfall = new Error("The rebuild did not include its required new imagery. Try rebuilding again.");
           continue;
@@ -612,7 +616,7 @@ export const build = internalAction({
       const trace = providerTrace(ctx, runId, row.userId);
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
         url: await ctx.storage.getUrl(asset.storageId), text: asset.type.startsWith("text/") ? (await (await ctx.storage.get(asset.storageId))?.text())?.slice(0, 12000) : undefined })));
-      const contents = briefFile(row.answers, row.strategy ?? "", assets);
+      const contents = briefFile(row.answers, row.strategy ?? "", assets, !fedOnly());
       const storageId = await ctx.storage.store(new Blob([contents], { type: "text/markdown" }));
       // Read the persisted file, not a client prompt, as the agent's source.
       const file = await ctx.storage.get(storageId);
@@ -636,7 +640,11 @@ export const build = internalAction({
         label: "Credits held for a build",
         detail: { requestKind: job.result.requestKind, host: providerHost, model: route.model, keySet: Boolean(route.apiKey) },
       });
-      const page = await writePage([...job.messages,
+      // fed-only block: FED and the onboarding answers, nothing else.
+      const page = await writePage(fedOnly() ? [
+        { role: "system", content: FED },
+        { role: "user", content: brief },
+      ] : [...job.messages,
         { role: "system", content: BUILD_ORDER },
         // The identifier only keeps one rebuild's prompt from being byte-identical
         // to the last. What a rebuild owes the member is FORGE_MD's rule, not this.
