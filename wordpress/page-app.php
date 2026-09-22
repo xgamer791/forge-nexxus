@@ -8,8 +8,8 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
-<meta name="app-version" content="5637af337024621a0cd8466dc4f99494936669c3">
-<meta name="app-build" content="23">
+<meta name="app-version" content="34fd2f99d45e6fd2ce8f9ba891b5580ff4aa9842">
+<meta name="app-build" content="24">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">
@@ -30,14 +30,14 @@ defined( 'ABSPATH' ) || exit;
 <main class="app" hidden inert>
 <header class="chrome">
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
-<span class="build-stamp" data-build-stamp aria-label="Version 23">23</span>
+<span class="build-stamp" data-build-stamp aria-label="Version 24">24</span>
 <button class="globe-button" type="button" aria-label="Domains" data-open="address" aria-haspopup="dialog"><svg><use href="#globe"/></svg></button>
 <button class="website-preview-button" type="button" aria-label="Preview website" aria-haspopup="dialog" aria-expanded="false"><svg><use href="#preview-eye"/></svg></button>
 </header>
 <div class="stage">
 <div class="greeting"><svg class="forge-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg><h1 data-greeting>What will you build today?</h1><p class="greeting-sub">Describe a website and Forge builds it.</p></div>
 <section class="thread" role="log" aria-label="Build thread" aria-live="polite"></section>
-<div class="composer-area"><p class="composer-error" role="alert" hidden></p><div class="site-bar" hidden><span class="site-bar-copy"><strong data-site-name></strong><small data-site-status></small></span><div class="site-bar-actions"><button class="site-bar-rebuild" type="button" hidden>Rebuild</button><button class="site-bar-preview" type="button">Preview</button></div></div><div class="composer"><textarea aria-label="Describe your site" placeholder="Describe the site you want…" rows="1" autocapitalize="sentences" autocomplete="off" spellcheck="true"></textarea><div class="toolbar"><button class="add" data-open="attachments" aria-label="Add images or files" aria-haspopup="dialog"><svg><use href="#plus"/></svg></button><button class="microphone" type="button" aria-label="Start voice input" aria-pressed="false"><svg><use href="#mic"/></svg></button></div></div></div>
+<div class="composer-area"><p class="composer-error" role="alert" hidden></p><div class="composer"><textarea aria-label="Describe your site" placeholder="Describe the site you want…" rows="1" autocapitalize="sentences" autocomplete="off" spellcheck="true"></textarea><div class="toolbar"><button class="add" data-open="attachments" aria-label="Add images or files" aria-haspopup="dialog"><svg><use href="#plus"/></svg></button><button class="microphone" type="button" aria-label="Start voice input" aria-pressed="false"><svg><use href="#mic"/></svg></button></div></div></div>
 </div>
 <button class="backdrop" aria-label="Close menu" hidden></button>
 <div class="status-shield" aria-hidden="true"></div>

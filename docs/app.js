@@ -1054,11 +1054,10 @@ const newSite = document.querySelector('.new-site');
 const rebuildSite = document.querySelector('.rebuild-site');
 const thread = document.querySelector('.thread');
 const composerError = document.querySelector('.composer-error');
-const siteBar = document.querySelector('.site-bar');
 // The thread ends where the composer area begins. Measuring it rather than
-// assuming a height keeps the two flush whatever the box is carrying — the
-// site bar, an error, a taller safe area — instead of leaving a band of empty
-// background above the composer.
+// assuming a height keeps the two flush whatever the box is carrying — an
+// error, a taller safe area — instead of leaving a band of empty background
+// above the composer.
 const composerArea = document.querySelector('.composer-area');
 const THREAD_GAP = 8;
 function measureComposerSpace() {
@@ -1076,14 +1075,12 @@ if (composerArea && 'ResizeObserver' in window) {
 window.addEventListener('resize', measureComposerSpace);
 window.addEventListener('orientationchange', measureComposerSpace);
 window.visualViewport?.addEventListener('resize', measureComposerSpace);
-const siteBarPreview = document.querySelector('.site-bar-preview');
-const siteBarRebuild = document.querySelector('.site-bar-rebuild');
 let sites = [];
 // Whether the sites subscription has answered yet. Only a list that has
 // arrived can say a remembered thread is gone.
 let sitesLoaded = false;
 let activeSite = null;
-// Set by the preview block below; the thread and the site bar open it.
+// Set by the preview block below; the header eye opens it.
 let openPreview = () => {};
 // Where a site is live right now, or null. Live means its own address is
 // serving the build the member is looking at: published, and published with
@@ -1251,7 +1248,7 @@ if (forge?.sites && siteList && thread) {
     }));
   }
   function renderThread(messages) {
-    thread.replaceChildren(...messages.map(message => {
+    thread.replaceChildren(...messages.flatMap(message => {
       const row = document.createElement('div');
       row.className = `message message-${message.role}`;
       if (message.status) row.classList.add(`message-${message.status}`);
@@ -1259,41 +1256,28 @@ if (forge?.sites && siteList && thread) {
       // The server writes what a pending message says, since only it knows
       // whether this turn is a build or an answer. The fallback covers a
       // request that was already in flight when that started being true.
-      body.textContent = message.body || (message.status === 'pending' ? 'Working…' : '');
+      // Older builds appended the live address; that line is the view section
+      // and does not belong above the prompt.
+      const said = (message.body || (message.status === 'pending' ? 'Working…' : ''))
+        .replace(/\s*It's published at \S+\.?$/, '')
+        .trim();
+      if (!said) return [];
+      body.textContent = said;
       row.append(body);
-      if (message.role === 'assistant' && message.versionId) {
-        const view = document.createElement('button');
-        view.type = 'button';
-        view.className = 'message-view';
-        view.textContent = 'View the site';
-        view.disabled = !window.ForgeOnboarding?.canPreview();
-        view.addEventListener('click', () => openPreview());
-        row.append(view);
-      }
-      return row;
+      return [row];
     }));
     app.classList.toggle('has-thread', messages.length > 0);
     thread.scrollTop = thread.scrollHeight;
   }
-  // The bar names the site the composer is building into.
+  // The composer builds into the open site. Its name still fills the preview
+  // header; the bar that used to sit above the prompt is gone.
   function renderSiteBar() {
     activeSite = sites.find(site => site.conversationId === activeId) ?? null;
-    if (siteBar) siteBar.hidden = !activeSite;
-    app.classList.toggle('has-site-bar', Boolean(activeSite));
     if (activeSite) {
       document.querySelectorAll('[data-site-name]').forEach(element => { element.textContent = activeSite.name; });
       document.querySelectorAll('[data-site-status]').forEach(element => {
         element.textContent = activeSite.status === 'published' ? 'Published' : activeSite.currentVersionId ? 'Draft' : 'Not built yet';
       });
-      if (siteBarPreview) {
-        siteBarPreview.dataset.built = String(Boolean(activeSite.currentVersionId));
-        siteBarPreview.disabled = !activeSite.currentVersionId || !window.ForgeOnboarding?.canPreview();
-      }
-      if (siteBarRebuild) {
-        const offer = mayRebuild(activeSite);
-        siteBarRebuild.hidden = !offer;
-        siteBarRebuild.disabled = !offer;
-      }
     }
     if (promptInput) {
       promptInput.placeholder = activeSite?.currentVersionId ? 'Describe a change…' : 'Describe the site you want…';
@@ -1317,7 +1301,6 @@ if (forge?.sites && siteList && thread) {
     else { renderSites(); renderSiteBar(); }
     document.dispatchEvent(new CustomEvent('forge:sites'));
   });
-  siteBarPreview?.addEventListener('click', () => openPreview());
   if (activeId) selectConversation(activeId);
 
   function createSite(name) {
@@ -1360,13 +1343,6 @@ if (forge?.sites && siteList && thread) {
     rebuildSite.disabled = true;
     runRebuild().finally(() => {
       rebuildSite.disabled = false;
-    });
-  });
-  siteBarRebuild?.addEventListener('click', () => {
-    if (!mayRebuild(activeSite)) return;
-    siteBarRebuild.disabled = true;
-    runRebuild().finally(() => {
-      siteBarRebuild.disabled = !mayRebuild(activeSite);
     });
   });
   document.addEventListener('forge:onboarding-complete', event => {
@@ -2136,9 +2112,6 @@ function describePreviewControls() {
     if (live) websitePreviewButton.removeAttribute('aria-haspopup');
     else websitePreviewButton.setAttribute('aria-haspopup', 'dialog');
   }
-  const bar = document.querySelector('.site-bar-preview');
-  if (bar && live) bar.setAttribute('aria-label', name);
-  else bar?.removeAttribute('aria-label');
 }
 document.addEventListener('forge:active-site', describePreviewControls);
 describePreviewControls();

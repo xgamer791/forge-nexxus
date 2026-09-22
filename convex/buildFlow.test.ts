@@ -188,7 +188,8 @@ describe("a brand new build, start to finish", () => {
     expect(images).toHaveLength(1);
     expect(version.html).toContain(await t.run((ctx) => ctx.storage.getUrl(images[0].storageId)));
 
-    // The site is saved, published at its Forge address, and the thread says so.
+    // The site is saved and published at its Forge address. The thread keeps the
+    // summary and does not repeat the address above the prompt.
     const site = (await t.run((ctx) => ctx.db.get(brief.siteId!)))!;
     expect(site).toMatchObject({ name: "Harbor Roasters", status: "published", currentVersionId: version._id, publishedVersionId: version._id });
     expect(site.slug).toBeTruthy();
@@ -196,7 +197,7 @@ describe("a brand new build, start to finish", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ role: "assistant", versionId: version._id });
     expect(messages[0].status).toBeUndefined();
-    expect(messages[0].body).toBe(`Built a warm page for Harbor Roasters. It's published at forge-test.convex.site/sites/${site.slug}.`);
+    expect(messages[0].body).toBe("Built a warm page for Harbor Roasters.");
 
     // Superseded answer snapshots never reserve credits. The newest strategy,
     // the build and the picture are the only work that runs after this drain.
@@ -499,7 +500,7 @@ describe("a rebuild, start to finish", () => {
     expect(rebuilt).toMatchObject({ status: "published", slug: before.slug, currentVersionId: version._id, publishedVersionId: version._id });
     const messages = await t.run((ctx) => ctx.db.query("messages").collect());
     expect(messages).toHaveLength(1);
-    expect(messages[0].body).toBe(`Built a warm page for Harbor Roasters, rebuilt. It's published at forge-test.convex.site/sites/${before.slug}.`);
+    expect(messages[0].body).toBe("Built a warm page for Harbor Roasters, rebuilt.");
     expect(await t.run((ctx) => ctx.db.query("siteImages").collect())).toHaveLength(1);
     expect((await holds(t)).every(([, status]) => status === "settled")).toBe(true);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({

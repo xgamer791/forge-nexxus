@@ -495,9 +495,8 @@ export const finish = internalMutation({
     // transaction that saves it, so a built site is never without a link and
     // the address never serves anything but the latest build. A claim that
     // fails must not cost the member the build they just paid for.
-    let live: Awaited<ReturnType<typeof publishBuild>> = null;
     try {
-      live = await publishBuild(ctx, site, versionId, now);
+      await publishBuild(ctx, site, versionId, now);
     } catch (error) {
       console.error("Forge could not publish the build:", describe(error));
     }
@@ -505,10 +504,8 @@ export const finish = internalMutation({
       events: [...setup.events, { label: "Website saved and ready", at: now }] });
     if (await ctx.db.get(assistantId)) {
       const said = (summary || (kind === "generate" ? "Here's a first version of your site." : "Updated your site.")).trim();
-      // A first build says where it went; every later one is already there.
-      const address = kind === "generate" ? live?.url?.replace(/^https?:\/\//, "") : undefined;
       await ctx.db.patch(assistantId, {
-        body: address ? `${/[.!?…]$/.test(said) ? said : `${said}.`} It's published at ${address}.` : said,
+        body: said,
         status: undefined,
         versionId,
       });
