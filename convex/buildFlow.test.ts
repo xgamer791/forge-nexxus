@@ -141,6 +141,8 @@ afterEach(() => {
   delete process.env.AI_API_KEY;
   delete process.env.AI_MODEL;
   delete process.env.AI_BUILD_MODEL;
+  delete process.env.AI_BUILD_BASE_URL;
+  delete process.env.AI_BUILD_API_KEY;
   delete process.env.AI_REASONING_EFFORT;
   delete process.env.AI_MAX_TOKENS;
   delete process.env.AI_IMAGE_API_KEY;
@@ -309,8 +311,8 @@ describe("a brand new build, start to finish", () => {
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    // Writing the site goes to the build model; the strategy passes behind the
-    // questions are conversation and stay on the cheaper one.
+    // Planning and writing the site share the build model. Chat stays on the
+    // cheaper one, which these passes never call.
     const calls = providers.chatCalls();
     const build = calls.find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
     expect(build.body.model).toBe("forge-test-large");
@@ -318,7 +320,7 @@ describe("a brand new build, start to finish", () => {
     // reasoning model bills inside the same budget.
     expect(build.body.max_tokens).toBe(96000);
     const strategy = calls.find((call) => /private website strategist/.test(JSON.stringify(call.body.messages)))!;
-    expect(strategy.body.model).toBe("forge-test");
+    expect(strategy.body.model).toBe("forge-test-large");
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
 
     // Unset, a build runs on exactly the model chat does.
@@ -334,8 +336,7 @@ describe("a brand new build, start to finish", () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const providers = stubProviders(() => built("Harbor Roasters"));
-    // Exactly what CLAUDE.md records for polished-ram-883. AI_BUILD_MODEL is
-    // unset there, so a build inherits the chat model rather than differing.
+    // The chat route, with planning and the build left unset so they inherit it.
     process.env.AI_BASE_URL = "https://api.deepseek.com/v1";
     process.env.AI_MODEL = "deepseek-flash";
     process.env.AI_IMAGE_MODEL = "gemini-3.1-flash-lite-image";

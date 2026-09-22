@@ -71,12 +71,14 @@ const TALK_LIMIT = 4000;
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
-// Where conversation and site building go when the deployment says nothing.
-// `AI_BASE_URL`, `AI_MODEL`, `AI_BUILD_MODEL` and `AI_API_KEY` name the real
-// route, and any provider that speaks the OpenAI chat shape serves it. These
-// are only the fallbacks, so an unset variable lands on the model this
-// deployment actually runs rather than nowhere. Pictures have a route of their
-// own in `images.ts`, and text never goes to it.
+// Where conversation goes when the deployment says nothing. Chat reads
+// `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY`. Planning and site building read
+// `AI_BUILD_BASE_URL`, `AI_BUILD_MODEL` and `AI_BUILD_API_KEY` when those are
+// set, and fall back to the chat route when they are not. Any provider that
+// speaks the OpenAI chat shape serves either. These are only the fallbacks, so
+// an unset chat variable lands on the model this deployment actually talks
+// with rather than nowhere. Pictures have a route of their own in `images.ts`,
+// and text never goes to it.
 const CHAT_BASE_URL = "https://api.deepseek.com/v1";
 const CHAT_MODEL = "deepseek-flash";
 const CHAT_MODEL_LABEL = "DeepSeek v4.1 Flash";
@@ -121,6 +123,10 @@ export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | 
 const GEMINI_EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
 const DEEPSEEK_EFFORTS: ReasoningEffort[] = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 const EFFORT_MODELS = new Set(["deepseek-flash", "deepseek-v4-pro"]);
+// GLM 5.3 always reasons. It accepts low, high and max, and refuses thinking
+// disabled. Planning asks for max. Designing and writing the site asks for
+// high. https://docs.z.ai/guides/llm/glm-5.3
+const GLM_MODEL = "glm-5.3";
 
 export function reasoningEffort(
   baseUrl: string,
@@ -128,6 +134,11 @@ export function reasoningEffort(
   purpose: Purpose = "chat",
 ): ReasoningEffort | undefined {
   const gemini = isGeminiChatHost(baseUrl);
+  const glm = model === GLM_MODEL;
+  // Planning asks for max. Designing and writing the site asks for high.
+  // GLM only has those two plus low, and one env value cannot name both, so
+  // this split does not read AI_REASONING_EFFORT.
+  if (glm) return purpose === "strategy" ? "max" : "high";
   const takes = gemini ? GEMINI_EFFORTS : EFFORT_MODELS.has(model) ? DEEPSEEK_EFFORTS : null;
   if (!takes) return undefined;
   // Every turn asks for it, at the level the work is worth. Writing a site is
@@ -161,15 +172,18 @@ export function completionBody(
   // DeepSeek's thinking models document temperature, presence_penalty and
   // frequency_penalty as having no effect while thinking is on -- which it is
   // by default -- so the field is left off rather than sent to be ignored.
+  // GLM 5.3's own sample sends temperature 1 beside thinking enabled.
   const thinks = EFFORT_MODELS.has(route.model);
+  const glm = route.model === GLM_MODEL;
   return {
     model: route.model,
     messages,
-    ...(thinks ? {} : { temperature: 0.7 }),
+    ...(thinks ? {} : { temperature: glm ? 1 : 0.7 }),
     max_tokens: maxTokens,
     ...(effort ? { reasoning_effort: effort } : {}),
     // Named beside the level, the way the provider's own example does.
-    ...(effort && thinks ? { thinking: { type: "enabled" } } : {}),
+    // GLM 5.3 refuses a request that disables thinking, so it is sent on.
+    ...(effort && (thinks || glm) ? { thinking: { type: "enabled" } } : {}),
   };
 }
 
@@ -200,31 +214,44 @@ const RETRY_WAIT_MS = 1500;
 // for a build that is already gone.
 const RUN_WATCHDOG_MS = 610000;
 
-// The route a turn takes. Writing a whole website is the hardest thing the
-// agent does and a conversational reply is the cheapest, so a deployment may
-// point builds at a stronger model with `AI_BUILD_MODEL` and leave chat on
-// `AI_MODEL`. Unset, a build runs on exactly the model chat does, so nothing
-// changes for a deployment that has not chosen.
+// The route a turn takes. A conversational reply stays on the chat provider.
+// Planning (the strategy brief) and writing the site share one route, so a
+// deployment may point both at another provider with `AI_BUILD_BASE_URL`,
+// `AI_BUILD_API_KEY` and `AI_BUILD_MODEL`. Any of those left unset falls back
+// to the chat route, so a deployment that has not chosen still plans and
+// builds on the model chat uses.
 // The three kinds of turn this route carries. They differ in what they are
-// worth thinking about and, for a build, which model may answer.
+// worth thinking about and, for planning and a build, which provider answers.
 export type Purpose = "chat" | "build" | "strategy";
 
+function agentTurn(purpose: Purpose) {
+  return purpose === "build" || purpose === "strategy";
+}
+
 export function chatRoute(purpose: Purpose = "chat") {
-  const baseUrl = (process.env.AI_BASE_URL?.trim() || CHAT_BASE_URL).replace(/\/+$/, "");
+  const agent = agentTurn(purpose);
+  const baseUrl = (
+    (agent ? process.env.AI_BUILD_BASE_URL?.trim() : "") ||
+    process.env.AI_BASE_URL?.trim() ||
+    CHAT_BASE_URL
+  ).replace(/\/+$/, "");
   const model =
-    (purpose === "build" ? process.env.AI_BUILD_MODEL?.trim() : "") ||
+    (agent ? process.env.AI_BUILD_MODEL?.trim() : "") ||
     process.env.AI_MODEL?.trim() ||
     CHAT_MODEL;
+  const chatModel = process.env.AI_MODEL?.trim() || CHAT_MODEL;
   return {
     baseUrl,
     model,
     purpose,
-    apiKey: process.env.AI_API_KEY,
-    // What the agent says it runs on. The marketing name belongs to exactly
-    // one model id, so any other id reports itself rather than borrowing it:
-    // a sibling release is not the model this name belongs to, and saying so
-    // would be a guess.
-    label: process.env.AI_MODEL_LABEL?.trim() || (model === CHAT_MODEL ? CHAT_MODEL_LABEL : model),
+    apiKey: (agent ? process.env.AI_BUILD_API_KEY?.trim() : "") || process.env.AI_API_KEY,
+    // What the agent says it runs on. The marketing name belongs to the chat
+    // model. Planning and building on another id report that id, so a build
+    // never introduces itself as the model that only answers chat.
+    label:
+      agent && model !== chatModel
+        ? model
+        : process.env.AI_MODEL_LABEL?.trim() || (model === CHAT_MODEL ? CHAT_MODEL_LABEL : model),
   };
 }
 
@@ -246,8 +273,8 @@ export const routing = internalQuery({
     const image = imageRoute();
     return {
       chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl, chat.model, "chat") ?? null, maxTokens: maxTokensFor("chat") },
-      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, sameAsChat: build.model === chat.model, reasoningEffort: reasoningEffort(build.baseUrl, build.model, "build") ?? null, maxTokens: maxTokensFor("build") },
-      strategy: { host: new URL(strategy.baseUrl).host, model: strategy.model, reasoningEffort: reasoningEffort(strategy.baseUrl, strategy.model, "strategy") ?? null },
+      build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, keySet: Boolean(build.apiKey), sameAsChat: build.model === chat.model && build.baseUrl === chat.baseUrl, reasoningEffort: reasoningEffort(build.baseUrl, build.model, "build") ?? null, maxTokens: maxTokensFor("build") },
+      strategy: { host: new URL(strategy.baseUrl).host, model: strategy.model, label: strategy.label, sameAsBuild: strategy.model === build.model && strategy.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(strategy.baseUrl, strategy.model, "strategy") ?? null },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -772,7 +799,7 @@ function requestBody(route: Route, messages: ChatMessage[], limit: number, strea
 
 // A line from a provider or a connection, safe to keep: one line, and never a key.
 function scrubKeys(text: string) {
-  return [process.env.AI_API_KEY, process.env.AI_IMAGE_API_KEY]
+  return [process.env.AI_API_KEY, process.env.AI_BUILD_API_KEY, process.env.AI_IMAGE_API_KEY]
     .reduce<string>((out, key) => (key ? out.split(key).join("[key]") : out), text)
     .replace(/\s+/g, " ")
     .trim();
@@ -1364,7 +1391,7 @@ export function describe(error: unknown) {
       : error instanceof Error
         ? error.message
         : String(error);
-  const scrubbed = [process.env.AI_API_KEY, process.env.AI_IMAGE_API_KEY].reduce<string>(
+  const scrubbed = [process.env.AI_API_KEY, process.env.AI_BUILD_API_KEY, process.env.AI_IMAGE_API_KEY].reduce<string>(
     (text, key) => (key ? text.split(key).join("[key]") : text),
     raw,
   );

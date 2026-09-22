@@ -86,7 +86,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
-  for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_BUILD_MODEL", "AI_REASONING_EFFORT", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL"]) {
+  for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_BUILD_MODEL", "AI_BUILD_BASE_URL", "AI_BUILD_API_KEY", "AI_REASONING_EFFORT", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL"]) {
     delete process.env[name];
   }
 });

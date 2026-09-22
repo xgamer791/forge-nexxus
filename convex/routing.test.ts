@@ -13,7 +13,7 @@ import schema from "./schema";
 // request was ever sent. Nothing is refused now: the route is what the
 // variables say, and a provider that cannot serve it says so in its own words,
 // which is what the thread and the failed screen show.
-const ENV = ["AI_BASE_URL", "AI_MODEL", "AI_MODEL_LABEL", "AI_BUILD_MODEL", "AI_API_KEY", "AI_REASONING_EFFORT", "AI_IMAGE_MODEL", "AI_IMAGE_MODEL_OVERRIDE"];
+const ENV = ["AI_BASE_URL", "AI_MODEL", "AI_MODEL_LABEL", "AI_BUILD_BASE_URL", "AI_BUILD_MODEL", "AI_BUILD_API_KEY", "AI_API_KEY", "AI_REASONING_EFFORT", "AI_IMAGE_MODEL", "AI_IMAGE_MODEL_OVERRIDE"];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -28,6 +28,7 @@ afterEach(() => {
 });
 
 const GOOGLE_OPENAI = "https://generativelanguage.googleapis.com/v1beta/openai";
+const DEEPSEEK = "https://api.deepseek.com/v1";
 
 describe("the route is whatever the deployment names", () => {
   test("a Gemini text model is carried through exactly as configured", () => {
@@ -72,14 +73,32 @@ describe("the route is whatever the deployment names", () => {
     }
   });
 
-  test("the strategist runs on the chat model, however hard it thinks", () => {
-    // Its output is a brief, not a site: `AI_BUILD_MODEL` is the build's.
+  test("planning and the build share a route, and chat stays on its own", () => {
     process.env.AI_BASE_URL = DEEPSEEK;
     process.env.AI_MODEL = "deepseek-flash";
-    process.env.AI_BUILD_MODEL = "deepseek-v4-pro";
-    expect(chatRoute("strategy").model).toBe("deepseek-flash");
-    expect(chatRoute("build").model).toBe("deepseek-v4-pro");
+    process.env.AI_API_KEY = "sk-chat";
+    process.env.AI_BUILD_BASE_URL = "https://api.z.ai/api/paas/v4/";
+    process.env.AI_BUILD_API_KEY = "zai-test";
+    process.env.AI_BUILD_MODEL = "glm-5.3";
+    expect(chatRoute("chat")).toMatchObject({
+      baseUrl: DEEPSEEK,
+      model: "deepseek-flash",
+      apiKey: "sk-chat",
+      label: "DeepSeek v4.1 Flash",
+    });
+    for (const purpose of ["strategy", "build"] as const) {
+      expect(chatRoute(purpose)).toMatchObject({
+        baseUrl: "https://api.z.ai/api/paas/v4",
+        model: "glm-5.3",
+        apiKey: "zai-test",
+        label: "glm-5.3",
+      });
+    }
+    delete process.env.AI_BUILD_BASE_URL;
+    delete process.env.AI_BUILD_API_KEY;
     delete process.env.AI_BUILD_MODEL;
+    expect(chatRoute("strategy")).toMatchObject({ baseUrl: DEEPSEEK, model: "deepseek-flash", apiKey: "sk-chat" });
+    expect(chatRoute("build")).toMatchObject({ baseUrl: DEEPSEEK, model: "deepseek-flash", apiKey: "sk-chat" });
   });
 
   test("builds can take a stronger model than chat does", () => {
@@ -87,6 +106,7 @@ describe("the route is whatever the deployment names", () => {
     process.env.AI_MODEL = "gemini-3.8-flash";
     process.env.AI_BUILD_MODEL = "gemini-3.8-pro";
     expect(chatRoute("build").model).toBe("gemini-3.8-pro");
+    expect(chatRoute("strategy").model).toBe("gemini-3.8-pro");
     expect(chatRoute("chat").model).toBe("gemini-3.8-flash");
     delete process.env.AI_BUILD_MODEL;
     expect(chatRoute("build").model).toBe("gemini-3.8-flash");
@@ -102,7 +122,6 @@ describe("the route is whatever the deployment names", () => {
   });
 });
 
-const DEEPSEEK = "https://api.deepseek.com/v1";
 const messages = [{ role: "user" as const, content: "ok" }];
 
 describe("reasoning_effort goes where it has been measured to work", () => {
@@ -114,6 +133,26 @@ describe("reasoning_effort goes where it has been measured to work", () => {
       .toEqual({ model: "some-model", messages, temperature: 0.7, max_tokens: 200 });
     expect(completionBody({ model: "some-model", baseUrl: "https://ai.example/v1", purpose: "build" }, messages, 200).thinking)
       .toBeUndefined();
+  });
+
+  test("glm planning asks for max and the build asks for high", () => {
+    const zai = "https://api.z.ai/api/paas/v4";
+    process.env.AI_REASONING_EFFORT = "low";
+    expect(reasoningEffort(zai, "glm-5.3", "strategy")).toBe("max");
+    expect(reasoningEffort(zai, "glm-5.3", "build")).toBe("high");
+    expect(completionBody({ model: "glm-5.3", baseUrl: zai, purpose: "strategy" }, messages, 200)).toEqual({
+      model: "glm-5.3",
+      messages,
+      temperature: 1,
+      max_tokens: 200,
+      reasoning_effort: "max",
+      thinking: { type: "enabled" },
+    });
+    expect(completionBody({ model: "glm-5.3", baseUrl: zai, purpose: "build" }, messages, 96000)).toMatchObject({
+      reasoning_effort: "high",
+      thinking: { type: "enabled" },
+      temperature: 1,
+    });
   });
 
   test("a build and the brief it follows ask for max; a reply asks for high", () => {
