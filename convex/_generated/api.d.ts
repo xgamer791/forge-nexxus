@@ -27,6 +27,7 @@ import type * as probe from "../probe.js";
 import type * as settings from "../settings.js";
 import type * as sites from "../sites.js";
 import type * as stripe from "../stripe.js";
+import type * as support from "../support.js";
 import type * as users from "../users.js";
 
 import type {
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   settings: typeof settings;
   sites: typeof sites;
   stripe: typeof stripe;
+  support: typeof support;
   users: typeof users;
 }>;
 

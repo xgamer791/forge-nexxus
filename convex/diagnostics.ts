@@ -10,6 +10,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { queueReport } from "./support";
 
 const KEEP_RUNS = 40;
 const INSPECT_LIMIT = 20;
@@ -376,6 +377,9 @@ export async function closeRun(
       imageMade: args.imageMade ?? row.imageMade,
     },
   });
+  // A failed build, or one a reply stopped part way through, goes to support
+  // with its whole log as soon as it has its ending.
+  await queueReport(ctx, args.runId);
 }
 
 // When a build dies without a word -- the platform stopped it, or it ran out
