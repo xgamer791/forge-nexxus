@@ -106,26 +106,18 @@ describe("reasoning_effort goes where it has been measured to work", () => {
       .toBeUndefined();
   });
 
-  test("a build on DeepSeek asks for max; a chat turn keeps the provider default", () => {
+  test("both turns on DeepSeek ask for max, beside the thinking field", () => {
     delete process.env.AI_REASONING_EFFORT;
-    // A reply, the strategist and the memory note ride the chat route, which
-    // keeps DeepSeek's own default — thinking on, at high.
-    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "chat")).toBeUndefined();
-    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose: "chat" }, messages, 200)).toEqual({
-      model: "deepseek-flash",
-      messages,
-      max_tokens: 200,
-    });
-    // A build takes the level above the default, which is the point of naming
-    // one at all, and says so beside the thinking field the provider documents.
-    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("max");
-    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose: "build" }, messages, 200)).toEqual({
-      model: "deepseek-flash",
-      messages,
-      max_tokens: 200,
-      reasoning_effort: "max",
-      thinking: { type: "enabled" },
-    });
+    for (const purpose of ["chat", "build"] as const) {
+      expect(reasoningEffort(DEEPSEEK, "deepseek-flash", purpose)).toBe("max");
+      expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose }, messages, 200)).toEqual({
+        model: "deepseek-flash",
+        messages,
+        max_tokens: 200,
+        reasoning_effort: "max",
+        thinking: { type: "enabled" },
+      });
+    }
     expect(reasoningEffort(DEEPSEEK, "deepseek-v4-pro", "build")).toBe("max");
   });
 
@@ -156,6 +148,7 @@ describe("reasoning_effort goes where it has been measured to work", () => {
   });
 
   test("temperature is not sent to a model that documents it as inert", () => {
+    // The strategist and the memory note ride the chat route and think too.
     // DeepSeek's thinking models ignore temperature while thinking is on, and
     // it is on by default; sending it is a field that means nothing.
     delete process.env.AI_REASONING_EFFORT;

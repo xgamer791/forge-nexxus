@@ -465,7 +465,7 @@ export const strategySaved = internalMutation({
 // bills that thinking against the same ceiling, so the room here is for both.
 // What is kept is the brief: it rides inside every build prompt, so a model
 // that answered at length is cut to a brief's length before it is stored.
-const STRATEGY_MAX_TOKENS = 16000;
+const STRATEGY_MAX_TOKENS = 32000;
 const STRATEGY_CHARS = 6000;
 
 export const strategize = internalAction({

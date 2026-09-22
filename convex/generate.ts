@@ -129,18 +129,19 @@ export function reasoningEffort(
   const gemini = isGeminiChatHost(baseUrl);
   const takes = gemini ? GEMINI_EFFORTS : EFFORT_MODELS.has(model) ? DEEPSEEK_EFFORTS : null;
   if (!takes) return undefined;
-  // Writing a whole site is what thinking is worth paying for. A chat reply,
-  // the strategist and the memory note ride the chat route and keep the
-  // provider's own default, which on these models is already high.
-  if (!gemini && purpose !== "build") return undefined;
+  // Both turns ask for it. A build is the obvious one, but a chat reply on
+  // this deployment is a designer answering a question about someone's site,
+  // and the same route carries the strategist's brief and the memory note --
+  // work worth thinking about rather than answering off the top. What that
+  // costs is the thinking itself, and the budgets below leave room for it.
   const wanted = (process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "") as ReasoningEffort;
   if (takes.includes(wanted)) return wanted;
   // A name this route does not have. Gemini is the narrower vocabulary, so
   // anything above its ceiling meets its ceiling, and minimal meets low.
   if (wanted === "minimal") return "low";
   if (wanted === "xhigh" || wanted === "max" || wanted === "ultra") return "high";
-  // Unset. Gemini keeps the high it has always had; a build on a model with a
-  // level above high takes it, which is the whole reason to name one.
+  // Unset. Gemini keeps the high it has always had; a model with a level above
+  // high takes it, which is the whole reason to name one.
   return gemini ? "high" : "max";
 }
 

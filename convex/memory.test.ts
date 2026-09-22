@@ -218,7 +218,7 @@ describe("reflection", () => {
     expect(calls[0].url).toBe("https://ai.example/v1/chat/completions");
     // Room for a reasoning model to think and still write the few lines of
     // JSON; what is kept is bounded by the memory limits, not by this.
-    expect(calls[0].body).toMatchObject({ model: "forge-test", max_tokens: 8000 });
+    expect(calls[0].body).toMatchObject({ model: "forge-test", max_tokens: 24000 });
     expect(calls[0].body.reasoning_effort).toBeUndefined();
     const [rules, exchange] = calls[0].body.messages;
     expect(rules.role).toBe("system");

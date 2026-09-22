@@ -26,8 +26,11 @@ export const MEMORY_CHARS = 240;
 // lines of JSON out. It never sees a page, so a long turn costs it nothing.
 // The room is larger than the answer because a reasoning model's thinking is
 // billed inside it, and a ceiling that only fits the JSON returns none of it.
-const REFLECT_MAX_TOKENS = 8000;
-const REFLECT_BUDGET_MS = 90000;
+// This route asks for max effort now, so both the room and the clock are set
+// for a model that thinks before it answers: too little of either and the
+// reflection fails quietly and memory stops filling up.
+const REFLECT_MAX_TOKENS = 24000;
+const REFLECT_BUDGET_MS = 180000;
 const EXCHANGE_CHARS = 6000;
 
 export async function memoriesFor(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
