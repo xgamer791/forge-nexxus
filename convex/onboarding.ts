@@ -705,7 +705,8 @@ export const build = internalAction({
           detail: { imageWanted: pictures.wanted, imageMade: pictures.made },
         });
       }
-      if (row.discardedDesignHashes !== undefined && imageRoute().apiKey && imageMade === 0) {
+      // fed-only block: nothing asks the agent for pictures, so a rebuild without any is not a failure.
+      if (row.discardedDesignHashes !== undefined && !fedOnly() && imageRoute().apiKey && imageMade === 0) {
         throw new Error("The new pictures could not be generated. The rebuild was not published. Try again.");
       }
       if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, saving: true })) {

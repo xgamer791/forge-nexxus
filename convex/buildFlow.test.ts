@@ -934,7 +934,12 @@ describe("a rebuild while testing is a new San Antonio business", () => {
           brand: "", references: "", content: "1 S Alamo St, San Antonio, TX. (210) 555-0100.", catalogue: "Mango paleta — $4",
         }) } }] });
       }
-      return built(/Lupita/.test(JSON.stringify(body.messages)) ? "Lupita's Paletas" : "Harbor Roasters");
+      // The rebuild's page asks for no pictures, as a FED-only agent is never told how.
+      if (/Lupita/.test(JSON.stringify(body.messages))) {
+        const plain = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Lupita's Paletas</title></head><body><h1>Lupita's Paletas</h1></body></html>`;
+        return json({ choices: [{ message: { content: `Built it.\n\n\`\`\`html\n${plain}\n\`\`\`` } }] });
+      }
+      return built("Harbor Roasters");
     }));
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
