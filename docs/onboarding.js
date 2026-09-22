@@ -178,13 +178,25 @@ const ENABLED = true;
   }
   // The finished site is handed over with the address Forge gave it. Nobody is
   // asked to pick one: there is no field here, and nothing waits on a name.
+  // The address, with the build that is live on it. The hosting in front of a
+  // site caches, and a copy taken before the first publish is the "Nothing
+  // here yet" page: stamping the link means a member who has just watched a
+  // build finish cannot be handed that. The dashboard's own link does this.
+  function liveAddress(site) {
+    if (!site?.publishedUrl) return null;
+    const stamp = site.publishedVersionId || site.currentVersionId || site.publishedAt;
+    if (!stamp) return site.publishedUrl;
+    const join = site.publishedUrl.includes('?') ? '&' : '?';
+    return `${site.publishedUrl}${join}v=${encodeURIComponent(String(stamp))}`;
+  }
   function handoff(site) {
     // A finished build publishes itself, so this is the state a member arrives
     // in. The way on is a real link: it opens the site at its own address in a
     // new tab, and the press that opened it also lands them in the dashboard.
     if (site?.status === 'published' && site.publishedUrl) {
-      return `<a class="onboarding-live-link" href="${escape(site.publishedUrl)}" target="_blank" rel="noopener">${escape(site.publishedUrl.replace(/^https?:\/\//, ''))}</a>
-        <a class="onboarding-primary" href="${escape(site.publishedUrl)}" target="_blank" rel="noopener" data-onboarding-action="finish">View my website</a>
+      const address = liveAddress(site);
+      return `<a class="onboarding-live-link" href="${escape(address)}" target="_blank" rel="noopener">${escape(site.publishedUrl.replace(/^https?:\/\//, ''))}</a>
+        <a class="onboarding-primary" href="${escape(address)}" target="_blank" rel="noopener" data-onboarding-action="finish">View my website</a>
         <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="finish">Go to my dashboard</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="domain">Change the address or connect a domain</button></div>`;
     }
     if (!site || state.isFree) return '<button type="button" class="onboarding-primary" data-onboarding-action="finish">Open my website</button>';

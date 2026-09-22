@@ -46,7 +46,17 @@ function page(html: string | null) {
 // host is what says which site the visitor asked for.
 const byHost = httpAction(async (ctx, request) => {
   const url = new URL(request.url);
-  const host = request.headers.get("host") ?? url.host;
+  // A doorway in front of this deployment -- the sites router on the hosting,
+  // a CDN, anything that terminates TLS for a branded hostname -- cannot pass
+  // the visitor's Host upstream without breaking TLS to this deployment, so it
+  // sends its own and says who was actually asked in `x-forwarded-host`. That
+  // is read first, because when it is there it is the address the visitor
+  // typed; `host` is right when someone arrives here directly. Forwarded or
+  // not, the host only ever finds a published page: a name nobody has pointed
+  // here gets the same nothing an unknown slug does, so trusting the header
+  // gives away no more than the address already does.
+  const forwarded = (request.headers.get("x-forwarded-host") ?? "").split(",")[0].trim();
+  const host = forwarded || request.headers.get("host") || url.host;
   return page(
     await ctx.runQuery(internal.sites.publishedHtmlForHost, { host, path: url.pathname }),
   );

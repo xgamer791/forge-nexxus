@@ -441,6 +441,24 @@ export const publishedHtml = internalQuery({
   },
 });
 
+// Where a published site answers, for a diagnostic that asks it the way a
+// visitor would. Names only: the address is already public, and nothing here
+// touches a page.
+export const addressForSlug = internalQuery({
+  args: { slug: v.string() },
+  handler: async (ctx, { slug }) => {
+    const site = await ctx.db
+      .query("sites")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+    const published = site?.status === "published" && Boolean(site.publishedVersionId);
+    return {
+      url: published && site?.slug ? publishedUrlFor(site.slug) : null,
+      origin: process.env.CONVEX_SITE_URL ? `${process.env.CONVEX_SITE_URL}/sites/${slug}` : null,
+    };
+  },
+});
+
 // The same page, found by the host the visitor typed: a site's own
 // `<slug>.sites.forgenexxus.com`, or a custom domain pointed at it. A domain
 // that resolves here is served whether or not verification has caught up —

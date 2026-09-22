@@ -13,6 +13,7 @@
 // prints itself — and every string that comes back from the provider is run
 // through the same scrubber the thread uses.
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { chatRoute, completionBody, describe as scrub } from "./generate";
 
@@ -98,3 +99,63 @@ function hostOf(baseUrl: string) {
     return baseUrl;
   }
 }
+
+// What a published site's own address actually answers, for whoever runs the
+// deployment: `npx convex run probe:site '{"slug":"my-site"}'`.
+//
+// It exists because a site can be published, correct and served by this
+// deployment while its address still shows a visitor nothing. Between the two
+// sits hosting nobody can see from here: DNS, a certificate, the Cloudways
+// router in `cloudways/sites-router`, and the Varnish cache in front of it.
+// This says which of them answered, by asking the address the way a visitor
+// would and reporting the shape of what came back.
+//
+// It returns headers and a verdict, never a page: the page is the member's,
+// and its bytes say nothing a header does not.
+export const site = internalAction({
+  args: { slug: v.string(), path: v.optional(v.string()) },
+  handler: async (ctx, { slug, path }) => {
+    const where: { url: string | null; origin: string | null } = await ctx.runQuery(
+      internal.sites.addressForSlug,
+      { slug },
+    );
+    if (!where.url) return { slug, error: "No published address for that slug" };
+    const target = `${where.url}${path ?? "/"}`;
+    const started = Date.now();
+    let response: Response;
+    let body: string;
+    try {
+      response = await fetch(target, { headers: { accept: "text/html" } });
+      body = await response.text();
+    } catch (error) {
+      // A certificate that does not cover the host, or a name that does not
+      // resolve, both land here: the address is unreachable, and the member
+      // sees the browser's own warning rather than anything Forge wrote.
+      return { slug, address: target, durationMs: Date.now() - started, unreachable: scrub(error) };
+    }
+    const header = (name: string) => response.headers.get(name);
+    const notPublished = /Nothing here yet/.test(body);
+    return {
+      slug,
+      address: target,
+      origin: where.origin,
+      httpStatus: response.status,
+      durationMs: Date.now() - started,
+      chars: body.length,
+      // Which doorway answered, and whether anything in front of it kept a copy.
+      viaSitesRouter: header("x-forge-sites-router") === "1",
+      cacheControl: header("cache-control"),
+      age: header("age"),
+      via: header("via"),
+      varnish: header("x-varnish") ?? header("x-cache"),
+      server: header("server"),
+      // What the visitor sees, in one word.
+      shows: notPublished ? "not-published" : response.ok ? "the site" : `http ${response.status}`,
+      // The same question asked of this deployment directly, which is the
+      // answer the hosting in front of it is meant to be passing on.
+      deploymentShows: await ctx.runQuery(internal.sites.publishedHtml, { slug, path: path ?? "/" })
+        ? "the site"
+        : "nothing",
+    };
+  },
+});
