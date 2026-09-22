@@ -121,11 +121,15 @@ html[data-theme=light]{--backdrop:rgba(0,0,0,.65);--nav-backdrop:rgba(0,0,0,.65)
 
 /* Appearance and the other full-screen settings screens share one shell. */
 .appearance,.overlay{position:fixed;z-index:5;top:0;bottom:0;left:max(0px,calc((100vw - var(--shell))/2));width:min(var(--shell),100vw);max-width:var(--shell);background:#fff;color:#1c1c1e;display:flex;flex-direction:column}
-.appearance,.overlay{z-index:7}
+.appearance,.overlay:not(.preview){z-index:7}
 /* Preview is the site, edge to edge: no header above it and no publish bar
    below. Everything those carried — the name, the summary, the address,
    publish, unpublish, download — is on the site's own menu. */
-.overlay.preview{top:0;z-index:7;background:#fff;color:#1c1c1e}
+.overlay.preview{top:0;z-index:5;background:#fff;color:#1c1c1e}
+/* Preview has no header of its own and does not want the app's either,
+   so the icon row is taken off the screen while it is open rather than
+   covered over. The dashboard header keeps its own stacking, untouched. */
+.app.previewing .chrome{display:none}
 .appearance.is-open,.overlay.is-open{animation:overlay-in .7s cubic-bezier(.22,1,.36,1) both}
 @keyframes overlay-in{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
 .appearance-header{flex-shrink:0;height:56px;margin-top:max(0px,env(safe-area-inset-top));display:grid;grid-template-columns:56px 1fr 56px;align-items:center;padding:0 8px}

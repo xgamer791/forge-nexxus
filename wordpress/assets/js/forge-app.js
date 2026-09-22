@@ -2047,6 +2047,13 @@ if (forge?.sites && previewScreen) {
   };
 
   previewScreen.querySelector('.preview-back').addEventListener('click', closeMenu);
+  // The icon row goes while the preview is open and comes back when it
+  // closes, whichever way it closed — the back control, Escape, the system
+  // back gesture, or another screen opening over it. Watching the attribute
+  // the open and the close both set keeps that in one place instead of in
+  // every path that can hide an overlay.
+  new MutationObserver(() => app.classList.toggle('previewing', !previewScreen.hidden))
+    .observe(previewScreen, { attributes: true, attributeFilter: ['hidden'] });
   // An open preview follows the site it is showing. Both of these went out
   // with the publish bar by accident: without them a rebuild landing while
   // the frame is open leaves the old page on screen, and a member who drops
