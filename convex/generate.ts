@@ -89,28 +89,32 @@ export function isGeminiChatHost(baseUrl: string): boolean {
   }
 }
 
-// The thinking control, on the routes that answer to one. It was Gemini's
-// alone, on the grounds that the field broke every other provider; what is
-// true is narrower than that and narrower than a first measurement suggested.
+// The thinking control. DeepSeek documents it for V4-Pro and V4.1-Flash as
+// `reasoning_effort` beside `thinking: {type}`, with three levels -- low,
+// high and max -- and thinking on by default at high. Gemini's own field
+// takes low, medium and high, so the two vocabularies do not match and a
+// level one route lacks is met with the nearest it has.
 //
-// `deepseek-flash` ignores it. Asked one puzzle nine times it thought
-// 1,431-4,609 characters with no field, 2,043-3,026 at `high`, and
-// 1,282-2,035 with `enable_thinking: false` -- overlapping ranges, and a
-// switch that cannot even stop it thinking is a switch it is not reading.
-// Every call still answered 200: this provider accepts unknown fields and
-// drops them, so a reply tells you nothing unless you compare runs. Flash is
-// therefore sent a plain body, because a field that does nothing is a claim
-// in the code that is not true of the request.
+// Measured on this deployment's own key, one puzzle three times each:
 //
-// `deepseek-v4-pro` does appear to read it -- 1,409 and 1,617 characters at
-// `low` against 4,702 and 15,856 at `high`, no overlap -- but that is two
-// runs a side and wants re-measuring before anything is built on it.
+//   thinking disabled         0        0        0   characters
+//   reasoning_effort low    863      991    1,704
+//   nothing sent          2,162    2,221    4,767   (the default, which is high)
+//   reasoning_effort max  1,850    2,264    3,616
 //
-// `low` / `medium` / `high` are accepted; unset lands on high; unknown values
-// are not sent as themselves (`minimal` and `none` error on Gemini 3.8 Flash).
-export type ReasoningEffort = "low" | "medium" | "high";
-const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
-const EFFORT_MODELS = new Set(["deepseek-v4-pro"]);
+// Disabling it lands on exactly nothing three times, which is what proves the
+// model reads these at all: an earlier pass here sent `enable_thinking`, a
+// field this API does not have, watched it change nothing, and concluded the
+// model ignored every control. It does not. Effort is a ceiling on how long
+// it is willing to think rather than a quota it must spend, so max only pulls
+// away from high on work hard enough to want it -- a whole website, not a
+// puzzle about light switches.
+//
+// A provider nobody has measured still gets a plain body.
+export type ReasoningEffort = "low" | "medium" | "high" | "max";
+const GEMINI_EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
+const DEEPSEEK_EFFORTS: ReasoningEffort[] = ["low", "high", "max"];
+const EFFORT_MODELS = new Set(["deepseek-flash", "deepseek-v4-pro"]);
 
 export function reasoningEffort(
   baseUrl: string,
@@ -118,14 +122,19 @@ export function reasoningEffort(
   purpose: "chat" | "build" = "chat",
 ): ReasoningEffort | undefined {
   const gemini = isGeminiChatHost(baseUrl);
-  if (!gemini && !EFFORT_MODELS.has(model)) return undefined;
-  // Writing a whole site is where thinking earns its cost. A conversational
-  // reply wants an answer rather than a long deliberation, and the strategist
-  // and the memory note ride the chat route too, so effort is a build's.
-  // Gemini keeps it on both, which is how it has always behaved there.
+  const takes = gemini ? GEMINI_EFFORTS : EFFORT_MODELS.has(model) ? DEEPSEEK_EFFORTS : null;
+  if (!takes) return undefined;
+  // Writing a whole site is what thinking is worth paying for. A chat reply,
+  // the strategist and the memory note ride the chat route and keep the
+  // provider's own default, which on these models is already high.
   if (!gemini && purpose !== "build") return undefined;
-  const wanted = process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "";
-  return wanted === "low" || wanted === "medium" || wanted === "high" ? wanted : DEFAULT_REASONING_EFFORT;
+  const wanted = (process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "") as ReasoningEffort;
+  if (takes.includes(wanted)) return wanted;
+  // A level this route does not have: DeepSeek has no medium, Gemini no max.
+  if (wanted === "medium" || wanted === "max") return "high";
+  // Unset. Gemini keeps the high it has always had; a build on a model with a
+  // level above high takes it, which is the whole reason to name one.
+  return gemini ? "high" : "max";
 }
 
 // The OpenAI-shaped body every chat and build call sends — `complete`, the
@@ -137,12 +146,18 @@ export function completionBody(
   maxTokens: number,
 ) {
   const effort = reasoningEffort(route.baseUrl ?? "", route.model, route.purpose ?? "chat");
+  // DeepSeek's thinking models document temperature, presence_penalty and
+  // frequency_penalty as having no effect while thinking is on -- which it is
+  // by default -- so the field is left off rather than sent to be ignored.
+  const thinks = EFFORT_MODELS.has(route.model);
   return {
     model: route.model,
     messages,
-    temperature: 0.7,
+    ...(thinks ? {} : { temperature: 0.7 }),
     max_tokens: maxTokens,
     ...(effort ? { reasoning_effort: effort } : {}),
+    // Named beside the level, the way the provider's own example does.
+    ...(effort && thinks ? { thinking: { type: "enabled" } } : {}),
   };
 }
 

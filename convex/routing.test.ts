@@ -102,30 +102,51 @@ describe("reasoning_effort goes where it has been measured to work", () => {
     expect(reasoningEffort("https://ai.example/v1", "some-model", "build")).toBeUndefined();
     expect(completionBody({ model: "some-model", baseUrl: "https://ai.example/v1", purpose: "build" }, messages, 200))
       .toEqual({ model: "some-model", messages, temperature: 0.7, max_tokens: 200 });
+    expect(completionBody({ model: "some-model", baseUrl: "https://ai.example/v1", purpose: "build" }, messages, 200).thinking)
+      .toBeUndefined();
   });
 
-  test("a model that ignores the field is never sent it", () => {
+  test("a build on DeepSeek asks for max; a chat turn keeps the provider default", () => {
     delete process.env.AI_REASONING_EFFORT;
-    // Flash drops it: nine runs of one puzzle overlapped whatever was sent,
-    // and `enable_thinking: false` did not stop it thinking either.
-    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBeUndefined();
-    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose: "build" }, messages, 200).reasoning_effort)
-      .toBeUndefined();
-    // A conversational reply, the strategist and the memory note all ride the
-    // chat route, and none of them wants to pay for a long think.
+    // A reply, the strategist and the memory note ride the chat route, which
+    // keeps DeepSeek's own default — thinking on, at high.
     expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "chat")).toBeUndefined();
     expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose: "chat" }, messages, 200)).toEqual({
       model: "deepseek-flash",
       messages,
-      temperature: 0.7,
       max_tokens: 200,
     });
-    // Writing a whole site is where thinking earns its cost. Unset is high.
-    expect(reasoningEffort(DEEPSEEK, "deepseek-v4-pro", "build")).toBe("high");
-    expect(completionBody({ model: "deepseek-v4-pro", baseUrl: DEEPSEEK, purpose: "build" }, messages, 200).reasoning_effort)
-      .toBe("high");
+    // A build takes the level above the default, which is the point of naming
+    // one at all, and says so beside the thinking field the provider documents.
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("max");
+    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose: "build" }, messages, 200)).toEqual({
+      model: "deepseek-flash",
+      messages,
+      max_tokens: 200,
+      reasoning_effort: "max",
+      thinking: { type: "enabled" },
+    });
+    expect(reasoningEffort(DEEPSEEK, "deepseek-v4-pro", "build")).toBe("max");
+  });
+
+  test("a level a route does not have is met with the nearest it does", () => {
+    // DeepSeek documents low, high and max; Gemini low, medium and high.
+    process.env.AI_REASONING_EFFORT = "medium";
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("high");
+    expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("medium");
+    process.env.AI_REASONING_EFFORT = "max";
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("max");
+    expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("high");
     process.env.AI_REASONING_EFFORT = "low";
-    expect(reasoningEffort(DEEPSEEK, "deepseek-v4-pro", "build")).toBe("low");
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("low");
+  });
+
+  test("temperature is not sent to a model that documents it as inert", () => {
+    // DeepSeek's thinking models ignore temperature while thinking is on, and
+    // it is on by default; sending it is a field that means nothing.
+    delete process.env.AI_REASONING_EFFORT;
+    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK }, messages, 200).temperature).toBeUndefined();
+    expect(completionBody({ model: "some-model", baseUrl: "https://ai.example/v1" }, messages, 200).temperature).toBe(0.7);
   });
 
   test("a Gemini host defaults to high; low and medium are accepted", () => {
