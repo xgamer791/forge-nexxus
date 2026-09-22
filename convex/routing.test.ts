@@ -37,8 +37,9 @@ describe("the route is whatever the deployment names", () => {
       baseUrl: GOOGLE_OPENAI,
       model: "gemini-3.8-flash",
       apiKey: "sk-test",
-      // The pretty name belongs to this exact id, so the route reports it.
-      label: "Gemini 3.8 Flash",
+      // The pretty name belongs to the DeepSeek fallback id, so a configured
+      // Gemini reports itself rather than borrowing that name.
+      label: "gemini-3.8-flash",
     });
     // Any other id reports itself rather than borrowing that name.
     process.env.AI_MODEL = "gemini-3.8-pro";
@@ -83,43 +84,62 @@ describe("the route is whatever the deployment names", () => {
   test("an unset deployment still lands somewhere valid", () => {
     for (const key of ["AI_BASE_URL", "AI_MODEL", "AI_MODEL_LABEL"]) delete process.env[key];
     expect(chatRoute()).toMatchObject({
-      baseUrl: GOOGLE_OPENAI,
-      model: "gemini-3.8-flash",
-      label: "Gemini 3.8 Flash",
+      baseUrl: "https://api.deepseek.com/v1",
+      model: "deepseek-flash",
+      label: "DeepSeek v4.1 Flash",
     });
   });
 });
 
-describe("chat and build requests think at high effort by default", () => {
-  test("unset and unknown values land on high; low and medium are accepted", () => {
+const DEEPSEEK = "https://api.deepseek.com/v1";
+const messages = [{ role: "user" as const, content: "ok" }];
+
+describe("reasoning_effort is Gemini-only", () => {
+  test("DeepSeek and other hosts never send it, even if AI_REASONING_EFFORT is set", () => {
     delete process.env.AI_REASONING_EFFORT;
-    expect(reasoningEffort()).toBe("high");
-    process.env.AI_REASONING_EFFORT = "HIGH";
-    expect(reasoningEffort()).toBe("high");
-    process.env.AI_REASONING_EFFORT = "medium";
-    expect(reasoningEffort()).toBe("medium");
-    process.env.AI_REASONING_EFFORT = "low";
-    expect(reasoningEffort()).toBe("low");
-    // Gemini 3.8 Flash errors on these, so they are not sent.
-    process.env.AI_REASONING_EFFORT = "minimal";
-    expect(reasoningEffort()).toBe("high");
-    process.env.AI_REASONING_EFFORT = "none";
-    expect(reasoningEffort()).toBe("high");
-    process.env.AI_REASONING_EFFORT = "turbo";
-    expect(reasoningEffort()).toBe("high");
+    expect(reasoningEffort(DEEPSEEK)).toBeUndefined();
+    expect(reasoningEffort("https://ai.example/v1")).toBeUndefined();
+    process.env.AI_REASONING_EFFORT = "high";
+    expect(reasoningEffort(DEEPSEEK)).toBeUndefined();
+    expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK }, messages, 200)).toEqual({
+      model: "deepseek-flash",
+      messages,
+      temperature: 0.7,
+      max_tokens: 200,
+    });
   });
 
-  test("the OpenAI-shaped body always carries reasoning_effort", () => {
+  test("a Gemini host defaults to high; low and medium are accepted", () => {
     delete process.env.AI_REASONING_EFFORT;
-    expect(completionBody({ model: "gemini-3.8-flash" }, [{ role: "user", content: "ok" }], 200)).toEqual({
+    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
+    process.env.AI_REASONING_EFFORT = "HIGH";
+    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
+    process.env.AI_REASONING_EFFORT = "medium";
+    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("medium");
+    process.env.AI_REASONING_EFFORT = "low";
+    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("low");
+    // Gemini 3.8 Flash errors on these, so they are not sent as themselves.
+    process.env.AI_REASONING_EFFORT = "minimal";
+    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
+    process.env.AI_REASONING_EFFORT = "none";
+    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
+    process.env.AI_REASONING_EFFORT = "turbo";
+    expect(reasoningEffort(GOOGLE_OPENAI)).toBe("high");
+  });
+
+  test("the OpenAI-shaped body includes reasoning_effort only for Gemini", () => {
+    delete process.env.AI_REASONING_EFFORT;
+    expect(completionBody({ model: "gemini-3.8-flash", baseUrl: GOOGLE_OPENAI }, messages, 200)).toEqual({
       model: "gemini-3.8-flash",
-      messages: [{ role: "user", content: "ok" }],
+      messages,
       temperature: 0.7,
       max_tokens: 200,
       reasoning_effort: "high",
     });
     process.env.AI_REASONING_EFFORT = "low";
-    expect(completionBody({ model: "gemini-3.8-flash" }, [{ role: "user", content: "ok" }], 200).reasoning_effort).toBe("low");
+    expect(completionBody({ model: "gemini-3.8-flash", baseUrl: GOOGLE_OPENAI }, messages, 200).reasoning_effort).toBe("low");
+    // A model id that happens to say gemini is not enough — the host decides.
+    expect(completionBody({ model: "gemini-3.8-flash", baseUrl: DEEPSEEK }, messages, 200).reasoning_effort).toBeUndefined();
   });
 });
 
@@ -191,10 +211,32 @@ describe("probing the route never carries the key out", () => {
     expect(JSON.stringify(result)).not.toContain(KEY);
   });
 
-  test("the probe sends the same high-effort body chat and build use", async () => {
+  test("the probe omits reasoning_effort on a non-Gemini host", async () => {
     const t = convexTest(schema, import.meta.glob("./**/*.*s"));
     process.env.AI_BASE_URL = "https://ai.example/v1";
     process.env.AI_MODEL = "some-model";
+    process.env.AI_API_KEY = KEY;
+    process.env.AI_REASONING_EFFORT = "high";
+    let sent: unknown;
+    const fetched = vi.fn(async (_url: string, init?: RequestInit) => {
+      sent = init?.body;
+      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "ok" } }] }),
+        { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetched);
+
+    const result: any = await t.action(internal.probe.chat, {});
+    expect(fetched).toHaveBeenCalled();
+    const body = JSON.parse(String(sent)) as { model: string; max_tokens: number; reasoning_effort?: string };
+    expect(body).toMatchObject({ model: "some-model", max_tokens: 200 });
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain(KEY);
+  });
+
+  test("the probe sends high effort when pointed at Gemini", async () => {
+    const t = convexTest(schema, import.meta.glob("./**/*.*s"));
+    process.env.AI_BASE_URL = GOOGLE_OPENAI;
+    process.env.AI_MODEL = "gemini-3.8-flash";
     process.env.AI_API_KEY = KEY;
     delete process.env.AI_REASONING_EFFORT;
     let sent: unknown;
@@ -206,9 +248,8 @@ describe("probing the route never carries the key out", () => {
     vi.stubGlobal("fetch", fetched);
 
     const result: any = await t.action(internal.probe.chat, {});
-    expect(fetched).toHaveBeenCalled();
     expect(JSON.parse(String(sent))).toMatchObject({
-      model: "some-model",
+      model: "gemini-3.8-flash",
       reasoning_effort: "high",
       max_tokens: 200,
     });
