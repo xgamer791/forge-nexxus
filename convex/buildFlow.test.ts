@@ -60,6 +60,16 @@ const PNG = btoa("not really a png, but bytes are bytes");
 
 const json = (payload: unknown, status = 200) =>
   new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
+// A reply as a provider streams it: the events as given, then the connection closes.
+const streamed = (...events: string[]) =>
+  new Response(new ReadableStream({
+    start(controller) {
+      for (const event of events) controller.enqueue(new TextEncoder().encode(event));
+      controller.close();
+    },
+  }), { status: 200, headers: { "content-type": "text/event-stream" } });
+const delta = (fields: Record<string, unknown>, finish: string | null = null) =>
+  `data: ${JSON.stringify({ choices: [{ index: 0, delta: fields, finish_reason: finish }] })}\n\n`;
 
 type Call = { url: string; body: any };
 
@@ -236,30 +246,39 @@ describe("a brand new build, start to finish", () => {
     expect(await versions(t)).toHaveLength(1);
   });
 
-  test("a model that never answers fails the build once, says why, and the next press builds", async () => {
+  test("a reply that keeps dropping fails the build once, says why, and the next press builds", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    let hung = true;
-    const providers = stubProviders(() => {
-      if (hung) throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
-      return built("Harbor Roasters");
-    });
+    let dropping = true;
+    // The provider starts thinking, then the connection goes before the reply
+    // is finished -- the stream stopping, which is what a stall is here.
+    const providers = stubProviders(() =>
+      dropping ? streamed(": keep-alive\n\n", delta({ reasoning_content: "Planning the roastery page." })) : built("Harbor Roasters"));
 
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    // One attempt, one call: a call that ran out its clock is not repeated.
-    expect(providers.builds()).toBe(1);
+    // One fresh go after the first drop, and then the build says why.
+    expect(providers.builds()).toBe(2);
     const failed = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(failed.status).toBe("failed");
-    expect(failed.error).toContain("took too long");
+    expect(failed.error).toContain("The connection to the model dropped before it started writing your website");
     expect(failed.error).toContain("Your answers are saved");
+    expect(failed.error).not.toMatch(/too long|seconds|minutes/);
     expect(failed.holdId).toBeUndefined();
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "released"]]);
     expect(await versions(t)).toEqual([]);
     const [run] = await t.run((ctx) => ctx.db.query("buildRuns").collect());
-    expect(run).toMatchObject({ status: "failed", errorClass: "timeout", attempt: 1 });
+    expect(run).toMatchObject({ status: "failed", errorClass: "stream_dropped", attempt: 1 });
+    // The debugger kept where each reply had got to when it stopped.
+    const events = await t.run((ctx) => ctx.db.query("buildEvents").withIndex("by_run_at", (q) => q.eq("runId", run._id)).collect());
+    const stops = events.filter((event) => event.phase === "provider_stop");
+    expect(stops).toHaveLength(2);
+    for (const stop of stops) {
+      expect(stop.detail).toMatchObject({ stream: true, stopReason: "dropped", streamPhase: "thinking", keepAlives: 1, reasoningChars: "Planning the roastery page.".length });
+    }
+    expect(events.filter((event) => event.phase === "provider_retry")).toHaveLength(1);
     expect(await member.as.query(api.onboarding.state, {})).toMatchObject({
       hasWebsite: false,
       draft: expect.objectContaining({ id, status: "failed" }),
@@ -269,10 +288,10 @@ describe("a brand new build, start to finish", () => {
     expect((await scheduled(t)).filter((job) => job.name === "onboarding:build" && job.state !== "success")).toEqual([]);
 
     // Try building again is one more attempt, not a loop.
-    hung = false;
+    dropping = false;
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
-    expect(providers.builds()).toBe(2);
+    expect(providers.builds()).toBe(3);
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete", attempt: 2 });
     expect(await versions(t)).toHaveLength(1);
     const runs = await t.run((ctx) => ctx.db.query("buildRuns").collect());

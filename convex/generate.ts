@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
-import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
+import { closeRun, providerTrace, recordLastSign, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
 import { DESIGN_GOD } from "./designgod";
@@ -14,6 +14,7 @@ import { memoryEnabled, memoryNote } from "./memory";
 import { composePage, hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
+import { isEventStream, readStream, StreamStopped, type Milestone, type StopReason, type StreamPhase, type StreamStats } from "./stream";
 
 // How much of the thread the model sees, and how long a page it may write.
 // A whole site — several pages behind one shell — is a great deal more output
@@ -180,10 +181,12 @@ export function completionBody(
 export const BUILD_IMAGE_LIMIT = 6;
 const EDIT_IMAGE_LIMIT = 2;
 
-// One call may run long -- a whole site is a lot of tokens -- but a build as a
-// whole has to finish inside an action's ten minutes with room for pictures.
-const CALL_TIMEOUT_MS = 240000;
-const TEXT_BUDGET_MS = 400000;
+// No call is cut off for taking long: a reply is read as it streams, and it is
+// stopped only by what the stream shows (see `complete`). What is left of the
+// clock is the platform's own -- an action has ten minutes -- and the words get
+// all of it the pictures and the save do not need: up to a minute for the
+// pictures, which are made side by side, and a few seconds to store the page.
+const TEXT_BUDGET_MS = 480000;
 const CONTINUE_FLOOR_MS = 45000;
 // A second go at a whole site is another long call, so one is only started
 // while there is real time left to finish it in.
@@ -662,7 +665,10 @@ export const expire = internalMutation({
         .query("buildRuns")
         .withIndex("by_message", (q) => q.eq("messageId", assistantId))
         .first();
-      if (run) await closeRun(ctx, { runId: run._id, status: "failed", error: reason });
+      if (run) {
+        await recordLastSign(ctx, run._id);
+        await closeRun(ctx, { runId: run._id, status: "failed", error: reason });
+      }
     }
     await releaseHold(ctx, holdId);
     return null;
@@ -738,13 +744,129 @@ function withNudge(messages: ChatMessage[], nudge: string): ChatMessage[] {
   return last ? [...messages.slice(0, -1), note, last] : [note];
 }
 
-// One chat completion. A provider that stumbles -- a dropped connection, a
-// rate limit, a 5xx -- is asked once more before the build is called failed,
-// and one whose output cap is lower than what was asked for says what its cap
-// is, so the same request goes again inside it. A reply that is all thinking
-// and no answer goes again too, inside a ceiling wide enough to answer in. A
-// call that ran out its clock is not repeated: a second slow answer would
-// only spend the build's time.
+// What a model is told after its last reply was stopped for going round in
+// circles. The same request would buy the same loop; this one asks for less
+// planning, which is the part of the reply that looped.
+const GO_ROUND =
+  "Your last reply went round in circles, repeating the same thinking, and was stopped. " +
+  "Keep the planning short this time, decide, and write the reply itself, in full, in the format the rules above ask for.";
+
+// Replies are streamed, because a stream is what lets a stall be seen for what
+// it is -- the stream stopping, or repeating itself -- instead of guessed from
+// the clock. A provider that cannot stream is the one reason to turn it off:
+// `npx convex env set AI_STREAM 0`, and replies are read whole as before.
+export function streamReplies() {
+  return !/^(0|off|false|no)$/i.test(process.env.AI_STREAM?.trim() ?? "");
+}
+
+// The request `complete` sends: the shared body, asked for as a stream. The
+// provider's own token counts ride the last chunk where it is known to send
+// them; an unmeasured provider gets the plain streaming request.
+function requestBody(route: Route, messages: ChatMessage[], limit: number, stream: boolean) {
+  return {
+    ...completionBody(route, messages, limit),
+    ...(stream ? { stream: true } : {}),
+    ...(stream && EFFORT_MODELS.has(route.model) ? { stream_options: { include_usage: true } } : {}),
+  };
+}
+
+// A line from a provider or a connection, safe to keep: one line, and never a key.
+function scrubKeys(text: string) {
+  return [process.env.AI_API_KEY, process.env.AI_IMAGE_API_KEY]
+    .reduce<string>((out, key) => (key ? out.split(key).join("[key]") : out), text)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const STOP_CLASS: Record<StopReason, string> = {
+  dropped: "stream_dropped",
+  provider_error: "provider_stream_error",
+  looping: "looping",
+  out_of_time: "out_of_time",
+};
+
+function stopLabel(reason: StopReason, phase: StreamPhase) {
+  if (reason === "looping") return "The model was repeating itself";
+  if (reason === "provider_error") return "The provider stopped part way with an error";
+  if (reason === "dropped") return "The connection to the model dropped";
+  return phase === "writing"
+    ? "The build ran out of time while the model was writing"
+    : phase === "thinking"
+      ? "The build ran out of time while the model was thinking"
+      : "The build ran out of time before the model started";
+}
+
+// What the member is told when a reply stops, by where it had got to. None of
+// these names a length of time, because none of them was decided by one.
+function outOfTimeMessage(phase: StreamPhase) {
+  return phase === "writing"
+    ? "The model was still writing your website when the build ran out of time. Try again."
+    : phase === "thinking"
+      ? "The model was still thinking your website through when the build ran out of time. Try again."
+      : "The model hadn't started on your website when the build ran out of time. Try again in a moment.";
+}
+function stoppedMessage(stop: StreamStopped) {
+  if (stop.reason === "looping") return "The model got stuck repeating itself instead of writing your website. Try again.";
+  if (stop.reason === "provider_error") {
+    const said = stop.stats.providerError?.replace(/[.!?]?\s*$/, "");
+    return `The model provider stopped part way with an error${said ? `: ${said}` : ""}. Try again.`;
+  }
+  if (stop.reason === "out_of_time") return outOfTimeMessage(stop.stats.phase);
+  return stop.stats.phase === "writing"
+    ? "The connection to the model dropped while it was writing your website. Try again."
+    : "The connection to the model dropped before it started writing your website. Try again.";
+}
+
+// The debugger's view of a streamed reply: where it had got to and what it had
+// produced. `sinceTokenMs` is how long it had been quiet -- evidence, never a
+// trigger.
+function streamDetail(stats: StreamStats, started: number) {
+  return {
+    stream: true,
+    streamPhase: stats.phase,
+    reasoningChars: stats.reasoningChars || undefined,
+    replyChars: stats.contentChars || undefined,
+    chunks: stats.chunks,
+    keepAlives: stats.keepAlives || undefined,
+    bytes: stats.bytes,
+    firstTokenMs: stats.firstTokenMs,
+    firstContentMs: stats.firstContentMs,
+    sinceTokenMs: stats.lastTokenAt !== undefined ? Date.now() - stats.lastTokenAt : undefined,
+    finishReason: stats.finishReason,
+    completionTokens: stats.completionTokens,
+    reasoningTokens: stats.reasoningTokens,
+    providerError: stats.providerError,
+    loopRepeats: stats.loopRepeats,
+    durationMs: Date.now() - started,
+  };
+}
+
+const grouped = (count: number) => String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+// A moving reply, written into the build's log by how much it has produced.
+function progressNote(trace: ProviderTrace | undefined, milestone: Milestone, started: number, attempt: number, continuation?: number) {
+  const { stats } = milestone;
+  const label = milestone.kind === "thinking"
+    ? milestone.first ? "The model started thinking" : `Thinking: ${grouped(stats.reasoningChars)} characters so far`
+    : milestone.first ? "The model started writing the page" : `Writing the page: ${grouped(stats.contentChars)} characters so far`;
+  return trace?.note({ phase: "provider_progress", label, status: "calling", detail: { attempt, continuation, ...streamDetail(stats, started) } });
+}
+
+// A second go after a reply stopped before its page began is only started
+// while there is room to finish one.
+const STOP_RETRY_FLOOR_MS = 120000;
+
+// One chat completion, read as it streams. A reply is given as long as it
+// keeps moving: nothing here stops one for being slow. What stops a reply is
+// the stream -- the connection dropping, the provider erroring part way, the
+// model repeating itself -- and each of those is written into the build's log
+// with where the reply had got to. A page that had begun is kept and carried on
+// from where it stopped; a reply that stopped before its page began gets one
+// fresh go. A provider that stumbles before it answers -- a refused connection,
+// a rate limit, a 5xx -- is asked once more, and one whose output cap is lower
+// than what was asked for says what its cap is, so the same request goes again
+// inside it. A reply that is all thinking and no answer goes again too, inside
+// a ceiling wide enough to answer in.
 async function complete(
   route: Route,
   messages: ChatMessage[],
@@ -759,10 +881,12 @@ async function complete(
   // provider has already refused would only spend the loop.
   let ceiling = Number.POSITIVE_INFINITY;
   let widened = false;
+  let retriedStop = false;
+  let nudge: string | null = null;
+  const streaming = streamReplies();
   let host = route.baseUrl;
   try { host = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
   for (let attempt = 0; attempt < MAX_COMPLETE_LOOPS; attempt += 1) {
-    const timeout = Math.max(1000, Math.min(CALL_TIMEOUT_MS, deadline - Date.now()));
     const started = Date.now();
     await trace?.note({
       phase: "provider_request",
@@ -779,37 +903,101 @@ async function complete(
         tokensAsked: limit,
         host,
         model: route.model,
+        stream: streaming,
       },
     });
-    let response: Response;
-    let bodyText: string;
-    // The clock covers the whole exchange, the reply's body included. It is a
-    // plain controller and timer because those are what every runtime has.
+    // The one clock left is the platform's own: an action has ten minutes, and
+    // the pictures and the save need the end of them. It never decides that a
+    // reply has stalled. When it does run out, what the reply was doing then is
+    // what gets recorded -- still writing, still thinking, or never started.
     const clock = new AbortController();
-    const timer = setTimeout(() => clock.abort(), timeout);
+    let outOfTime = false;
+    const timer = setTimeout(() => { outOfTime = true; clock.abort(); }, Math.max(1000, deadline - Date.now()));
+    let response: Response | undefined;
+    let bodyText = "";
+    let streamed: { content: string; stats: StreamStats } | undefined;
+    let stopped: StreamStopped | undefined;
+    let unreachable: unknown;
     try {
       response = await fetch(`${route.baseUrl}/chat/completions`, {
         method: "POST",
         signal: clock.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${route.apiKey}` },
-        body: JSON.stringify(completionBody(route, widened ? withNudge(messages, ANSWER_NOW) : messages, limit)),
+        body: JSON.stringify(requestBody(route, widened ? withNudge(messages, ANSWER_NOW) : nudge ? withNudge(messages, nudge) : messages, limit, streaming)),
       });
-      bodyText = await response.text();
+      if (response.ok && isEventStream(response)) {
+        streamed = await readStream(response.body!, {
+          started,
+          cutShort: () => (outOfTime ? "out_of_time" : null),
+          scrub: scrubKeys,
+          onMilestone: (milestone) => progressNote(trace, milestone, started, attempt, meta?.continuation),
+        });
+      } else {
+        bodyText = await response.text();
+      }
     } catch (error) {
-      const timedOut =
-        clock.signal.aborted || (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"));
-      await trace?.note({
-        phase: "provider_error",
-        label: timedOut ? "The model took too long to answer" : "The model provider could not be reached",
-        level: "error",
-        detail: { attempt, continuation: meta?.continuation, durationMs: Date.now() - started, timedOut, host, model: route.model, errorClass: timedOut ? "timeout" : "unreachable" },
-      });
-      if (timedOut) throw new Error("The model took too long to answer. Try again.");
-      if (attempt === 0) { await wait(RETRY_WAIT_MS); continue; }
-      throw new Error("The model provider could not be reached. Try again in a moment.");
+      if (error instanceof StreamStopped) stopped = error;
+      else if (outOfTime) {
+        stopped = new StreamStopped("out_of_time", { phase: "waiting", reasoningChars: 0, contentChars: 0, chunks: 0, keepAlives: 0, bytes: 0, sawDone: false }, "");
+      } else if (response) {
+        // The headers came and the body did not: the connection went while a
+        // whole reply was on its way.
+        stopped = new StreamStopped("dropped", {
+          phase: "waiting", reasoningChars: 0, contentChars: 0, chunks: 0, keepAlives: 0, bytes: 0, sawDone: false,
+          providerError: scrubKeys(error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 160),
+        }, "");
+      } else unreachable = error;
     } finally {
       clearTimeout(timer);
     }
+    if (unreachable !== undefined) {
+      await trace?.note({
+        phase: "provider_error",
+        label: "The model provider could not be reached",
+        level: "error",
+        detail: {
+          attempt, continuation: meta?.continuation, durationMs: Date.now() - started, host, model: route.model, errorClass: "unreachable",
+          providerError: scrubKeys(unreachable instanceof Error ? `${unreachable.name}: ${unreachable.message}` : String(unreachable)).slice(0, 160),
+        },
+      });
+      if (attempt === 0) { await wait(RETRY_WAIT_MS); continue; }
+      throw new Error("The model provider could not be reached. Try again in a moment.");
+    }
+    if (stopped) {
+      const { reason, stats } = stopped;
+      await trace?.note({
+        phase: "provider_stop",
+        label: stopLabel(reason, stats.phase),
+        level: reason === "out_of_time" ? "error" : "warn",
+        detail: { attempt, continuation: meta?.continuation, host, model: route.model, stopReason: reason, errorClass: STOP_CLASS[reason], ...streamDetail(stats, started) },
+      });
+      if (reason === "out_of_time") throw new Error(stoppedMessage(stopped));
+      // The page had begun: what it has is kept, and the next call carries on
+      // from the character where this one stopped.
+      const begun = stats.phase === "writing" && (meta?.continuation ? stopped.content.length > 0 : /```html|<!doctype html/i.test(stopped.content));
+      if (begun) {
+        await trace?.note({
+          phase: "provider_resume",
+          label: "Carrying on from where the page stopped",
+          level: "warn",
+          detail: { attempt, continuation: meta?.continuation, stopReason: reason, replyChars: stopped.content.length, host, model: route.model },
+        });
+        return { content: stopped.content, truncated: true };
+      }
+      if (!retriedStop && deadline - Date.now() > STOP_RETRY_FLOOR_MS) {
+        retriedStop = true;
+        nudge = reason === "looping" ? GO_ROUND : null;
+        await trace?.note({
+          phase: "provider_retry",
+          label: "Asking the model again",
+          level: "warn",
+          detail: { attempt, continuation: meta?.continuation, stopReason: reason, errorClass: STOP_CLASS[reason], host, model: route.model },
+        });
+        continue;
+      }
+      throw new Error(stoppedMessage(stopped));
+    }
+    response = response!;
     if (!response.ok) {
       // A provider whose output cap is lower than what was asked for says so
       // in its own words. Some name the range, and that exact number is used
@@ -848,27 +1036,37 @@ async function complete(
       });
       throw new Error(`The model provider answered ${response.status}${excerpt(bodyText)}`);
     }
-    let data: {
-      choices?: {
-        finish_reason?: unknown;
-        message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown };
-      }[];
-    };
-    try {
-      data = JSON.parse(bodyText);
-    } catch {
-      await trace?.note({
-        phase: "provider_error",
-        label: "The model provider sent an unreadable reply",
-        level: "error",
-        detail: { httpStatus: response.status, attempt, durationMs: Date.now() - started, errorClass: "unreadable" },
-      });
-      throw new Error("The model provider sent an unreadable reply");
+    let content: unknown;
+    let finishReason: string | undefined;
+    let reasoningChars = 0;
+    if (streamed) {
+      content = streamed.content;
+      finishReason = streamed.stats.finishReason;
+      reasoningChars = streamed.stats.reasoningChars;
+    } else {
+      let data: {
+        choices?: {
+          finish_reason?: unknown;
+          message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown };
+        }[];
+      };
+      try {
+        data = JSON.parse(bodyText);
+      } catch {
+        await trace?.note({
+          phase: "provider_error",
+          label: "The model provider sent an unreadable reply",
+          level: "error",
+          detail: { httpStatus: response.status, attempt, durationMs: Date.now() - started, errorClass: "unreadable" },
+        });
+        throw new Error("The model provider sent an unreadable reply");
+      }
+      const choice = data?.choices?.[0];
+      content = choice?.message?.content;
+      finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined;
+      reasoningChars = reasoningOf(choice?.message).length;
     }
-    const choice = data?.choices?.[0];
-    const content = choice?.message?.content;
-    const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined;
-    const reasoning = reasoningOf(choice?.message);
+    const readDetail = streamed ? streamDetail(streamed.stats, started) : { stream: false, reasoningChars: reasoningChars || undefined, finishReason };
     if (typeof content !== "string" || !content.trim()) {
       // A reasoning model puts its thinking in its own field and counts it
       // against the same length budget, so a long enough think leaves nothing
@@ -880,7 +1078,7 @@ async function complete(
       // it is the one that finishes. One go at it, while there is time. After
       // that what has to change is the model or the deployment's limit, and
       // neither is something another attempt can reach.
-      const spentThinking = reasoning.length > 0 || finishReason === "length";
+      const spentThinking = reasoningChars > 0 || finishReason === "length";
       const room = Math.min(ceiling, Math.max(limit, ROOM_TO_ANSWER));
       if (spentThinking && !widened && deadline - Date.now() > ANSWER_FLOOR_MS) {
         widened = true;
@@ -891,12 +1089,11 @@ async function complete(
           label: grew ? "Giving the model more room to answer" : "Asking the model again for an answer",
           level: "warn",
           detail: {
+            ...readDetail,
             httpStatus: 200,
             attempt,
             durationMs: Date.now() - started,
             errorClass: "reasoning_budget",
-            finishReason,
-            reasoningChars: reasoning.length || undefined,
             tokensAsked: limit,
             host,
             model: route.model,
@@ -911,12 +1108,11 @@ async function complete(
           : "The model returned an empty reply",
         level: "error",
         detail: {
+          ...readDetail,
           httpStatus: 200,
           attempt,
           durationMs: Date.now() - started,
           errorClass: spentThinking ? "reasoning_budget" : "empty",
-          finishReason,
-          reasoningChars: reasoning.length || undefined,
           tokensAsked: limit,
           host,
           model: route.model,
@@ -932,15 +1128,13 @@ async function complete(
       phase: "provider_response",
       label: "The model answered",
       detail: {
+        ...readDetail,
         httpStatus: 200,
         durationMs: Date.now() - started,
         attempt,
         continuation: meta?.continuation,
         truncated: finishReason === "length",
         replyChars: content.length,
-        // How much of the budget went on thinking, on a turn that did answer.
-        reasoningChars: reasoning.length || undefined,
-        finishReason,
         tokensAsked: limit,
         host,
         model: route.model,

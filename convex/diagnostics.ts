@@ -52,6 +52,22 @@ const detailValidator = v.object({
   holdStatus: v.optional(v.string()),
   creditAmount: v.optional(v.number()),
   timedOut: v.optional(v.boolean()),
+  // How a reply was read and where it had got to when it stopped. Counts and
+  // phases only: never the thinking, the prompt or the page.
+  stream: v.optional(v.boolean()),
+  stopReason: v.optional(v.string()),
+  streamPhase: v.optional(v.string()),
+  chunks: v.optional(v.number()),
+  keepAlives: v.optional(v.number()),
+  bytes: v.optional(v.number()),
+  firstTokenMs: v.optional(v.number()),
+  firstContentMs: v.optional(v.number()),
+  sinceTokenMs: v.optional(v.number()),
+  sinceEventMs: v.optional(v.number()),
+  completionTokens: v.optional(v.number()),
+  reasoningTokens: v.optional(v.number()),
+  providerError: v.optional(v.string()),
+  loopRepeats: v.optional(v.number()),
 });
 
 const eventValidator = v.object({
@@ -116,6 +132,20 @@ export type EventDetail = {
   holdStatus?: string;
   creditAmount?: number;
   timedOut?: boolean;
+  stream?: boolean;
+  stopReason?: string;
+  streamPhase?: string;
+  chunks?: number;
+  keepAlives?: number;
+  bytes?: number;
+  firstTokenMs?: number;
+  firstContentMs?: number;
+  sinceTokenMs?: number;
+  sinceEventMs?: number;
+  completionTokens?: number;
+  reasoningTokens?: number;
+  providerError?: string;
+  loopRepeats?: number;
 };
 
 export type ProviderTrace = {
@@ -139,6 +169,10 @@ export function classifyError(reason: string) {
   // Ahead of the length and emptiness tests below, which this one's wording
   // would otherwise fall into.
   if (/only its reasoning/i.test(reason)) return "reasoning_budget";
+  if (/dropped/i.test(reason)) return "stream_dropped";
+  if (/repeating itself/i.test(reason)) return "looping";
+  if (/stopped part way with an error/i.test(reason)) return "provider_stream_error";
+  if (/ran out of time/i.test(reason)) return "out_of_time";
   if (/too long|timed out|Timeout|Abort/i.test(reason)) return "timeout";
   if (/empty reply/i.test(reason)) return "empty";
   if (/complete page|did not return a website/i.test(reason)) return "incomplete_page";
@@ -340,6 +374,36 @@ export async function closeRun(
       htmlChars: args.htmlChars ?? row.htmlChars,
       imageWanted: args.imageWanted ?? row.imageWanted,
       imageMade: args.imageMade ?? row.imageMade,
+    },
+  });
+}
+
+// When a build dies without a word -- the platform stopped it, or it ran out
+// of memory -- a watchdog is the first to know. The most useful thing it can
+// leave behind is where the build had got to when it was last heard from, so
+// that is what this writes: the last thing the build said, and how long ago.
+export async function recordLastSign(ctx: MutationCtx, runId: Id<"buildRuns">) {
+  const row = await ctx.db.get(runId);
+  if (!row || row.status === "complete" || row.status === "failed") return;
+  const last = await ctx.db
+    .query("buildEvents")
+    .withIndex("by_run_at", (q) => q.eq("runId", runId))
+    .order("desc")
+    .first();
+  const now = Date.now();
+  await ctx.db.insert("buildEvents", {
+    userId: row.userId,
+    runId,
+    at: now,
+    phase: "watchdog",
+    level: "error",
+    label: last ? `The build stopped without a word. Last heard: ${last.label}` : "The build stopped without a word",
+    detail: {
+      errorClass: "silent_stop",
+      sinceEventMs: last ? now - last.at : undefined,
+      streamPhase: last?.detail?.streamPhase,
+      reasoningChars: last?.detail?.reasoningChars,
+      replyChars: last?.detail?.replyChars,
     },
   });
 }
@@ -628,6 +692,48 @@ export const inspectRecent = internalQuery({
         };
       }),
     );
+  },
+});
+
+// What stopped recent replies, for whoever is debugging the building agent:
+// `npx convex run diagnostics:inspectStalls`. One row per stop, retry, resume
+// or silent death, newest first, each with where the reply had got to -- the
+// phase, what it had produced, what the provider said last. Never an email, a
+// prompt or a page.
+const STOP_PHASES = new Set(["provider_stop", "provider_error", "provider_retry", "provider_resume", "provider_room", "watchdog"]);
+export const inspectStalls = internalQuery({
+  args: {},
+  returns: v.array(
+    v.object({
+      runId: v.id("buildRuns"),
+      source: sourceValidator,
+      runStatus: statusValidator,
+      runError: v.optional(v.string()),
+      at: v.number(),
+      phase: v.string(),
+      label: v.string(),
+      detail: v.optional(detailValidator),
+    }),
+  ),
+  handler: async (ctx) => {
+    const runs = await ctx.db.query("buildRuns").withIndex("by_started").order("desc").take(INSPECT_LIMIT);
+    const rows = [];
+    for (const run of runs) {
+      for (const event of await eventsFor(ctx, run._id)) {
+        if (!STOP_PHASES.has(event.phase)) continue;
+        rows.push({
+          runId: run._id,
+          source: run.source,
+          runStatus: run.status,
+          runError: run.error,
+          at: event.at,
+          phase: event.phase,
+          label: event.label,
+          detail: event.detail,
+        });
+      }
+    }
+    return rows.sort((a, b) => b.at - a.at);
   },
 });
 

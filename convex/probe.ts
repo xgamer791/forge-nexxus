@@ -15,7 +15,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
-import { chatRoute, completionBody, describe as scrub } from "./generate";
+import { callProvider, chatRoute, completionBody, describe as scrub } from "./generate";
 
 // Enough of a reply to tell an answer from a refusal, and never a whole page.
 const PREVIEW = 200;
@@ -223,6 +223,29 @@ export const models = internalAction({
       return { host, httpStatus: response.status, models: ids.sort() };
     } catch {
       return { host, httpStatus: response.status, error: scrub(body).slice(0, 200) };
+    }
+  },
+});
+
+// One small streamed call through the very reader a build uses, for whoever
+// runs the deployment: `npx convex run probe:stream`. `probe:chat` says what a
+// whole reply carries; this says how a reply moves on this route -- when the
+// first token came, how much was thinking and how much was answer, how the
+// stream ended -- and, when it stopped, why. The log it returns is the one a
+// build writes, so a stall shows here exactly as it would in a build. Never
+// the key, never the text.
+type StreamNote = { phase: string; label: string; detail?: Record<string, unknown> };
+export const stream = internalAction({
+  args: {},
+  handler: async (): Promise<{ ok: boolean; durationMs: number; replyChars?: number; error?: string; log: StreamNote[] }> => {
+    const log: StreamNote[] = [];
+    const trace = { note: async (note: StreamNote) => { log.push({ phase: note.phase, label: note.label, detail: note.detail }); } };
+    const started = Date.now();
+    try {
+      const reply = await callProvider([{ role: "user", content: "In one short sentence, say what a bakery website needs most." }], 4000, 120000, trace, "chat");
+      return { ok: true, durationMs: Date.now() - started, replyChars: reply.length, log };
+    } catch (error) {
+      return { ok: false, durationMs: Date.now() - started, error: scrub(error), log };
     }
   },
 });

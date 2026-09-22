@@ -253,6 +253,22 @@ export default defineSchema({
       holdStatus: v.optional(v.string()),
       creditAmount: v.optional(v.number()),
       timedOut: v.optional(v.boolean()),
+      // How a reply was read and where it had got to when it stopped. Counts and
+      // phases only: never the thinking, the prompt or the page.
+      stream: v.optional(v.boolean()),
+      stopReason: v.optional(v.string()),
+      streamPhase: v.optional(v.string()),
+      chunks: v.optional(v.number()),
+      keepAlives: v.optional(v.number()),
+      bytes: v.optional(v.number()),
+      firstTokenMs: v.optional(v.number()),
+      firstContentMs: v.optional(v.number()),
+      sinceTokenMs: v.optional(v.number()),
+      sinceEventMs: v.optional(v.number()),
+      completionTokens: v.optional(v.number()),
+      reasoningTokens: v.optional(v.number()),
+      providerError: v.optional(v.string()),
+      loopRepeats: v.optional(v.number()),
     })),
   })
     .index("by_run", ["runId"])

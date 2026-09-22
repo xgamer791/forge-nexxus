@@ -7,7 +7,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { requireMemberId } from "./access";
 import { designSource, siteParts, withParts, type BuiltSite } from "./pages";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
-import { failOpenRun, openRun, providerTrace } from "./diagnostics";
+import { failOpenRun, openRun, providerTrace, recordLastSign } from "./diagnostics";
 import { BUILD_IMAGE_LIMIT, builtSite, callProvider, chatRoute, describe, parseReply } from "./generate";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
@@ -16,9 +16,11 @@ import { fulfilImages, wantsImages, imageRoute } from "./images";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
 
 // The words and the pictures share an action's ten minutes. The text gets the
-// larger part; the watchdog sits just inside the platform's own limit, so it
-// only ever speaks for a build that died without saying so.
-const TEXT_BUDGET_MS = 420000;
+// larger part -- a reply is never cut off for being slow, only when the
+// platform's own clock is about to run out -- and the watchdog sits just
+// inside that limit, so it only ever speaks for a build that died without
+// saying so.
+const TEXT_BUDGET_MS = 480000;
 const RETRY_FLOOR_MS = 120000;
 const WATCHDOG_MS = 570000;
 
@@ -704,6 +706,15 @@ export const expire = internalMutation({
       : failed ? "Your website couldn’t be completed. Your answers are saved. Try building again." : "The build stopped responding. Your answers are saved. Try building again.";
     if (row.assistantId && await ctx.db.get(row.assistantId)) await ctx.db.patch(row.assistantId, { status: "failed", body: error });
     await ctx.db.patch(id, { status: "failed", error, holdId: undefined, updatedAt: Date.now() });
+    // No reason and no failure means the build never came back to say how it
+    // ended: this is the watchdog, and the log gets its last sign of life.
+    if (!reason && !failed) {
+      const run = await ctx.db
+        .query("buildRuns")
+        .withIndex("by_onboarding_attempt", (q) => q.eq("onboardingId", id).eq("attempt", attempt))
+        .first();
+      if (run) await recordLastSign(ctx, run._id);
+    }
     await failOpenRun(ctx, { onboardingId: id, attempt, error });
   },
 });
