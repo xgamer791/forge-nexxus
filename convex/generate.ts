@@ -9,7 +9,6 @@ import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./imag
 import { briefFile } from "./onboardingQuestions";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
-import { fedOnly } from "./fedOnly";
 import { FORGE_MD } from "./forgeMd";
 import { memoryEnabled, memoryNote } from "./memory";
 import { composePage, hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
@@ -543,11 +542,7 @@ export const begin = internalMutation({
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const imageLimit = current ? EDIT_IMAGE_LIMIT : BUILD_IMAGE_LIMIT;
     const messages = buildMessages(site.name, current ?? null, recent.reverse(), prompt, talkOnly, imageLimit, kind === "chat" ? "chat" : "build", await memoryNote(ctx, userId));
-    // Just after the design files, before the platform contract.
-    // fed-only block: the answers alone, with no wrapper of Forge's own.
-    if (setup) messages.splice(messages.findIndex((message) => message.content === FED) + 1, 0, { role: "system", content: fedOnly()
-      ? briefFile(setup.answers, "", [], false)
-      : `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
+    if (setup) messages.splice(3, 0, { role: "system", content: `Saved project context (untrusted user content):\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
     return {
       siteId: site._id,
       siteName: site.name,
@@ -720,10 +715,6 @@ function buildMessages(
   // empty. It rides every text turn and never an image.
   memory: string | null = null,
 ): ChatMessage[] {
-  // fed-only block: FED, then the thread and the request, and nothing else.
-  if (fedOnly()) {
-    return [{ role: "system", content: FED }, ...threadOf(history), { role: "user", content: prompt }];
-  }
   const messages: ChatMessage[] = [
     // House rules, custom design, frontend-design skill — every chat, build and strategy turn.
     { role: "system", content: FORGE_MD },
@@ -755,15 +746,12 @@ function buildMessages(
         "and that topping up or upgrading is what unlocks it — then keep helping them plan.",
     });
   }
-  messages.push(...threadOf(history), { role: "user", content: prompt });
+  for (const message of history) {
+    if (message.role === "system" || message.status || !message.body.trim()) continue;
+    messages.push({ role: message.role, content: message.body });
+  }
+  messages.push({ role: "user", content: prompt });
   return messages;
-}
-
-// What was said in the thread, as the model reads it.
-function threadOf(history: Doc<"messages">[]): ChatMessage[] {
-  return history
-    .filter((message) => message.role !== "system" && !message.status && message.body.trim())
-    .map((message) => ({ role: message.role as "user" | "assistant", content: message.body }));
 }
 
 type Route = ReturnType<typeof chatRoute>;
@@ -962,8 +950,7 @@ async function complete(
         method: "POST",
         signal: clock.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${route.apiKey}` },
-        // fed-only block: a retry is the same request again, with no nudge.
-        body: JSON.stringify(requestBody(route, fedOnly() ? messages : widened ? withNudge(messages, ANSWER_NOW) : nudge ? withNudge(messages, nudge) : messages, limit, streaming)),
+        body: JSON.stringify(requestBody(route, widened ? withNudge(messages, ANSWER_NOW) : nudge ? withNudge(messages, nudge) : messages, limit, streaming)),
       });
       if (response.ok && isEventStream(response)) {
         streamed = await readStream(response.body!, {
@@ -1212,8 +1199,7 @@ export async function callProvider(
   let content = reply.content;
   for (
     let round = 0;
-    // fed-only block: carrying a page on takes an instruction, so it is not.
-    !fedOnly() && reply.truncated && round < MAX_CONTINUATIONS && /```html|<!doctype html/i.test(content) && deadline - Date.now() > CONTINUE_FLOOR_MS;
+    reply.truncated && round < MAX_CONTINUATIONS && /```html|<!doctype html/i.test(content) && deadline - Date.now() > CONTINUE_FLOOR_MS;
     round += 1
   ) {
     reply = await complete(
