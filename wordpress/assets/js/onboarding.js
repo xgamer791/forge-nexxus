@@ -58,17 +58,51 @@ const ENABLED = true;
     }
     return rows;
   }
-  function liveProgress(draft, events) {
+  // Where the build has got to, as one of the four stages the page drawing
+  // shows. Nothing here guesses at a percentage: a stage only moves when the
+  // server says the build did.
+  function buildStage(draft, events) {
     const phase = belongsToDraft(draft) ? trace?.latest?.status : null;
-    if (draft.status === 'queued' || phase === 'queued') return 'Waiting for the build to start…';
-    if (draft.status === 'saving' || phase === 'saving') return 'Saving your website…';
-    if (phase === 'images') return 'Making pictures for your site…';
-    if (phase === 'calling') return 'Agent is building…';
+    if (draft.status === 'queued' || phase === 'queued') return { step: 1, label: 'Waiting for the build to start…' };
+    if (draft.status === 'saving' || phase === 'saving') return { step: 4, label: 'Saving your website…' };
+    if (phase === 'images') return { step: 3, label: 'Making the pictures…' };
+    if (phase === 'calling') return { step: 2, label: 'Writing your website…' };
     const has = label => events.some(event => event.label === label);
-    return has('Pictures made for your site') ? 'Putting the page together…'
-      : has('Page written') ? 'Making pictures for your site…'
-      : has('Agent started building your website') || has('Calling the model') ? 'Agent is building…'
-      : 'Preparing the agent…';
+    return has('Pictures made for your site') ? { step: 4, label: 'Putting it together…' }
+      : has('Page written') ? { step: 3, label: 'Making the pictures…' }
+      : has('Agent started building your website') || has('Calling the model') ? { step: 2, label: 'Writing your website…' }
+      : { step: 1, label: 'Reading your answers…' };
+  }
+  // The one progress visual: a page that draws itself in, top to bottom, as
+  // the agent works. Each part belongs to a stage — the bar to reading the
+  // answers, the words to writing, the picture to making pictures, the button
+  // to putting it together — and is inked once its stage is behind it.
+  // Each part: its class, the stage that draws it, and where it falls among
+  // that stage's parts, which is what staggers the strokes within a stage.
+  const PAGE_PARTS = [['name', 1, 0], ['menu', 1, 1], ['head', 2, 0], ['line', 2, 1], ['line build-short', 2, 2], ['picture', 3, 0], ['button', 4, 0]];
+  function partState(stage, step) {
+    return stage < step ? 'is-drawn' : stage === step ? 'is-drawing' : '';
+  }
+  function buildPage(step, label, settled = '') {
+    const parts = PAGE_PARTS.map(([name, stage, within], order) =>
+      `<span class="build-part build-${name} ${partState(stage, step)}" data-stage="${stage}" style="--i:${within};--order:${order}"></span>`);
+    return `<div class="build-page${settled ? ` ${settled}` : ''}" role="progressbar" aria-label="Website build progress" aria-valuemin="0" aria-valuemax="4" aria-valuenow="${Math.min(step - 1, 4)}" aria-valuetext="${escape(label)}"><span class="build-sheet" aria-hidden="true"><span class="build-row">${parts[0]}${parts[1]}</span>${parts.slice(2).join('')}</span></div>`;
+  }
+  // A new stage repaints the drawing where it stands rather than replacing the
+  // screen, so the part being drawn carries on instead of starting over.
+  function updateBuild(stage) {
+    const page = screen.querySelector('.build-page');
+    const status = screen.querySelector('.build-status');
+    if (!page || !status) return false;
+    page.querySelectorAll('.build-part').forEach(part => {
+      const next = partState(Number(part.dataset.stage), stage.step);
+      part.classList.toggle('is-drawn', next === 'is-drawn');
+      part.classList.toggle('is-drawing', next === 'is-drawing');
+    });
+    page.setAttribute('aria-valuenow', String(Math.min(stage.step - 1, 4)));
+    page.setAttribute('aria-valuetext', stage.label);
+    if (status.textContent !== stage.label) status.textContent = stage.label;
+    return true;
   }
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const mark = '<svg class="onboarding-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" stroke="none" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg>';
@@ -112,7 +146,7 @@ const ENABLED = true;
     const key = `waiting:${title}`;
     if (rendered === key) return;
     rendered = key;
-    screen.innerHTML = shell(`<div class="onboarding-content onboarding-loading"><div class="build-emblem" aria-hidden="true">${mark}</div><h1 tabindex="-1">${title}</h1><p class="onboarding-hint">${detail}</p>${retry ? '<button class="onboarding-primary" data-onboarding-action="reload">Reload</button>' : ''}<p class="onboarding-error" role="alert" hidden></p></div>`);
+    screen.innerHTML = shell(`<div class="onboarding-content onboarding-loading"><h1 tabindex="-1">${title}</h1><p class="onboarding-hint">${detail}</p>${retry ? '<button class="onboarding-primary" data-onboarding-action="reload">Reload</button>' : ''}<p class="onboarding-error" role="alert" hidden></p></div>`);
   }
   function value() {
     const input = screen.querySelector('[data-answer]');
@@ -215,24 +249,33 @@ const ENABLED = true;
     const events = progressEvents(draft);
     const key = `${draft.id}:${draft.status}:${events.length}:${trace?.latest?.status ?? ''}:${trace?.latest?.updatedAt ?? ''}:${site?._id ?? ''}:${site?.publishedUrl ?? ''}:${site?.status ?? ''}:${state.isFree}`;
     if (rendered === key) return;
+    const building = !done && !failed;
+    const stage = buildStage(draft, events);
+    // Still building, and this build is already on screen: move the drawing on.
+    if (building && screen.querySelector(`.onboarding-loading[data-build-live="${draft.id}"]`) && updateBuild(stage)) {
+      rendered = key;
+      return;
+    }
     rendered = key;
     const title = live ? 'Your website is published.' : done ? 'Your website is ready.' : failed ? 'Let’s try that again.' : 'Your idea is taking shape.';
     const detail = live ? 'It is on the web at this address, and every change you make lands there.'
       : done ? (site && !state.isFree ? 'Publish it and Forge gives it an address of its own.' : 'Your first version is saved. Make it yours from your dashboard.')
-      : failed ? draft.error : 'Forge is creating your website from your answers. You can return to this screen at any time.';
-    const progress = liveProgress(draft, events);
+      : failed ? draft.error : 'This takes a few minutes. You can close Forge and come back.';
     // Billing is the way on when the build stopped for credits or a plan;
     // otherwise the answers are, so that is what the failed screen offers.
     const aboutBilling = failed && /credit|plan|limit/i.test(draft.error ?? '');
-    const log = events.map((event, index) => {
-      const current = !done && !failed && index === events.length - 1;
-      return `<div class="onboarding-milestone${current ? ' is-current' : ''}">${current ? '<span class="onboarding-step-mark" aria-hidden="true"></span>' : '<svg aria-hidden="true"><use href="#check"/></svg>'}<span>${escape(event.label)}</span></div>`;
-    }).join('');
-    screen.innerHTML = shell(`<div class="onboarding-content onboarding-loading ${done || failed ? 'is-settled' : ''}">
-      <div class="build-emblem" aria-hidden="true">${mark}</div><h1 tabindex="-1">${title}</h1><p class="onboarding-hint">${escape(detail)}</p>
-      ${done || !events.length ? '' : `<div class="onboarding-build-log" role="log" aria-live="polite" aria-label="Website build progress">${log}</div>`}
-      ${!done && !failed ? `<p class="onboarding-live" role="status"><span class="onboarding-spinner" aria-hidden="true"></span>${progress}</p>
-      <button type="button" class="onboarding-exit onboarding-quiet onboarding-cancel" data-onboarding-action="cancel">Cancel</button>` : ''}
+    // A finished build is the whole page inked, and a failed one stops where it
+    // got to. The page inks itself in once, when this screen watched the build
+    // finish; a later redraw of the finished screen shows it already whole.
+    const arriving = done && Boolean(screen.querySelector('.onboarding-loading[data-build-live]'));
+    const page = done ? buildPage(5, 'Build finished', `is-done${arriving ? ' is-arriving' : ''}`)
+      : failed ? buildPage(stage.step, 'Build stopped', 'is-failed')
+      : buildPage(stage.step, stage.label);
+    screen.innerHTML = shell(`<div class="onboarding-content onboarding-loading"${building ? ` data-build-live="${escape(draft.id)}"` : ''}>
+      ${page}<h1 tabindex="-1">${title}</h1>
+      ${building ? `<p class="build-status" role="status">${escape(stage.label)}</p>` : ''}
+      <p class="onboarding-hint${building ? ' build-note' : ''}">${escape(detail)}</p>
+      ${building ? '<button type="button" class="onboarding-exit onboarding-quiet onboarding-cancel" data-onboarding-action="cancel">Cancel</button>' : ''}
       <p class="onboarding-connection" role="status" ${offline ? '' : 'hidden'}>Connection lost. Reconnecting to live progress…</p>
       ${done ? handoff(site) : failed ? `<button type="button" class="onboarding-primary" data-onboarding-action="retry">Try building again</button>
         <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="${aboutBilling ? 'billing' : 'edit'}">${aboutBilling ? 'Manage billing' : 'Edit my answers'}</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="exit">Back to dashboard</button></div>` : ''}
