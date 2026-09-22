@@ -99,11 +99,15 @@ describe("only the sanctioned files steer the agent", () => {
     }
   });
 
-  test("forgeMd.ts holds the rebuild rule and no other direction", () => {
+  test("forgeMd.ts holds what a site is made of, and stays that short", () => {
     const forge = read("forgeMd.ts");
+    // What a site is made of: a rebuild is a new design, and a link into the
+    // site is a page. Both are structure, which is this file's to say; how any
+    // of it looks is the design files'.
     expect(forge).toMatch(/Rebuild means a different design/);
-    // It carried the whole design skill once. If it grows back past a rule,
-    // design has two homes again and they will disagree.
+    expect(forge).toMatch(/Every link into the site is its own page/);
+    // It carried the whole design skill once. If it grows back past a few
+    // rules, design has two homes again and they will disagree.
     const text = forge.slice(forge.indexOf('FORGE_MD = "'));
     expect(text.length).toBeLessThan(1500);
   });
