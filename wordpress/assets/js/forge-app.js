@@ -1220,17 +1220,17 @@ if (forge?.sites && siteList && thread) {
         if (built && summary?.plan.publicAddress) {
           items.push(site.status === 'published'
             ? menuItem('Unpublish', () => {
-              if (confirm('Take this site offline? The address is kept for when you publish again.')) forge.sites.unpublish(site._id).catch(error => showNote(sitesError, messageOf(error)));
+              if (confirm('Take this site offline? The address is kept for when you publish again.')) forge.sites.unpublish(site._id).catch(reportError);
             })
-            : menuItem('Publish', () => forge.sites.publish(site._id).catch(error => showNote(sitesError, messageOf(error)))));
+            : menuItem('Publish', () => forge.sites.publish(site._id).catch(reportError)));
         }
         items.push(
           menuItem('Rename', () => {
             const next = prompt('Rename site', site.name)?.trim();
-            if (next && next !== site.name) forge.sites.rename(site._id, next).catch(error => showNote(sitesError, messageOf(error)));
+            if (next && next !== site.name) forge.sites.rename(site._id, next).catch(reportError);
           }),
           menuItem('Delete', () => {
-            if (confirm(`Delete "${site.name}" and its build thread?`)) forge.sites.remove(site._id).catch(error => showNote(sitesError, messageOf(error)));
+            if (confirm(`Delete "${site.name}" and its build thread?`)) forge.sites.remove(site._id).catch(reportError);
           })
         );
         menu.replaceChildren(...items);
@@ -1258,6 +1258,7 @@ if (forge?.sites && siteList && thread) {
       // request that was already in flight when that started being true.
       // Older builds appended the live address; that line is the view section
       // and does not belong above the prompt.
+      if (message.status === 'failed') return [];
       const said = (message.body || (message.status === 'pending' ? 'Working…' : ''))
         .replace(/\s*It's published at \S+\.?$/, '')
         .trim();
@@ -1317,10 +1318,7 @@ if (forge?.sites && siteList && thread) {
     begin.then(() => {
       closeMenu();
       if (!window.ForgeOnboarding?.enabled) promptInput?.focus({preventScroll:true});
-    }).catch(error => {
-      reportError(error);
-      showNote(sitesError, messageOf(error));
-    });
+    }).catch(reportError);
   });
   function mayRebuild(site) {
     if (!summary?.plan.key || summary.plan.key === 'free') return false;
@@ -1334,10 +1332,7 @@ if (forge?.sites && siteList && thread) {
       : forge.onboarding.rebuild(site?._id);
     return Promise.resolve(begin).then(() => {
       closeMenu();
-    }).catch(error => {
-      reportError(error);
-      showNote(sitesError, messageOf(error));
-    });
+    }).catch(reportError);
   }
   rebuildSite?.addEventListener('click', () => {
     rebuildSite.disabled = true;
@@ -1375,7 +1370,6 @@ if (forge?.sites && siteList && thread) {
     } catch (error) {
       promptInput.value = body;
       reportError(error);
-      showNote(composerError, messageOf(error));
     }
   }
   promptInput?.addEventListener('keydown', event => {
@@ -2131,7 +2125,7 @@ websitePreviewButton?.addEventListener('click', () => {
 previewStartButton?.addEventListener('click', () => {
   closeMenu();
   if (window.ForgeOnboarding?.enabled) {
-    window.ForgeOnboarding.start().catch(error => showNote(composerError, messageOf(error)));
+    window.ForgeOnboarding.start().catch(reportError);
     return;
   }
   promptInput?.focus({preventScroll: true});

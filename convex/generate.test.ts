@@ -215,11 +215,13 @@ describe("generate.run", () => {
     await expect(
       member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" }),
     ).rejects.toThrow("answered 502");
-    const messages = await member.as.query(api.messages.list, { conversationId });
-    expect(messages.map((m) => [m.role, m.status ?? null])).toEqual([["user", null], ["assistant", "failed"]]);
-    expect(messages[1].body).toContain("answered 502");
-    expect(messages[1].body).toContain("[key]");
-    expect(messages[1].body).not.toContain(KEY);
+    const visible = await member.as.query(api.messages.list, { conversationId });
+    expect(visible.map((m) => m.role)).toEqual(["user"]);
+    const failed = (await t.run((ctx) => ctx.db.query("messages").collect())).find((m) => m.role === "assistant");
+    expect(failed).toMatchObject({ status: "failed" });
+    expect(failed!.body).toContain("answered 502");
+    expect(failed!.body).toContain("[key]");
+    expect(failed!.body).not.toContain(KEY);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       credits: OPENING,
       reserved: 0,
@@ -311,8 +313,9 @@ describe("generate.run", () => {
       member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" }),
     ).rejects.toThrow("isn't set up");
     expect(calls).toHaveLength(0);
-    const messages = await member.as.query(api.messages.list, { conversationId });
-    expect(messages[1]).toMatchObject({ role: "assistant", status: "failed" });
+    expect((await member.as.query(api.messages.list, { conversationId })).map((m) => m.role)).toEqual(["user"]);
+    const failed = (await t.run((ctx) => ctx.db.query("messages").collect())).find((m) => m.role === "assistant");
+    expect(failed).toMatchObject({ status: "failed" });
     expect((await member.as.query(api.billing.summary, {}))!.available).toBe(OPENING);
   });
 
