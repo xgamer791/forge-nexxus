@@ -1098,29 +1098,6 @@ function liveUrl(site = activeSite) {
   const join = site.publishedUrl.includes('?') ? '&' : '?';
   return `${site.publishedUrl}${join}v=${encodeURIComponent(String(stamp))}`;
 }
-// A real link, pressed for them: the one way to open a tab that no popup
-// blocker argues with, because it is what the press already was.
-function openInNewTab(url) {
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.target = '_blank';
-  anchor.rel = 'noopener';
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-}
-// The latest build of a site, asked for once.
-function fetchSiteHtml(site, callback) {
-  let stop = null;
-  let answered = false;
-  stop = forge.sites.currentHtml(site._id, page => {
-    if (answered) return;
-    answered = true;
-    stop?.();
-    callback(page ?? null);
-  });
-  if (answered) stop?.();
-}
 // The site as files, asked for once: one per page, links between them already
 // made relative, or null when the plan does not include the code.
 function fetchSiteFiles(site, callback) {
@@ -1980,13 +1957,40 @@ if (forge?.sites && previewScreen) {
   const empty = previewScreen.querySelector('.preview-empty');
   const status = previewScreen.querySelector('[data-preview-status]');
   const link = previewScreen.querySelector('[data-preview-link]');
+  const pageStrip = previewScreen.querySelector('[data-preview-pages]');
   const publishButton = previewScreen.querySelector('.preview-publish');
   const unpublishButton = previewScreen.querySelector('.preview-unpublish');
   const downloadButton = previewScreen.querySelector('.preview-download');
   const error = previewScreen.querySelector('.overlay-error');
   let stopHtml = null;
-  let shownSiteId = null;
+  let shownKey = null;
   let current = null;
+  // Which page of the site the frame is showing. The server decides what a
+  // site's pages are; this is only which of them was asked for, and it goes
+  // back to the home page whenever a different site is opened.
+  let shownPath = '/';
+  // A site's pages, as the member's own titles. One page lists nothing —
+  // there is nowhere else to go, so the strip is not there at all.
+  function renderPages() {
+    // The WordPress theme carries its own copy of this markup, so a template
+    // that has not been copied across yet simply has no strip.
+    if (!pageStrip) return;
+    const pages = current?.pages ?? [];
+    pageStrip.hidden = pages.length < 2;
+    if (pages.length < 2) { pageStrip.replaceChildren(); return; }
+    const open = current?.path ?? shownPath;
+    pageStrip.replaceChildren(...pages.map(page => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'preview-page';
+      button.textContent = page.title || page.path;
+      button.dataset.previewPage = page.path;
+      if (page.path === open) button.setAttribute('aria-current', 'page');
+      return button;
+    }));
+    const showing = pages.find(page => page.path === open);
+    frame.title = showing ? `Your website: ${showing.title || showing.path}` : 'Your website';
+  }
   function renderPreview() {
     const site = activeSite;
     const built = Boolean(site?.currentVersionId);
@@ -2001,7 +2005,8 @@ if (forge?.sites && previewScreen) {
     unpublishButton.hidden = site?.status !== 'published';
     downloadButton.hidden = !(built && current && summary?.plan.codeDownload);
     link.hidden = !site?.publishedUrl;
-    if (site?.publishedUrl) { link.href = site.publishedUrl; link.textContent = site.publishedUrl.replace(/^https?:\/\//, ''); }
+    if (site?.publishedUrl) { link.href = liveUrl() ?? site.publishedUrl; link.textContent = site.publishedUrl.replace(/^https?:\/\//, ''); }
+    renderPages();
     status.textContent = !built
       ? ''
       : !addressable
@@ -2012,46 +2017,48 @@ if (forge?.sites && previewScreen) {
   }
   function watch() {
     const siteId = activeSite?._id ?? null;
-    if (siteId === shownSiteId) return;
+    if (siteId !== (shownKey?.siteId ?? null)) shownPath = '/';
+    const key = siteId ? `${siteId}:${shownPath}` : null;
+    if (key === (shownKey?.key ?? null)) return;
     stopHtml?.();
     stopHtml = null;
-    shownSiteId = siteId;
+    shownKey = siteId ? { siteId, key } : null;
     current = null;
     frame.removeAttribute('srcdoc');
-    if (!siteId) return;
+    if (!siteId) { renderPreview(); return; }
     stopHtml = forge.sites.currentHtml(siteId, next => {
       current = next ?? null;
+      // A build that landed while this was open can rename or drop the page
+      // being shown; the server says which one it served, so the strip marks
+      // what is actually in the frame.
+      if (current?.path) shownPath = current.path;
       if (current) frame.srcdoc = current.html;
       renderPreview();
-    });
+    }, shownPath === '/' ? undefined : shownPath);
   }
-  // Preview / View website always opens in the member's browser — never the
-  // in-app frame. Live address when published; otherwise the latest build as a
-  // blob tab. Publish / unpublish stay on the overlay for when they open it.
+  pageStrip.addEventListener('click', event => {
+    const button = event.target.closest('[data-preview-page]');
+    if (!button) return;
+    const path = button.dataset.previewPage;
+    if (!path || path === shownPath) return;
+    shownPath = path;
+    watch();
+  });
+  // Preview opens the site here, in the app, with every page it was built
+  // with. It used to hand the member their address in a new tab instead, on
+  // the grounds that the real site is the better preview — true when the
+  // address answers, and no help at all when it does not, or before a site is
+  // published. Either way it showed one page: a site built in four looked
+  // like a site of one. So this opens the frame, the strip lists the pages,
+  // and the address is a link inside for the real thing.
   openPreview = () => {
     if (!window.ForgeOnboarding?.canPreview()) return;
-    if (!previewScreen.hidden) closeMenu();
+    if (!previewScreen.hidden) { closeMenu(); return; }
     closePopovers();
-    const live = liveUrl();
-    if (live) {
-      openInNewTab(live);
-      return;
-    }
-    const site = activeSite;
-    if (site?.publishedUrl) {
-      const stamp = site.currentVersionId || site.publishedVersionId || site.publishedAt || Date.now();
-      const join = site.publishedUrl.includes("?") ? "&" : "?";
-      openInNewTab(site.publishedUrl + join + "v=" + encodeURIComponent(String(stamp)));
-      return;
-    }
-    if (!site?.currentVersionId) return;
-    fetchSiteHtml(site, (page) => {
-      const html = typeof page === "string" ? page : page?.html;
-      if (!html) return;
-      const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-      openInNewTab(url);
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    });
+    if (!activeSite?.currentVersionId) return;
+    showOverlay(previewScreen);
+    watch();
+    renderPreview();
   };
 
   previewScreen.querySelector('.preview-back').addEventListener('click', closeMenu);
@@ -2103,12 +2110,9 @@ const previewStartButton = document.querySelector('.preview-start');
 // that is. Its name and role say which, so the tab is never a surprise to
 // someone who cannot see it open.
 function describePreviewControls() {
-  const live = Boolean(liveUrl());
-  const name = 'Preview: open your website in a new tab';
   if (websitePreviewButton) {
-    websitePreviewButton.setAttribute('aria-label', live ? name : 'Preview website');
-    if (live) websitePreviewButton.removeAttribute('aria-haspopup');
-    else websitePreviewButton.setAttribute('aria-haspopup', 'dialog');
+    websitePreviewButton.setAttribute('aria-label', 'Preview website');
+    websitePreviewButton.setAttribute('aria-haspopup', 'dialog');
   }
 }
 document.addEventListener('forge:active-site', describePreviewControls);

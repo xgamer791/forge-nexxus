@@ -8,8 +8,8 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
-<meta name="app-version" content="0983b0c5838e5af249d282409dd3a9be731df4fe">
-<meta name="app-build" content="32">
+<meta name="app-version" content="d9906b233ce3eaba9242b10e7b2e339b0886d5f9">
+<meta name="app-build" content="33">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">
@@ -30,7 +30,7 @@ defined( 'ABSPATH' ) || exit;
 <main class="app" hidden inert>
 <header class="chrome">
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
-<span class="build-stamp" data-build-stamp aria-label="Version 32">32</span>
+<span class="build-stamp" data-build-stamp aria-label="Version 33">33</span>
 <button class="globe-button" type="button" aria-label="Domains" data-open="address" aria-haspopup="dialog"><svg><use href="#globe"/></svg></button>
 <button class="website-preview-button" type="button" aria-label="Preview website" aria-haspopup="dialog" aria-expanded="false"><svg><use href="#preview-eye"/></svg></button>
 </header>
@@ -263,7 +263,8 @@ defined( 'ABSPATH' ) || exit;
 </section>
 <section class="overlay preview" data-back=".preview-back" role="dialog" aria-modal="true" aria-labelledby="preview-title" hidden>
 <header class="appearance-header"><button class="appearance-back preview-back" type="button" aria-label="Back to the thread"><svg><use href="#arrow-left"/></svg></button><h2 id="preview-title" data-site-name>Preview</h2></header>
-<div class="preview-frame"><iframe class="preview-iframe" title="Site preview" sandbox="" referrerpolicy="no-referrer"></iframe><p class="preview-empty" hidden>Nothing built yet. Describe your site and Forge will make a first version.</p></div>
+<nav class="preview-pages" data-preview-pages aria-label="Pages in this site" hidden></nav>
+<div class="preview-frame"><iframe class="preview-iframe" title="Your website" data-preview-frame sandbox="" referrerpolicy="no-referrer"></iframe><p class="preview-empty" hidden>Nothing built yet. Describe your site and Forge will make a first version.</p></div>
 <footer class="preview-footer">
 <p class="preview-status" data-preview-status></p>
 <a class="preview-link" data-preview-link href="#" target="_blank" rel="noopener" hidden></a>

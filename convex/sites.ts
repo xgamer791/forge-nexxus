@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { requireMemberId, requireOwnedSite } from "./access";
 import { currentPlan } from "./billing";
 import { PLANS } from "./plans";
-import { composePage, diskLinks, fileNameFor } from "./pages";
+import { composePage, diskLinks, fileNameFor, hasPages, normalizePath } from "./pages";
 import { deleteConversation } from "./conversations";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -148,22 +148,34 @@ export const hosting = query({
 // The latest build of a site, for the preview. Null rather than an error for
 // anyone but the owner, since this backs a subscription.
 export const currentHtml = query({
-  args: { siteId: v.id("sites") },
-  handler: async (ctx, { siteId }) => {
+  args: { siteId: v.id("sites"), path: v.optional(v.string()) },
+  handler: async (ctx, { siteId, path }) => {
     const userId = await getAuthUserId(ctx);
     const site = await ctx.db.get(siteId);
     if (!userId || !site || site.userId !== userId || !site.currentVersionId) return null;
     if ((await currentPlan(ctx, userId)).key === "free") return null;
     const version = await ctx.db.get(site.currentVersionId);
     if (!version) return null;
-    // The home page. Preview opens the site at its own address, where its nav
-    // moves between pages; this is what stands in when there is no address
-    // yet, and it is the page a visitor lands on.
-    const home = composePage(version, "/");
-    if (home === null) return null;
+    // One page of the site, and the list of the pages there are to ask for.
+    // Without that list the app can only ever show a home page, so a site the
+    // agent built in four pages looks to its owner like a site of one -- and
+    // the address, where the nav does move between pages, is not always
+    // reachable. A site from before pages existed is one document and lists
+    // nothing: there is nothing to move between.
+    const pages = hasPages(version)
+      ? version.pages.map((page) => ({ path: normalizePath(page.path) ?? page.path, title: page.title }))
+      : [];
+    const wanted = normalizePath(path ?? "/") ?? "/";
+    // An address this site does not have -- a page renamed by the build that
+    // landed while it was open -- falls back to the page every site has.
+    const shown = pages.length === 0 || pages.some((page) => page.path === wanted) ? wanted : "/";
+    const body = composePage(version, shown);
+    if (body === null) return null;
     return {
       versionId: version._id,
-      html: await renderedHtml(ctx, site, home),
+      path: shown,
+      pages,
+      html: await renderedHtml(ctx, site, body),
       summary: version.summary,
       createdAt: version.createdAt,
       published: site.publishedVersionId === version._id,

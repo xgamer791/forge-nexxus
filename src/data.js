@@ -401,8 +401,10 @@ export function createForgeData({
       // credits, calls the model, and answers in the thread.
       generate: (conversationId, prompt) =>
         client.action(api.generate.run, { conversationId, prompt }),
-      currentHtml: (siteId, callback) =>
-        client.onUpdate(api.sites.currentHtml, { siteId }, callback),
+      // One page of the current build, live. `path` picks which; unset is the
+      // home page, and every reply carries the list of pages there are.
+      currentHtml: (siteId, callback, path) =>
+        client.onUpdate(api.sites.currentHtml, path ? { siteId, path } : { siteId }, callback),
       // The site as files to take away, or null when the plan does not include
       // the code. One file per page, links between them made relative.
       exportPages: (siteId) => client.query(api.sites.exportPages, { siteId }),
