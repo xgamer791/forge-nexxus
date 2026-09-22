@@ -12,6 +12,7 @@ import { BUILD_IMAGE_LIMIT, builtSite, callProvider, chatRoute, describe, parseR
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { fedOnly } from "./fedOnly";
+import { inventSample, sampleRebuilds } from "./sampleBusiness";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
@@ -321,7 +322,8 @@ export const rebuild = mutation({
       const conversationId = await ctx.db.insert("conversations", { userId, title: brief.answers[0], updatedAt: now });
       siteId = await ctx.db.insert("sites", { userId, conversationId, name: brief.answers[0], status: "draft", createdAt: now, updatedAt: now });
     }
-    await queueOnboardingBuild(ctx, brief._id, brief, siteId, "Rebuilding from your answers", "rebuild");
+    // sample-business block: the answers are about to be replaced, so the log says so.
+    await queueOnboardingBuild(ctx, brief._id, brief, siteId, sampleRebuilds() ? "Rebuilding as a new San Antonio business" : "Rebuilding from your answers", "rebuild");
     return brief._id;
   },
 });
@@ -578,6 +580,24 @@ async function writePage(
   throw shortfall ?? new Error("The agent did not return a website");
 }
 
+// sample-business block: a rebuild's invented answers replace the old ones,
+// and the site and its thread take the new name. A stale attempt writes nothing.
+export const adoptSample = internalMutation({
+  args: { id: v.id("siteOnboarding"), attempt: v.number(), answers: v.array(v.string()), label: v.string() },
+  handler: async (ctx, { id, attempt, answers, label }) => {
+    const row = await ctx.db.get(id);
+    if (!row || row.attempt !== attempt || row.status !== "queued") return false;
+    await ctx.db.patch(id, { answers, strategy: undefined, strategyRevision: undefined, strategyAnswers: undefined,
+      step: FINAL_STEP, revision: row.revision + 1, updatedAt: Date.now(), events: [...row.events, { label, at: Date.now() }] });
+    const site = row.siteId ? await ctx.db.get(row.siteId) : null;
+    if (site) {
+      await ctx.db.patch(site._id, { name: answers[0] });
+      await ctx.db.patch(site.conversationId, { title: answers[0] });
+    }
+    return true;
+  },
+});
+
 export const build = internalAction({
   args: { id: v.id("siteOnboarding"), attempt: v.number() },
   handler: async (ctx, { id, attempt }): Promise<void> => {
@@ -614,9 +634,22 @@ export const build = internalAction({
           status: "started",
       });
       const trace = providerTrace(ctx, runId, row.userId);
+      // sample-business block: a rebuild is built from a new San Antonio
+      // business, invented now and saved over the old answers.
+      let answers = row.answers;
+      if (row.discardedDesignHashes !== undefined && sampleRebuilds()) {
+        await trace.note({ phase: "sample", label: "Inventing a San Antonio business for this rebuild" });
+        const sample = await inventSample(row.answers[0] ?? "");
+        answers = sample.answers;
+        await trace.note({ phase: "sample", label: `Rebuilding as ${answers[0]}: ${sample.draw.trade} in ${sample.draw.neighbourhood}, ${sample.draw.feel.toLowerCase()}` });
+        if (!await ctx.runMutation(internal.onboarding.adoptSample, { id, attempt, answers, label: `Answers replaced with ${answers[0]} in ${sample.draw.neighbourhood}` })) {
+          await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
+          return;
+        }
+      }
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
         url: await ctx.storage.getUrl(asset.storageId), text: asset.type.startsWith("text/") ? (await (await ctx.storage.get(asset.storageId))?.text())?.slice(0, 12000) : undefined })));
-      const contents = briefFile(row.answers, row.strategy ?? "", assets, !fedOnly());
+      const contents = briefFile(answers, answers === row.answers ? row.strategy ?? "" : "", assets, !fedOnly());
       const storageId = await ctx.storage.store(new Blob([contents], { type: "text/markdown" }));
       // Read the persisted file, not a client prompt, as the agent's source.
       const file = await ctx.storage.get(storageId);

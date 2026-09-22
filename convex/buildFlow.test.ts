@@ -908,3 +908,59 @@ describe("with agent direction off, the agent is sent FED and the answers alone"
     expect(JSON.stringify(messages)).not.toContain("currently looks like this");
   });
 });
+
+// sample-business block: every rebuild is a new San Antonio business.
+describe("a rebuild while testing is a new San Antonio business", () => {
+  beforeEach(() => { delete process.env.REBUILD_SAMPLE; delete process.env.AGENT_DIRECTION; });
+  afterEach(() => { process.env.REBUILD_SAMPLE = "off"; process.env.AGENT_DIRECTION = "on"; });
+
+  test("the answers are replaced, the site is renamed, and the agent builds from the new ones", async () => {
+    const t = fresh();
+    const member = await createBuilder(t, "m@example.com");
+    const asked: string[] = [];
+    const calls: Call[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      calls.push({ url, body });
+      if (/generateContent/.test(url)) {
+        return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: PNG } }] } }] });
+      }
+      const last = body.messages.at(-1).content as string;
+      if (/Invent one small, independent business/.test(last)) {
+        asked.push(last);
+        return json({ choices: [{ message: { content: JSON.stringify({
+          name: "Lupita's Paletas", offer: "Fruit paletas made each morning.", audience: "Families in Southtown, San Antonio",
+          goal: "Buy something", difference: "Mango con chile.", features: ["Sell products", "Made up"],
+          brand: "", references: "", content: "1 S Alamo St, San Antonio, TX. (210) 555-0100.", catalogue: "Mango paleta — $4",
+        }) } }] });
+      }
+      return built(/Lupita/.test(JSON.stringify(body.messages)) ? "Lupita's Paletas" : "Harbor Roasters");
+    }));
+    const id = await answerEverything(member);
+    await member.as.mutation(api.onboarding.submit, { id });
+    await drain(t);
+    await member.as.mutation(api.onboarding.rebuild, {});
+    await drain(t);
+
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("San Antonio, Texas");
+    expect(asked[0]).toContain('Not called "Harbor Roasters"');
+    const row = (await t.run((ctx) => ctx.db.get(id)))!;
+    expect(row.error).toBeUndefined();
+    expect(row.status).toBe("complete");
+    expect(row.answers[0]).toBe("Lupita's Paletas");
+    expect(row.answers[5]).toBe("Sell products");
+    expect(row.events.map((event) => event.label).slice(0, 2)).toEqual([
+      "Rebuilding as a new San Antonio business",
+      expect.stringMatching(/^Answers replaced with Lupita's Paletas in /),
+    ]);
+    expect(QUESTIONS[6].options).toContain(row.answers[6]);
+    const site = (await t.run((ctx) => ctx.db.get(row.siteId!)))!;
+    expect(site.name).toBe("Lupita's Paletas");
+
+    const build = calls.filter((call) => /chat\/completions/.test(call.url)).at(-1)!.body.messages;
+    expect(build[0]).toEqual({ role: "system", content: FED });
+    expect(build.at(-1).content).toContain("Mango paleta — $4");
+    expect(build.at(-1).content).not.toContain("Harbor Roasters");
+  });
+});

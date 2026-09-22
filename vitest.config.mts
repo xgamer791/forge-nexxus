@@ -5,7 +5,8 @@ export default defineConfig({
     environment: "edge-runtime",
     server: { deps: { inline: ["convex-test"] } },
     // The suites describe the agent with its full direction; the fed-only
-    // default is covered in convex/fedOnly.test.ts, which clears this.
-    env: { AGENT_DIRECTION: "on" },
+    // default and the sample rebuild are covered at the end of
+    // convex/buildFlow.test.ts, which clears these.
+    env: { AGENT_DIRECTION: "on", REBUILD_SAMPLE: "off" },
   },
 });
