@@ -74,6 +74,7 @@ afterEach(() => {
   delete process.env.AI_API_KEY;
   delete process.env.AI_MODEL;
   delete process.env.AI_MODEL_LABEL;
+  delete process.env.AI_REASONING_EFFORT;
 });
 
 describe("parseReply", () => {

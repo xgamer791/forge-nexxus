@@ -93,6 +93,7 @@ afterEach(() => {
   delete process.env.AI_BASE_URL;
   delete process.env.AI_API_KEY;
   delete process.env.AI_MODEL;
+  delete process.env.AI_REASONING_EFFORT;
 });
 
 describe("memory", () => {
@@ -215,7 +216,7 @@ describe("reflection", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://ai.example/v1/chat/completions");
-    expect(calls[0].body).toMatchObject({ model: "forge-test", max_tokens: 600 });
+    expect(calls[0].body).toMatchObject({ model: "forge-test", max_tokens: 600, reasoning_effort: "high" });
     const [rules, exchange] = calls[0].body.messages;
     expect(rules.role).toBe("system");
     expect(rules.content).not.toContain(FORGE_MD);

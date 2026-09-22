@@ -14,7 +14,7 @@
 // through the same scrubber the thread uses.
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
-import { chatRoute, describe as scrub } from "./generate";
+import { chatRoute, completionBody, describe as scrub } from "./generate";
 
 // Enough of a reply to tell an answer from a refusal, and never a whole page.
 const PREVIEW = 200;
@@ -54,12 +54,9 @@ export const chat = internalAction({
       response = await fetch(`${route.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${route.apiKey}` },
-        body: JSON.stringify({
-          model: route.model,
-          messages: [{ role: "user", content: prompt ?? "Reply with the exact word: ok" }],
-          temperature: 0.7,
-          max_tokens: maxTokens ?? 200,
-        }),
+        body: JSON.stringify(
+          completionBody(route, [{ role: "user", content: prompt ?? "Reply with the exact word: ok" }], maxTokens ?? 200),
+        ),
       });
       body = await response.text();
     } catch (error) {
