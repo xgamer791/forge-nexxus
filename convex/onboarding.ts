@@ -5,6 +5,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireMemberId } from "./access";
+import { designSource } from "./pages";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import { failOpenRun, openRun, providerTrace } from "./diagnostics";
 import { BUILD_IMAGE_LIMIT, callProvider, chatRoute, describe, parseReply } from "./generate";
@@ -70,7 +71,7 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
     await ctx.db.delete(image._id);
   }
   const versions = await ctx.db.query("siteVersions").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
-  const hashes = await Promise.all(versions.map(version => designHash(version.html)));
+  const hashes = await Promise.all(versions.map(version => designHash(designSource(version))));
   for (const version of versions) await ctx.db.delete(version._id);
   const messages = await ctx.db.query("messages").withIndex("by_conversation", q => q.eq("conversationId", site.conversationId)).collect();
   for (const message of messages) await ctx.db.delete(message._id);

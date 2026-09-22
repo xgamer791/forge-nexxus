@@ -70,13 +70,26 @@ export default defineSchema({
     .index("by_user_updated", ["userId", "updatedAt"])
     .index("by_conversation", ["conversationId"])
     .index("by_slug", ["slug"]),
-  // Every generation produces a complete single-file site. Versions are kept
-  // so a bad edit can be walked back and a published build stays put while
-  // the draft moves on.
+  // Every generation produces a complete site. Versions are kept so a bad edit
+  // can be walked back and a published build stays put while the draft moves
+  // on.
+  //
+  // A site is stored as a shell and its pages: `shell` is what every page
+  // shares -- head, stylesheet, nav, footer -- and each `pages` entry is the
+  // markup for one address. `convex/pages.ts` puts them back together.
+  //
+  // `html` is what a build produced before pages existed: one document, which
+  // is that site's home page and its only one. It stays here, and stays
+  // optional alongside the other two, so every version already published goes
+  // on serving exactly what it served. Nothing is backfilled.
   siteVersions: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
-    html: v.string(),
+    html: v.optional(v.string()),
+    shell: v.optional(v.string()),
+    pages: v.optional(
+      v.array(v.object({ path: v.string(), title: v.string(), body: v.string() })),
+    ),
     summary: v.string(),
     requestKind: v.string(),
     createdAt: v.number(),

@@ -44,21 +44,35 @@ function page(html: string | null) {
 // pointed at it land on the root of this deployment with their own Host. The
 // host is what says which site the visitor asked for.
 const byHost = httpAction(async (ctx, request) => {
-  const host = request.headers.get("host") ?? new URL(request.url).host;
-  return page(await ctx.runQuery(internal.sites.publishedHtmlForHost, { host }));
+  const url = new URL(request.url);
+  const host = request.headers.get("host") ?? url.host;
+  return page(
+    await ctx.runQuery(internal.sites.publishedHtmlForHost, { host, path: url.pathname }),
+  );
 });
 http.route({ path: "/", method: "GET", handler: byHost });
 http.route({ path: "/index.html", method: "GET", handler: byHost });
+// Every other address on a site's own host: `/about`, and anything else the
+// site has a page for. A prefix of `/` is the shortest one there is, and the
+// router tries exact paths first and then prefixes longest-first, so this is
+// reached only for an address nothing above it claimed -- never `/stripe/webhook`,
+// never `/sites/…`, never an auth route. A path this site has no page at gets
+// the same 404 an unpublished site gets.
+http.route({ pathPrefix: "/", method: "GET", handler: byHost });
 
-// Published sites are served from the deployment's own origin at /sites/<slug>.
-// The page is the model's single file; the policy keeps it to markup, styles
-// and fonts, so a stray script in a build can never run on this origin.
+// Published sites are served from the deployment's own origin at
+// /sites/<slug>, and their other pages at /sites/<slug>/<path>. The policy
+// keeps a page to markup, styles and fonts, so a stray script in a build can
+// never run on this origin.
 http.route({
   pathPrefix: "/sites/",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const slug = new URL(request.url).pathname.slice("/sites/".length).split("/")[0];
-    return page(slug ? await ctx.runQuery(internal.sites.publishedHtml, { slug }) : null);
+    const rest = new URL(request.url).pathname.slice("/sites/".length);
+    const cut = rest.indexOf("/");
+    const slug = cut === -1 ? rest : rest.slice(0, cut);
+    const path = cut === -1 ? "/" : rest.slice(cut);
+    return page(slug ? await ctx.runQuery(internal.sites.publishedHtml, { slug, path }) : null);
   }),
 });
 
@@ -72,8 +86,15 @@ http.route({
   path: "/site-by-host",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const host = new URL(request.url).searchParams.get("host") ?? "";
-    return page(host ? await ctx.runQuery(internal.sites.publishedHtmlForHost, { host }) : null);
+    const params = new URL(request.url).searchParams;
+    const host = params.get("host") ?? "";
+    // The address the visitor asked that router for. A router that has not
+    // been updated to send one is asking about the home page, which is the
+    // only page it knew sites to have.
+    const path = params.get("path") ?? "/";
+    return page(
+      host ? await ctx.runQuery(internal.sites.publishedHtmlForHost, { host, path }) : null,
+    );
   }),
 });
 

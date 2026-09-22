@@ -21,6 +21,7 @@ import type * as images from "../images.js";
 import type * as memory from "../memory.js";
 import type * as messages from "../messages.js";
 import type * as onboarding from "../onboarding.js";
+import type * as pages from "../pages.js";
 import type * as plans from "../plans.js";
 import type * as probe from "../probe.js";
 import type * as settings from "../settings.js";
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   memory: typeof memory;
   messages: typeof messages;
   onboarding: typeof onboarding;
+  pages: typeof pages;
   plans: typeof plans;
   probe: typeof probe;
   settings: typeof settings;

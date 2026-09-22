@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { requireMemberId, requireOwnedSite } from "./access";
 import { currentPlan } from "./billing";
 import { PLANS } from "./plans";
+import { composePage } from "./pages";
 import { deleteConversation } from "./conversations";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -155,9 +156,14 @@ export const currentHtml = query({
     if ((await currentPlan(ctx, userId)).key === "free") return null;
     const version = await ctx.db.get(site.currentVersionId);
     if (!version) return null;
+    // The preview shows the home page. A site with more than one gets its own
+    // way of moving between them in the preview; until then this is the page a
+    // visitor lands on, which is the one worth showing.
+    const home = composePage(version, "/");
+    if (home === null) return null;
     return {
       versionId: version._id,
-      html: await renderedHtml(ctx, site, version.html),
+      html: await renderedHtml(ctx, site, home),
       summary: version.summary,
       createdAt: version.createdAt,
       published: site.publishedVersionId === version._id,
@@ -374,24 +380,26 @@ export async function publishBuild(
   return { slug, host: siteHostFor(slug), url: publishedUrlFor(slug) };
 }
 
-// The page a published site is currently serving, or null while it is a draft
-// or its published build has gone.
-async function livePage(ctx: QueryCtx, site: Doc<"sites"> | null) {
+// The page a published site is currently serving at one address, or null while
+// it is a draft, its published build has gone, or it has no page there.
+async function livePage(ctx: QueryCtx, site: Doc<"sites"> | null, path: string) {
   if (!site || site.status !== "published" || !site.publishedVersionId) return null;
   const version = await ctx.db.get(site.publishedVersionId);
-  return version ? await renderedHtml(ctx, site, version.html) : null;
+  if (!version) return null;
+  const html = composePage(version, path);
+  return html === null ? null : await renderedHtml(ctx, site, html);
 }
 
 // What the public route serves. Null for a draft, an unknown slug, or a site
 // whose published build has gone.
 export const publishedHtml = internalQuery({
-  args: { slug: v.string() },
-  handler: async (ctx, { slug }) => {
+  args: { slug: v.string(), path: v.optional(v.string()) },
+  handler: async (ctx, { slug, path }) => {
     const site = await ctx.db
       .query("sites")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
       .first();
-    return await livePage(ctx, site);
+    return await livePage(ctx, site, path ?? "/");
   },
 });
 
@@ -400,8 +408,8 @@ export const publishedHtml = internalQuery({
 // that resolves here is served whether or not verification has caught up —
 // DNS arriving is the proof — but it still has to belong to a published site.
 export const publishedHtmlForHost = internalQuery({
-  args: { host: v.string() },
-  handler: async (ctx, { host }) => {
+  args: { host: v.string(), path: v.optional(v.string()) },
+  handler: async (ctx, { host, path }) => {
     const hostname = host.trim().toLowerCase().split(":")[0].replace(/\.$/, "");
     if (!hostname) return null;
     const domain = sitesDomain();
@@ -412,14 +420,14 @@ export const publishedHtmlForHost = internalQuery({
         .query("sites")
         .withIndex("by_slug", (q) => q.eq("slug", slug))
         .first();
-      return await livePage(ctx, site);
+      return await livePage(ctx, site, path ?? "/");
     }
     const mapped = await ctx.db
       .query("domains")
       .withIndex("by_hostname", (q) => q.eq("hostname", hostname))
       .first();
     if (!mapped || mapped.status === "failed") return null;
-    return await livePage(ctx, await ctx.db.get(mapped.siteId));
+    return await livePage(ctx, await ctx.db.get(mapped.siteId), path ?? "/");
   },
 });
 

@@ -4,7 +4,8 @@
  *
  * Serves a member's published website at <slug>.sites.forgenexxus.com from
  * this Cloudways server, by fetching the page the Convex deployment holds and
- * passing it back. Convex stays the one place a published page lives; this
+ * passing it back. A site may have several pages; the address the visitor
+ * typed is passed on, and the deployment says whether there is a page there. Convex stays the one place a published page lives; this
  * file is only the doorway that a branded hostname can knock on.
  *
  * It answers for the sites domain and for a member's own custom domain, and
@@ -136,6 +137,38 @@ function forge_slug_for(string $host): ?string
     return preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $slug) === 1 ? $slug : null;
 }
 
+/**
+ * The visitor's path with each segment decoded once, so what is compared and
+ * passed on is the address itself rather than one of its spellings. Decoding
+ * first is what stops `%2e%2e` arriving as `..` further down.
+ */
+function forge_decode_path(string $path): string
+{
+    $parts = [];
+    foreach (explode('/', ltrim($path, '/')) as $part) {
+        $parts[] = rawurldecode($part);
+    }
+    return '/' . implode('/', $parts);
+}
+
+/**
+ * The same path, re-encoded a segment at a time so the slashes survive as
+ * slashes and everything else in a segment is escaped. The home page adds
+ * nothing, which keeps a one-page site's upstream address exactly what it was.
+ */
+function forge_encode_path(string $path): string
+{
+    $decoded = forge_decode_path($path);
+    if ($decoded === '/' || $decoded === '/index.html') {
+        return '';
+    }
+    $parts = [];
+    foreach (explode('/', ltrim($decoded, '/')) as $part) {
+        $parts[] = rawurlencode($part);
+    }
+    return '/' . implode('/', $parts);
+}
+
 // ---------------------------------------------------------------------------
 // Asking the deployment.
 // ---------------------------------------------------------------------------
@@ -215,16 +248,28 @@ if (!$known) {
     forge_not_published();
 }
 
-// A published site is one page. Every other path gets the same answer the
-// deployment gives for one: there is nothing at that address.
+// A site has as many pages as it was built with, and the deployment is what
+// knows which. The address the visitor typed is passed on rather than judged
+// here: an address the site has no page at comes back 404 carrying the very
+// page this router would have shown for one.
+//
+// A traversal never becomes a request. The deployment refuses a `..` segment
+// too, but this router is the doorway and the check belongs at the door.
 $path = strtok((string) ($_SERVER['REQUEST_URI'] ?? '/'), '?');
-if ($path !== '/' && $path !== '/index.html' && $path !== '') {
+if ($path === false || $path === '') {
+    $path = '/';
+}
+// Decoded before it is judged, because `%2e%2e` is `..` by the time curl
+// resolves the address and a check on the raw spelling would never see it.
+$decoded = forge_decode_path($path);
+if (strpos($decoded, '..') !== false) {
     forge_not_published();
 }
 
 $url = $slug !== null
-    ? FORGE_CONVEX_ORIGIN . '/sites/' . rawurlencode($slug)
-    : FORGE_CONVEX_ORIGIN . '/site-by-host?host=' . rawurlencode($host);
+    ? FORGE_CONVEX_ORIGIN . '/sites/' . rawurlencode($slug) . forge_encode_path($path)
+    : FORGE_CONVEX_ORIGIN . '/site-by-host?host=' . rawurlencode($host)
+        . '&path=' . rawurlencode($decoded);
 
 $answer = forge_fetch($url);
 
