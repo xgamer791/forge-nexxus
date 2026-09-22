@@ -2043,7 +2043,19 @@ if (forge?.sites && previewScreen) {
   };
 
   previewScreen.querySelector('.preview-back').addEventListener('click', closeMenu);
-
+  // An open preview follows the site it is showing. Both of these went out
+  // with the publish bar by accident: without them a rebuild landing while
+  // the frame is open leaves the old page on screen, and a member who drops
+  // to the free plan keeps looking at a site they can no longer preview.
+  document.addEventListener('forge:active-site', () => {
+    if (previewScreen.hidden) return;
+    watch();
+    renderPreview();
+  });
+  document.addEventListener('forge:billing', () => {
+    if (summary?.plan.key === 'free') { frame.removeAttribute('srcdoc'); current = null; if (!previewScreen.hidden) closeMenu(); }
+    else if (!previewScreen.hidden) renderPreview();
+  });
 }
 
 // Free members keep the dashboard, with the eye visibly disabled.
