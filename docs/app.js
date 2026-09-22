@@ -1309,9 +1309,14 @@ if (forge?.sites && siteList && thread) {
   }
   newSite?.addEventListener('click', () => {
     showNote(sitesError, '');
-    const begin = window.ForgeOnboarding?.enabled
-      ? window.ForgeOnboarding.start()
-      : createSite();
+    // Testing rebuilds, a new site skips the questions: it is built straight
+    // away from a newly invented business.
+    const testing = window.ForgeOnboarding?.testing?.();
+    const begin = testing
+      ? window.ForgeOnboarding.rebuild(undefined, {fresh: true})
+      : window.ForgeOnboarding?.enabled
+        ? window.ForgeOnboarding.start()
+        : createSite();
     begin.then(() => {
       closeMenu();
       if (!window.ForgeOnboarding?.enabled) promptInput?.focus({preventScroll:true});
@@ -1322,7 +1327,10 @@ if (forge?.sites && siteList && thread) {
     return Boolean(site?.currentVersionId) || Boolean(window.ForgeOnboarding?.canRebuild?.());
   }
   function runRebuild(site = activeSite) {
-    if (!confirm('Rebuild this website from scratch? This permanently deletes its pages, history, design plans, generated images and uploaded build files. Your answers and website address stay.')) return Promise.resolve();
+    const warning = window.ForgeOnboarding?.testing?.()
+      ? 'Rebuild this website as a new San Antonio business? This replaces its answers and permanently deletes its pages, history, design plans, generated images and uploaded build files. Its website address stays.'
+      : 'Rebuild this website from scratch? This permanently deletes its pages, history, design plans, generated images and uploaded build files. Your answers and website address stay.';
+    if (!confirm(warning)) return Promise.resolve();
     showNote(sitesError, '');
     const begin = window.ForgeOnboarding?.rebuild
       ? window.ForgeOnboarding.rebuild(site?._id)

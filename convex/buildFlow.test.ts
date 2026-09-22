@@ -909,4 +909,46 @@ describe("a rebuild while testing is a new San Antonio business", () => {
     expect(build.at(-1).content).toContain("Mango paleta — $4");
     expect(build.at(-1).content).not.toContain("Harbor Roasters");
   });
+
+  test("an admin testing skips the questions and rebuilds with no site or answers at all", async () => {
+    const t = fresh();
+    const admin = await createBuilder(t, "lifewirecg@gmail.com");
+    const member = await createBuilder(t, "m@example.com");
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      if (/generateContent/.test(url)) {
+        return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: PNG } }] } }] });
+      }
+      const body = JSON.parse(String(init.body));
+      if (/Invent one small, independent business/.test(body.messages.at(-1).content)) {
+        return json({ choices: [{ message: { content: JSON.stringify({
+          name: "Tamales Doña Rosa", offer: "Pork and bean tamales by the dozen.", audience: "The West Side, San Antonio",
+          goal: "Buy something", difference: "Masa ground daily.", features: ["Sell products"], brand: "", references: "",
+          content: "(210) 555-0142", catalogue: "Dozen pork tamales — $18",
+        }) } }] });
+      }
+      return built(/Rosa/.test(JSON.stringify(body.messages)) ? "Tamales Doña Rosa" : "Other");
+    }));
+
+    // An ordinary member with nothing built still gets the questions.
+    expect(await member.as.query(api.onboarding.state, {})).toMatchObject({ required: true, canRebuild: false, testing: false });
+    await expect(member.as.mutation(api.onboarding.rebuild, { fresh: true })).rejects.toThrow(/questions/);
+
+    // The admin does not, and can rebuild with nothing to rebuild from.
+    expect(await admin.as.query(api.onboarding.state, {})).toMatchObject({ required: false, canRebuild: true, testing: true, draft: null });
+    await admin.as.mutation(api.onboarding.rebuild, {});
+    await drain(t);
+    const sites = await t.run((ctx) => ctx.db.query("sites").withIndex("by_user_updated", (q) => q.eq("userId", admin.userId)).collect());
+    expect(sites).toHaveLength(1);
+    expect(sites[0].name).toBe("Tamales Doña Rosa");
+    expect(sites[0].currentVersionId).toBeDefined();
+
+    // New site is a second invented business, not the questions.
+    await admin.as.mutation(api.onboarding.rebuild, { fresh: true });
+    await drain(t);
+    const after = await t.run((ctx) => ctx.db.query("sites").withIndex("by_user_updated", (q) => q.eq("userId", admin.userId)).collect());
+    expect(after).toHaveLength(2);
+    const state = await admin.as.query(api.onboarding.state, {});
+    expect(state?.required).toBe(false);
+    expect(state?.draft?.status).not.toBe("questions");
+  });
 });

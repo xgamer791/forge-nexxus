@@ -494,10 +494,13 @@ const ENABLED = true;
       if (!ENABLED || !member) return;
       await data.onboarding.start();
     },
-    async rebuild(siteId) {
+    // Whether this account is testing rebuilds: no questions, and every
+    // rebuild is a new invented business.
+    testing: () => Boolean(state?.testing),
+    async rebuild(siteId, options) {
       if (!ENABLED || !member) return;
       try {
-        await data.onboarding.rebuild(siteId);
+        await data.onboarding.rebuild(siteId, options);
       } catch (caught) {
         const missing = notDeployed(caught, 'Rebuild');
         throw missing ? new Error(missing) : caught;

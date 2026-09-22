@@ -12,6 +12,7 @@ import { BUILD_IMAGE_LIMIT, builtSite, callProvider, chatRoute, describe, parseR
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { inventSample, sampleRebuilds } from "./sampleBusiness";
+import { isAdminEmail } from "./admins";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
@@ -135,6 +136,16 @@ async function queueOnboardingBuild(
   await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id, attempt });
 }
 
+// sample-business block: while rebuilds invent their own business, the
+// deployment's admins test without the questions. They stay on the dashboard,
+// Rebuild is always offered, and a rebuild with no brief to rebuild from makes
+// one for the invented business to fill. Every other member is unaffected.
+async function testingRebuilds(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
+  if (!sampleRebuilds()) return false;
+  const user = await ctx.db.get(userId);
+  return isAdminEmail(user?.email);
+}
+
 export const state = query({
   args: {},
   handler: async ctx => {
@@ -147,18 +158,21 @@ export const state = query({
     const hasWebsite = sites.some(site => Boolean(site.currentVersionId));
     const rows = await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", userId)).collect();
     const open = rows.filter(r => !r.dismissed);
-    const row = open.find(r => isActiveBuild(r.status)) ?? open.sort((a, b) => b.createdAt - a.createdAt)[0];
+    const testing = await testingRebuilds(ctx, userId);
+    const newestOpen = open.find(r => isActiveBuild(r.status)) ?? open.sort((a, b) => b.createdAt - a.createdAt)[0];
+    // sample-business block: a tester never lands on the questions.
+    const row = testing && newestOpen?.status === "questions" ? undefined : newestOpen;
     // Never expose the agent's strategy, provider details, or private brief.
     const draft = row ? { id: row._id, siteId: row.siteId, answers: row.answers, step: row.step,
       status: row.status, events: row.events, error: row.error,
       assets: row.assets.map(a => ({ name: a.name, storageId: a.storageId })) } : null;
-    const canRebuild = plan.key !== "free" && !rows.some(r => isActiveBuild(r.status)) && rows.some(briefReadyToBuild);
+    const canRebuild = plan.key !== "free" && !rows.some(r => isActiveBuild(r.status)) && (testing || rows.some(briefReadyToBuild));
     // The questions come first for a paid member with nothing built -- but a
     // build that failed is not a locked door. Someone who stepped away from
     // one reaches their dashboard, and New site brings the saved brief back.
     const newest = [...rows].sort((a, b) => b.updatedAt - a.updatedAt)[0];
     const leftFailedBuild = !row && newest?.status === "failed";
-    return { userId, isFree: plan.key === "free", required: plan.key !== "free" && !hasWebsite && !leftFailedBuild, hasWebsite, draft, canRebuild };
+    return { userId, isFree: plan.key === "free", required: !testing && plan.key !== "free" && !hasWebsite && !leftFailedBuild, hasWebsite, draft, canRebuild, testing };
   },
 });
 
@@ -282,10 +296,13 @@ export const submit = mutation({
 // puts the member back on the building screen. The brief stays; the old
 // page, pictures and thread do not.
 export const rebuild = mutation({
-  args: { siteId: v.optional(v.id("sites")) },
+  // `fresh` (testing only) makes a new site rather than rebuilding one.
+  args: { siteId: v.optional(v.id("sites")), fresh: v.optional(v.boolean()) },
   returns: v.id("siteOnboarding"),
-  handler: async (ctx, { siteId: requestedSiteId }) => {
+  handler: async (ctx, { siteId: requestedSiteId, fresh }) => {
     const userId = await requireMemberId(ctx);
+    const testing = await testingRebuilds(ctx, userId);
+    if (fresh && !testing) throw new ConvexError("Start a new site from its questions");
     const plan = await currentPlan(ctx, userId);
     if (plan.key === "free") throw new ConvexError("Choose a paid plan to rebuild your website. Your answers are saved.");
     const rows = await ctx.db.query("siteOnboarding").withIndex("by_user", q => q.eq("userId", userId)).collect();
@@ -293,13 +310,16 @@ export const rebuild = mutation({
     const sites = await ctx.db.query("sites").withIndex("by_user_updated", q => q.eq("userId", userId)).collect();
     // Old clients may omit the target only when there is no ambiguity. Never
     // choose another site's brief merely because somebody edited it last.
-    if (!requestedSiteId && sites.length > 1) throw new ConvexError("Select the website you want to rebuild, then try again.");
-    const target = requestedSiteId ? sites.find(site => site._id === requestedSiteId) : sites[0];
+    if (!fresh && !requestedSiteId && sites.length > 1) throw new ConvexError("Select the website you want to rebuild, then try again.");
+    const target = fresh ? undefined : requestedSiteId ? sites.find(site => site._id === requestedSiteId) : sites[0];
     if (requestedSiteId && !target) throw new ConvexError("Website not found");
     const ready = rows.filter(briefReadyToBuild).sort((a, b) => b.updatedAt - a.updatedAt);
     const linked = target ? ready.filter(row => row.siteId === target._id) : [];
     const orphaned = ready.filter(row => !row.siteId || !sites.some(site => site._id === row.siteId));
-    const brief = linked[0] ?? (sites.length <= 1 && orphaned.length === 1 ? orphaned[0] : undefined);
+    const found = fresh ? undefined : linked[0] ?? (sites.length <= 1 && orphaned.length === 1 ? orphaned[0] : undefined);
+    // sample-business block: a tester's rebuild needs no answers of its own;
+    // the build invents the business and fills this brief before it starts.
+    const brief = found ?? (testing ? await blankBrief(ctx, userId, target?._id) : undefined);
     if (!brief) throw new ConvexError("Finish your website questions first");
     const now = Date.now();
     for (const other of rows) {
@@ -318,14 +338,24 @@ export const rebuild = mutation({
     let siteId = target?._id;
     if (!siteId) {
       if (plan.maxSites !== null && sites.length >= plan.maxSites) throw new ConvexError("Your plan has reached its website limit");
-      const conversationId = await ctx.db.insert("conversations", { userId, title: brief.answers[0], updatedAt: now });
-      siteId = await ctx.db.insert("sites", { userId, conversationId, name: brief.answers[0], status: "draft", createdAt: now, updatedAt: now });
+      const conversationId = await ctx.db.insert("conversations", { userId, title: brief.answers[0] || "New website", updatedAt: now });
+      siteId = await ctx.db.insert("sites", { userId, conversationId, name: brief.answers[0] || "New website", status: "draft", createdAt: now, updatedAt: now });
     }
     // sample-business block: the answers are about to be replaced, so the log says so.
     await queueOnboardingBuild(ctx, brief._id, brief, siteId, sampleRebuilds() ? "Rebuilding as a new San Antonio business" : "Rebuilding from your answers", "rebuild");
     return brief._id;
   },
 });
+
+// sample-business block: an empty brief for a tester's rebuild, which the
+// build fills with an invented business before anything reads it.
+async function blankBrief(ctx: MutationCtx, userId: Id<"users">, siteId: Id<"sites"> | undefined) {
+  const now = Date.now();
+  const id = await ctx.db.insert("siteOnboarding", { userId, answers: QUESTIONS.map(() => ""),
+    step: FINAL_STEP, revision: 0, assets: [], status: "questions", attempt: 0, dismissed: false,
+    events: [], createdAt: now, updatedAt: now, ...(siteId ? { siteId } : {}) });
+  return (await ctx.db.get(id))!;
+}
 
 async function wipeBuildProgress(
   ctx: MutationCtx,
