@@ -197,16 +197,17 @@ describe("probing the route never carries the key out", () => {
     process.env.AI_MODEL = "some-model";
     process.env.AI_API_KEY = KEY;
     delete process.env.AI_REASONING_EFFORT;
-    const fetched = vi.fn(async () =>
-      new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "ok" } }] }),
-        { status: 200, headers: { "content-type": "application/json" } }),
-    );
+    let sent: unknown;
+    const fetched = vi.fn(async (_url: string, init?: RequestInit) => {
+      sent = init?.body;
+      return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "ok" } }] }),
+        { status: 200, headers: { "content-type": "application/json" } });
+    });
     vi.stubGlobal("fetch", fetched);
 
     const result: any = await t.action(internal.probe.chat, {});
     expect(fetched).toHaveBeenCalled();
-    const init = fetched.mock.calls[0][1] as RequestInit;
-    expect(JSON.parse(String(init.body))).toMatchObject({
+    expect(JSON.parse(String(sent))).toMatchObject({
       model: "some-model",
       reasoning_effort: "high",
       max_tokens: 200,

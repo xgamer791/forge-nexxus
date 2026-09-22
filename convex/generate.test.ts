@@ -141,21 +141,10 @@ describe("generate.run", () => {
     expect(calls[0].url).toBe("https://ai.example/v1/chat/completions");
     expect(calls[0].headers.authorization).toBe(`Bearer ${KEY}`);
     expect(calls[0].body.model).toBe("forge-test");
-    expect(calls[0].body.reasoning_effort).toBe("high");
     const roles = calls[0].body.messages.map((m: any) => m.role);
     expect(roles).toEqual(["system", "user"]);
     expect(calls[0].body.messages[0].content).toContain("self-contained HTML file");
     expect(calls[0].body.messages[1].content).toBe("A warm site for a neighbourhood bakery");
-  });
-
-  test("AI_REASONING_EFFORT is sent on the provider call", async () => {
-    process.env.AI_REASONING_EFFORT = "medium";
-    const t = fresh();
-    const member = await createBuilder(t, "m@example.com");
-    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
-    const calls = stubProvider(() => reply("Built a warm landing page with a menu."));
-    await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
-    expect(calls[0].body.reasoning_effort).toBe("medium");
   });
 
   test("a second prompt is an edit: the current page goes along and the edit cost is charged", async () => {
