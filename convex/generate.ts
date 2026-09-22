@@ -129,20 +129,22 @@ export function reasoningEffort(
   const gemini = isGeminiChatHost(baseUrl);
   const takes = gemini ? GEMINI_EFFORTS : EFFORT_MODELS.has(model) ? DEEPSEEK_EFFORTS : null;
   if (!takes) return undefined;
-  // Both turns ask for it. A build is the obvious one, but a chat reply on
-  // this deployment is a designer answering a question about someone's site,
-  // and the same route carries the strategist's brief and the memory note --
-  // work worth thinking about rather than answering off the top. What that
-  // costs is the thinking itself, and the budgets below leave room for it.
+  // Both turns ask for it, at different levels. Writing a whole site is what
+  // the top of the range is for; a reply, the strategist's brief and the
+  // memory note are worth thinking about but not worth the longest think
+  // there is, so they sit at high -- which is also what this provider does
+  // when asked for nothing, said out loud so the request means it.
   const wanted = (process.env.AI_REASONING_EFFORT?.trim().toLowerCase() ?? "") as ReasoningEffort;
   if (takes.includes(wanted)) return wanted;
   // A name this route does not have. Gemini is the narrower vocabulary, so
   // anything above its ceiling meets its ceiling, and minimal meets low.
   if (wanted === "minimal") return "low";
   if (wanted === "xhigh" || wanted === "max" || wanted === "ultra") return "high";
-  // Unset. Gemini keeps the high it has always had; a model with a level above
-  // high takes it, which is the whole reason to name one.
-  return gemini ? "high" : "max";
+  // Unset. Gemini keeps the high it has always had. On a route with a level
+  // above high, a build takes it and everything else stays at high; setting
+  // AI_REASONING_EFFORT overrides both, since that is the operator's word.
+  if (gemini) return "high";
+  return purpose === "build" ? "max" : "high";
 }
 
 // The OpenAI-shaped body every chat and build call sends — `complete`, the

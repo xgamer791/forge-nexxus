@@ -106,19 +106,23 @@ describe("reasoning_effort goes where it has been measured to work", () => {
       .toBeUndefined();
   });
 
-  test("both turns on DeepSeek ask for max, beside the thinking field", () => {
+  test("a build asks for max and everything else for high, beside the thinking field", () => {
     delete process.env.AI_REASONING_EFFORT;
-    for (const purpose of ["chat", "build"] as const) {
-      expect(reasoningEffort(DEEPSEEK, "deepseek-flash", purpose)).toBe("max");
+    for (const [purpose, effort] of [["chat", "high"], ["build", "max"]] as const) {
+      expect(reasoningEffort(DEEPSEEK, "deepseek-flash", purpose)).toBe(effort);
       expect(completionBody({ model: "deepseek-flash", baseUrl: DEEPSEEK, purpose }, messages, 200)).toEqual({
         model: "deepseek-flash",
         messages,
         max_tokens: 200,
-        reasoning_effort: "max",
+        reasoning_effort: effort,
         thinking: { type: "enabled" },
       });
     }
     expect(reasoningEffort(DEEPSEEK, "deepseek-v4-pro", "build")).toBe("max");
+    // Set, it is the operator's word and it covers both turns.
+    process.env.AI_REASONING_EFFORT = "low";
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "chat")).toBe("low");
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("low");
   });
 
   test("every name DeepSeek documents is passed through as written", () => {
@@ -141,10 +145,11 @@ describe("reasoning_effort goes where it has been measured to work", () => {
     }
     process.env.AI_REASONING_EFFORT = "medium";
     expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("medium");
-    // A name nobody documents is not sent as itself anywhere.
+    // A name nobody documents falls back to what the route would have done.
     process.env.AI_REASONING_EFFORT = "turbo";
     expect(reasoningEffort(GOOGLE_OPENAI, "gemini-3.8-flash")).toBe("high");
     expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "build")).toBe("max");
+    expect(reasoningEffort(DEEPSEEK, "deepseek-flash", "chat")).toBe("high");
   });
 
   test("temperature is not sent to a model that documents it as inert", () => {
