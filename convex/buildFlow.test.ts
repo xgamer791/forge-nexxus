@@ -237,7 +237,7 @@ describe("a brand new build, start to finish", () => {
     expect(runs[0].endedAt).toBeDefined();
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(
-      expect.arrayContaining(["queued", "research", "research_searching", "research_skillui", "research_done", "design_loaded", "held", "provider_request", "provider_response", "images", "images_done", "saving", "complete"]),
+      expect.arrayContaining(["queued", "research", "research_searching", "research_measuring", "research_done", "design_loaded", "audit", "audit_done", "held", "provider_request", "provider_response", "images", "images_done", "saving", "complete"]),
     );
 
     // The member lands on the finished screen, with Rebuild on offer.

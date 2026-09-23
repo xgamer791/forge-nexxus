@@ -20,8 +20,8 @@ export default defineSchema({
     prompt: v.string(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
-  // One retained SkillUI ultra reference per site. New pages read prompt from
-  // this row; the complete visual package lives in Convex file storage.
+  // One retained measured design reference per site. New pages read prompt from
+  // this row; the captured reference JSON lives in Convex file storage.
   siteDesignPackages: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),

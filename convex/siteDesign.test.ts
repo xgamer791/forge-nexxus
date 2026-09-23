@@ -81,7 +81,7 @@ async function queuedResearch(t: ReturnType<typeof convexTest>) {
   return ids;
 }
 
-describe("SkillUI research", () => {
+describe("measured design research", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     resetDesignWorkerScript();
@@ -101,7 +101,7 @@ describe("SkillUI research", () => {
     });
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
-      "research", "research_searching", "research_inspecting", "research_skillui", "research_done",
+      "research", "research_searching", "research_inspecting", "research_measuring", "research_done",
     ]));
     const jobs = await t.run(async (ctx) => (await ctx.db.system.query("_scheduled_functions").collect()).map((job) => job.name));
     expect(jobs).toContain("onboarding:build");

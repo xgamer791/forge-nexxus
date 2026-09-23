@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { insertDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, insertDesignPackage } from "./designWorkerMock";
 import type { Id } from "./_generated/dataModel";
 import { recordLastSign } from "./diagnostics";
 import { callProvider } from "./generate";
@@ -182,7 +182,11 @@ function stubBuilds(build: (call: number) => Response) {
   const calls: any[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init: RequestInit) => {
+    vi.fn(async (url: string, init: RequestInit) => {
+      const worker = await answerDesignResearch(url, init, async () => {
+        throw new Error("audit does not store a package");
+      });
+      if (worker) return worker;
       const request = JSON.parse(String(init.body));
       if (!request.messages.some((m: any) => /standing rules for the website agent/.test(m.content))) {
         return json({ choices: [{ message: { content: '{"add":[],"forget":[],"replace":[]}' } }] });

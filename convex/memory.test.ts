@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { insertDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, insertDesignPackage } from "./designWorkerMock";
 import type { Id } from "./_generated/dataModel";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
@@ -71,6 +71,10 @@ function stubProvider(respond: (body: any, call: number) => Response) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
+      const worker = await answerDesignResearch(url, init, async () => {
+        throw new Error("audit does not store a package");
+      });
+      if (worker) return worker;
       const body = JSON.parse(String(init.body));
       calls.push({ url, body });
       return respond(body, calls.length);

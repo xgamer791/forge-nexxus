@@ -16,7 +16,7 @@ import { inventSample, sampleRebuilds } from "./sampleBusiness";
 import { isAdminEmail } from "./admins";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
-import { assertDesignRules, researchDesign } from "./siteDesign";
+import { assertDesignRules, auditDesign, researchDesign } from "./siteDesign";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
 
 // The words and the pictures share an action's ten minutes. The text gets the
@@ -166,7 +166,7 @@ export const research = internalAction({
       const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
       const saved = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
       if (saved && saved.buildEpoch === epoch) {
-        await trace.note({ phase: "research_reused", label: "Using the saved SkillUI design package" });
+        await trace.note({ phase: "research_reused", label: "Using the saved measured design reference" });
       } else {
         await researchDesign(ctx, {
           siteId: row.siteId, onboardingId: id, attempt, epoch,
@@ -693,6 +693,13 @@ export async function finishOnboardingBuild(
   },
 ) {
   const { id, attempt, runId } = build;
+  const design = await ctx.runQuery(internal.siteDesign.forSite, { siteId: build.result.siteId });
+  if (!design || design.buildEpoch !== build.result.epoch) {
+    throw new Error("The saved measured design reference disappeared during the build");
+  }
+  // Pictures are made after the check: the worker stands in for forge-image
+  // slots, and a layout that does not pass is not saved.
+  await auditDesign(ctx, design.storageId, build.site, trace);
   // The pictures the page asked for are made before it is saved, so the
   // first version a member opens is the finished one.
   let site: BuiltSite = build.site;
@@ -787,9 +794,9 @@ export const build = internalAction({
       }
       const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
       const savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (!savedDesign || savedDesign.buildEpoch !== epoch) throw new Error("This site has no current SkillUI design package");
+      if (!savedDesign || savedDesign.buildEpoch !== epoch) throw new Error("This site has no current measured design reference");
       const designPrompt = savedDesign.prompt;
-      await trace.note({ phase: "design_loaded", label: "Loaded the saved SkillUI design package" });
+      await trace.note({ phase: "design_loaded", label: "Loaded the saved measured design reference" });
       const job = await ctx.runMutation(internal.generate.beginOnboarding, { id, attempt });
       await ctx.runMutation(internal.diagnostics.attach, {
         runId,
@@ -814,7 +821,7 @@ export const build = internalAction({
       ], deadline, trace, row.discardedDesignHashes,
       row.discardedDesignHashes !== undefined ? { requireImages: Boolean(imageRoute().apiKey) } : undefined);
       const design = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (!design || design.buildEpoch !== epoch) throw new Error("The saved design package disappeared during the build");
+      if (!design || design.buildEpoch !== epoch) throw new Error("The saved measured design reference disappeared during the build");
       assertDesignRules(page.site, design.referenceUrl);
       const build = {
         id,

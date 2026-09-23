@@ -8,7 +8,7 @@ export const DESIGN_WORKER_ORIGIN = "https://design-worker.test";
 export const DESIGN_WORKER_TOKEN = "test-design-worker-token";
 export const DESIGN_REFERENCE_URL = "https://harbor-reference.example/";
 export const DESIGN_PROMPT =
-  "SkillUI ultra design reference for this site. Use this for the shared shell, layout and component rhythm. Write original copy and request original images through forge-image. Do not copy source text, images, logos or brand identity.";
+  "Measured design reference for this site. Follow its layout, routes and section geometry. Write original copy and request original images through forge-image. Do not copy source text, images, logos or brand identity.";
 
 export type DesignWorkerScript = "ok" | "unauthorized" | "error" | "incomplete";
 
@@ -46,7 +46,7 @@ type TestRunner = {
 };
 
 export function storeDesignPackage(t: TestRunner) {
-  return t.run(async (ctx) => ctx.storage.store(new Blob(["skillui ultra package"], { type: "application/zip" })));
+  return t.run(async (ctx) => ctx.storage.store(new Blob([JSON.stringify({ format: "forge-measured-v1" })], { type: "application/json" })));
 }
 
 export async function insertDesignPackage(
@@ -55,7 +55,7 @@ export async function insertDesignPackage(
   siteId: Id<"sites">,
   epoch = 0,
 ) {
-  const storageId = await ctx.storage.store(new Blob(["skillui ultra package"], { type: "application/zip" }));
+  const storageId = await ctx.storage.store(new Blob([JSON.stringify({ format: "forge-measured-v1" })], { type: "application/json" }));
   await ctx.db.insert("siteDesignPackages", {
     userId,
     siteId,
@@ -78,16 +78,54 @@ function ndjson(events: unknown[]) {
 
 // Returns a response when `url` is the worker, otherwise null so the caller's
 // provider stub can answer chat and image requests.
+function authorized(init: RequestInit | undefined) {
+  const authorization = new Headers(init?.headers).get("authorization");
+  return script !== "unauthorized" && authorization === `Bearer ${process.env.DESIGN_WORKER_TOKEN ?? ""}`;
+}
+
+function workerPath(url: string) {
+  const origin = process.env.DESIGN_WORKER_URL?.replace(/\/+$/, "");
+  if (!origin) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.origin !== new URL(origin).origin) return null;
+    return parsed.pathname === "/research" || parsed.pathname === "/audit" ? parsed.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+// Layout check double. A passing verdict lets the build save; the real worker
+// is what applies the 0.85 thresholds.
+function answerAudit(init: RequestInit | undefined): Response {
+  if (!authorized(init)) return new Response("", { status: 401 });
+  let body: { reference?: string; pages?: { path?: string; html?: string }[] };
+  try {
+    body = JSON.parse(String(init?.body ?? ""));
+  } catch {
+    return new Response("", { status: 400 });
+  }
+  if (typeof body.reference !== "string" || !body.reference.startsWith("https://") || !Array.isArray(body.pages) || !body.pages.length ||
+      !body.pages.every((page) => typeof page?.path === "string" && typeof page?.html === "string")) {
+    return new Response("", { status: 400 });
+  }
+  if (script === "error") return ndjson([{ type: "error", reason: "The layout check could not measure the site" }]);
+  return ndjson([
+    { type: "progress", phase: "rendering", detail: { done: 1, total: body.pages.length } },
+    { type: "progress", phase: "comparing", detail: { routes: body.pages.length } },
+    { type: "complete", passed: true, routes: [], fixes: [] },
+  ]);
+}
+
 export async function answerDesignResearch(
   url: string,
   init: RequestInit | undefined,
   store: () => Promise<Id<"_storage">>,
 ): Promise<Response | null> {
-  if (!isDesignResearchRequest(url)) return null;
-  const authorization = new Headers(init?.headers).get("authorization");
-  if (script === "unauthorized" || authorization !== `Bearer ${process.env.DESIGN_WORKER_TOKEN ?? ""}`) {
-    return new Response("", { status: 401 });
-  }
+  const path = workerPath(url);
+  if (!path) return null;
+  if (path === "/audit") return answerAudit(init);
+  if (!authorized(init)) return new Response("", { status: 401 });
   let body: { uploadUrl?: string; offer?: string };
   try {
     body = JSON.parse(String(init?.body ?? ""));
@@ -102,7 +140,7 @@ export async function answerDesignResearch(
     { type: "progress", phase: "searching", detail: { city: "Los Angeles" } },
     { type: "progress", phase: "candidate", detail: { city: "New York", domain: "harbor-reference.example" } },
     { type: "progress", phase: "inspecting", detail: { page: 1, total: 2 } },
-    { type: "progress", phase: "skillui", detail: { mode: "ultra", screens: 12 } },
+    { type: "progress", phase: "measuring", detail: { pages: 2 } },
     { type: "progress", phase: "uploading", detail: { pages: 2 } },
     {
       type: "complete",

@@ -15,7 +15,7 @@ import { memoryEnabled, memoryNote } from "./memory";
 import { hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
-import { assertDesignRules } from "./siteDesign";
+import { assertDesignRules, auditDesign } from "./siteDesign";
 import { isEventStream, readStream, StreamStopped, type Milestone, type StopReason, type StreamPhase, type StreamStats } from "./stream";
 
 // How much of the thread the model sees, and how long a page it may write.
@@ -296,7 +296,7 @@ What this platform can serve, which is not a matter of taste:
 
 ${pictures}
 
-Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change. The saved SkillUI design reference is required for every build and edit. Follow its structure but never reuse its source copy, images, logos or brand identity. The Type, Icons and Anti-slop rules in DESIGN_GOD win over any extracted style instructions.
+Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change. The saved measured design reference is required for every build and edit. Follow its structure but never reuse its source copy, images, logos or brand identity. The Type, Icons and Anti-slop rules in DESIGN_GOD win over any extracted style instructions.
 
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
@@ -360,7 +360,7 @@ export const run = action({
         status: "calling",
       });
       const trace = providerTrace(ctx, runId, userId);
-      if (job.requestKind !== "chat") await trace.note({ phase: "design_loaded", label: "Using this site's saved SkillUI design package" });
+      if (job.requestKind !== "chat") await trace.note({ phase: "design_loaded", label: "Using this site's saved measured design reference" });
       await trace.note({
         phase: "held",
         label: job.requestKind === "chat" ? "Credits held for a conversation" : "Credits held for a build",
@@ -376,7 +376,7 @@ export const run = action({
       const site = builtSite(parsed);
       if (site && job.requestKind !== "chat") {
         const reference = await ctx.runQuery(internal.siteDesign.forSite, { siteId: job.siteId });
-        if (!reference || reference.buildEpoch !== job.epoch) throw new Error("The site's saved design package is missing");
+        if (!reference || reference.buildEpoch !== job.epoch) throw new Error("The site's saved measured design reference is missing");
         assertDesignRules(site, reference.referenceUrl);
       }
       const turn = {
@@ -441,6 +441,9 @@ export async function finishThreadBuild(
   let imageMade = 0;
   let site = turn.site;
   if (site && turn.requestKind !== "chat") {
+    const design = await ctx.runQuery(internal.siteDesign.forSite, { siteId: turn.siteId });
+    if (!design || design.buildEpoch !== turn.epoch) throw new Error("The site's saved measured design reference is missing");
+    await auditDesign(ctx, design.storageId, site, trace);
     const parts = siteParts(site);
     if (wantsImages(parts.join("\n"))) {
       await trace.note({ phase: "images", label: "Making pictures", status: "images" });
@@ -539,7 +542,7 @@ export const begin = internalMutation({
       ? await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", site._id)).first()
       : null;
     if (mayBuild && (!design || design.buildEpoch !== (site.buildEpoch ?? 0))) {
-      throw new ConvexError("This site has no saved SkillUI design package. Rebuild it before creating or changing pages.");
+      throw new ConvexError("This site has no saved measured design reference. Rebuild it before creating or changing pages.");
     }
     const { holdId } = await holdCredits(ctx, userId, kind, now);
     const recent = await ctx.db
@@ -593,7 +596,7 @@ export const beginOnboarding = internalMutation({
     const site = await ctx.db.get(row.siteId);
     if (!site || site.userId !== row.userId) throw new ConvexError("Site not found");
     const design = await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", site._id)).first();
-    if (!design || design.buildEpoch !== (site.buildEpoch ?? 0)) throw new ConvexError("A saved SkillUI design package is required before building");
+    if (!design || design.buildEpoch !== (site.buildEpoch ?? 0)) throw new ConvexError("A saved measured design reference is required before building");
     if ((await currentPlan(ctx, row.userId)).key === "free") throw new ConvexError("Choose a paid plan to build");
     const { holdId } = await holdCredits(ctx, row.userId, "generate");
     const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
@@ -779,7 +782,7 @@ function buildMessages(
   if (shown) {
     messages.push({
       role: "system",
-      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form. Maintain its saved SkillUI design structure.\n\n${shown}`,
+      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form. Maintain its saved measured design structure.\n\n${shown}`,
     });
   }
   if (talkOnly) {

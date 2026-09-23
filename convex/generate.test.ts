@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { DESIGN_PROMPT, insertDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, DESIGN_PROMPT, insertDesignPackage } from "./designWorkerMock";
 import { parseReply } from "./generate";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -35,7 +35,7 @@ async function createBuilder(t: ReturnType<typeof fresh>, email: string) {
 }
 
 // A paid thread cannot take its first build through generate.run. These tests
-// cover the edit path, which needs a saved page and a SkillUI package.
+// cover the edit path, which needs a saved page and a measured design reference.
 async function seedBuilt(
   t: ReturnType<typeof fresh>,
   userId: Id<"users">,
@@ -76,6 +76,10 @@ function stubProvider(respond: (body: any, call: number) => Response) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
+      const worker = await answerDesignResearch(url, init, async () => {
+        throw new Error("audit does not store a package");
+      });
+      if (worker) return worker;
       const body = JSON.parse(String(init.body));
       calls.push({ url, headers: init.headers as Record<string, string>, body });
       return respond(body, calls.length);
@@ -134,7 +138,7 @@ describe("parseReply", () => {
 });
 
 describe("generate.run", () => {
-  test("a paid thread edits a saved site, charges the edit cost, and follows the SkillUI package", async () => {
+  test("a paid thread edits a saved site, charges the edit cost, and follows the measured design reference", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
@@ -151,7 +155,7 @@ describe("generate.run", () => {
     await seedBuilt(t, member.userId, siteId, PAGE, false);
     await expect(
       member.as.action(api.generate.run, { conversationId, prompt }),
-    ).rejects.toThrow("no saved SkillUI design package");
+    ).rejects.toThrow("no saved measured design reference");
 
     await t.run(async (ctx) => {
       await insertDesignPackage(ctx, member.userId, siteId);
@@ -186,7 +190,7 @@ describe("generate.run", () => {
     expect(calls[0].body.model).toBe("forge-test");
     const sent = calls[0].body.messages;
     expect(sent.map((m: any) => m.role)).toEqual(["system", "system", "system", "system", "system", "system", "user"]);
-    expect(sent[3].content).toContain("saved SkillUI design reference");
+    expect(sent[3].content).toContain("saved measured design reference");
     expect(sent[4].content).toBe(DESIGN_PROMPT);
     expect(sent[5].content).toContain(PAGE);
     expect(sent[6].content).toBe(prompt);
@@ -249,7 +253,7 @@ describe("generate.run", () => {
       t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "A bakery" }),
     ).rejects.toThrow("Complete the website questions before your first build");
 
-    // Once a page and its SkillUI package are saved, the next turn edits it.
+    // Once a page and its measured design reference are saved, the next turn edits it.
     await seedBuilt(t, member.userId, siteId);
     await t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "Add hours" });
     expect(await pendingBody(conversationId)).toBe("Updating your site\u2026");
