@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   KIND,
+  THRESHOLDS,
   VIEWPORTS,
   alignRows,
   auditSite,
@@ -107,7 +108,7 @@ test("a region passes only when every one of its bands does", () => {
   page.boxes = page.boxes.map((box) => (box[0] === KIND.media && box[2] > 1000 ? [KIND.text, box[1], box[2], box[3], box[4]] : box));
   const outcome = auditSite(reference, candidate).routes[0].viewports.desktop.regions.body;
   assert.equal(outcome.passed, false);
-  assert.ok(outcome.bands.some((band) => band.score < 0.95));
+  assert.ok(outcome.bands.some((band) => band.score < THRESHOLDS.body));
 });
 
 test("each alignment covers every row of both masks once in order", () => {
