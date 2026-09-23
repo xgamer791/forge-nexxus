@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { answerDesignResearch, DESIGN_PROMPT, DESIGN_REFERENCE_URL, resetDesignWorkerScript, setDesignWorkerScript, storeDesignPackage } from "./designWorkerMock";
+import { crewAgreed } from "./pageCrew";
 import { assertDesignRules } from "./siteDesign";
 import schema from "./schema";
 
@@ -28,15 +29,51 @@ describe("saved design reference", () => {
     });
     const args = {
       siteId, onboardingId, attempt: 1, epoch: 2, storageId,
-      referenceUrl: "https://example.com/", prompt: "Original design structure", inspectedPages: 6, routes: ["/"],
+      referenceUrl: "https://example.com/", prompt: "Original design structure", inspectedPages: 1, routes: ["/"],
     };
     expect(await t.mutation(internal.siteDesign.save, { ...args, epoch: 1 })).toBe(false);
     expect(await t.mutation(internal.siteDesign.save, args)).toBe(true);
     expect(await t.query(internal.siteDesign.forSite, { siteId })).toMatchObject({
-      storageId, prompt: "Original design structure", inspectedPages: 6, buildEpoch: 2,
+      storageId, prompt: "Original design structure", inspectedPages: 1, buildEpoch: 2,
     });
     await t.run(async ctx => { await ctx.db.patch(siteId, { buildEpoch: 3 }); });
     expect(await t.mutation(internal.siteDesign.save, args)).toBe(false);
+  });
+
+  test("rejects a reference with more than five pages", async () => {
+    const t = convexTest(schema, modules);
+    const { siteId, onboardingId, storageId } = await t.run(async ctx => {
+      const userId = await ctx.db.insert("users", { email: "cap@example.com" });
+      const conversationId = await ctx.db.insert("conversations", { userId, title: "Test", updatedAt: Date.now() });
+      const siteId = await ctx.db.insert("sites", {
+        userId, conversationId, name: "Test", status: "draft", buildEpoch: 1,
+        createdAt: Date.now(), updatedAt: Date.now(),
+      });
+      const onboardingId = await ctx.db.insert("siteOnboarding", {
+        userId, siteId, answers: ["Test", "Bakery"], step: 10, revision: 1,
+        assets: [], status: "queued", attempt: 1, dismissed: false, events: [],
+        createdAt: Date.now(), updatedAt: Date.now(),
+      });
+      const storageId = await ctx.storage.store(new Blob(["reference package"]));
+      return { siteId, onboardingId, storageId };
+    });
+    const routes = ["/", "/a", "/b", "/c", "/d", "/e"];
+    expect(await t.mutation(internal.siteDesign.save, {
+      siteId, onboardingId, attempt: 1, epoch: 1, storageId,
+      referenceUrl: "https://example.com/", prompt: "SkillUI extract", inspectedPages: 6, routes,
+    })).toBe(false);
+  });
+
+  test("a page is not complete unless the header, both body auditors and the footer agree", () => {
+    const crew = {
+      header: { builders: 1, auditors: [{ agree: true }] },
+      body: { builders: 2, auditors: [{ agree: true }, { agree: true }] },
+      footer: { builders: 1, auditors: [{ agree: true }] },
+    };
+    expect(crewAgreed({ passed: true, pages: [{ path: "/", crew }], fixes: [] }).passed).toBe(true);
+    const dissent = { ...crew, body: { builders: 2, auditors: [{ agree: true }, { agree: false }] } };
+    expect(crewAgreed({ passed: true, pages: [{ path: "/", crew: dissent }], fixes: [] }).passed).toBe(false);
+    expect(crewAgreed({ passed: true, pages: [], fixes: [] }).passed).toBe(false);
   });
 
   test("rejects reference assets and non-Fontshare font URLs in built pages", () => {

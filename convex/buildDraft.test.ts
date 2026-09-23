@@ -17,8 +17,8 @@ import { routeSpec } from "./siteDesign";
 // of its own, every page is saved the moment it closes, a page the clock stops
 // is carried on from where it stopped, and the next step is queued the moment
 // one ends. These drive the real chain -- the scheduler, the model's replies,
-// the layout check and the save -- against a seven-page reference like the
-// Taquería El Farolito rebuild that ran out of time in one action.
+// the auditor gate and the save -- against a five-page reference, the most a
+// rebuild or a new build is allowed to write.
 const modules = import.meta.glob("./**/*.*s");
 function makeTest() {
   return convexTest(schema, modules);
@@ -27,7 +27,7 @@ type T = ReturnType<typeof makeTest>;
 let active: T;
 const fresh = () => (active = makeTest());
 
-const ROUTES = ["/", "/food-menu", "/drink-menu", "/specials", "/events", "/party", "/cater"];
+const ROUTES = ["/", "/food-menu", "/drink-menu", "/specials", "/events"];
 const REFERENCE = "https://harbor-reference.example/";
 const KEY = "sk-test-secret-key";
 const PNG = btoa("not really a png, but bytes are bytes");
@@ -198,6 +198,7 @@ afterEach(() => {
 describe("the pieces a step is made of", () => {
   test("the measured routes become the pages to write, home first", () => {
     expect(pagePlan(["/food-menu", "/", "/Food-Menu/", "/drink-menu.html", "/../x"])).toEqual(["/", "/food-menu", "/drink-menu"]);
+    expect(pagePlan(["/", "/a", "/b", "/c", "/d", "/e", "/f"])).toEqual(["/", "/a", "/b", "/c", "/d"]);
     expect(pagePlan(["/"])).toEqual(["/"]);
     expect(pagePlan(undefined)).toEqual(["/"]);
   });
@@ -306,7 +307,7 @@ describe("what each turn is asked", () => {
         `\`\`\`html path="/food-menu" title="Food menu"\n${markup("/food-menu")}\n\`\`\``,
     });
     expect(ask.role).toBe("user");
-    expect(ask.content).toMatch(/^Write page 3 of 7 now: \/drink-menu, and nothing else\./);
+    expect(ask.content).toMatch(/^Write page 3 of 5 now: \/drink-menu, and nothing else\./);
     expect(ask.content).toContain("do not return, repeat or change them");
     expect(ask.content).toContain('```html path="/drink-menu" title="Drink Menu"');
     // What was wrong with the last reply goes with the ask.
@@ -317,7 +318,7 @@ describe("what each turn is asked", () => {
   test("a page carried on goes back as the model's own words, with the ask to continue", () => {
     const carry = '```html path="/drink-menu" title="Drinks"\n<section>Horchata, jamaica';
     const messages = turn({ target: "/drink-menu", written: { shell: SHELL, pages: [home, menu] }, carry });
-    expect(messages.at(-3)!.content).toMatch(/^Write page 3 of 7 now: \/drink-menu/);
+    expect(messages.at(-3)!.content).toMatch(/^Write page 3 of 5 now: \/drink-menu/);
     expect(messages.slice(-2)).toEqual([{ role: "assistant", content: carry }, { role: "user", content: CARRY_ON }]);
     // The first turn carried on answers the brief itself.
     const opening = "Built it.\n\n```html shell\n<!doctype html>";
@@ -410,7 +411,7 @@ describe("checkpoints", () => {
   });
 });
 
-describe("a seven-page measured rebuild, start to finish", () => {
+describe("a five-page rebuild, start to finish", () => {
   test("its first draft is written across several actions with nobody pressing anything, then checked and saved once", async () => {
     // Every page takes most of a step's clock, so each step writes one page
     // and hands on. The scheduler runs every step itself.
@@ -435,10 +436,10 @@ describe("a seven-page measured rebuild, start to finish", () => {
     // Seven steps, each an action the scheduler started on its own.
     const drafts = await t.run((ctx) => ctx.db.query("buildDrafts").collect());
     const rebuilt = drafts.find((row) => row.attempt === 2)!;
-    expect(rebuilt).toMatchObject({ status: "done", rebuild: true, step: 7, tries: 0, routes: ROUTES });
+    expect(rebuilt).toMatchObject({ status: "done", rebuild: true, step: 5, tries: 0, routes: ROUTES });
     const steps = await t.run(async (ctx) =>
       (await ctx.db.system.query("_scheduled_functions").collect()).filter((job) => job.name === "buildDraft:write" && job.args[0].id === rebuilt._id));
-    expect(steps.map((job) => job.state.kind)).toEqual(Array(7).fill("success"));
+    expect(steps.map((job) => job.state.kind)).toEqual(Array(5).fill("success"));
     const asked = turns.slice(built);
     expect(asked.map((turn) => [turn.kind, turn.path])).toEqual(ROUTES.map((path) => [path === "/" ? "first" : "page", path]));
     // Each page was asked for with its own measurements and the site before it.
@@ -462,7 +463,7 @@ describe("a seven-page measured rebuild, start to finish", () => {
     expect(gate.results).toHaveLength(1);
     const phases = await t.run(async (ctx) =>
       (await ctx.db.query("buildEvents").withIndex("by_run_at", (q) => q.eq("runId", rebuilt.runId)).collect()).map((event) => event.phase));
-    expect(phases.filter((phase) => phase === "draft_page_done")).toHaveLength(8);
+    expect(phases.filter((phase) => phase === "draft_page_done")).toHaveLength(6);
     expect(phases.lastIndexOf("draft_page_done")).toBeLessThan(phases.indexOf("draft_done"));
     expect(phases.indexOf("draft_done")).toBeLessThan(phases.indexOf("layout_check"));
 
@@ -488,13 +489,13 @@ describe("a seven-page measured rebuild, start to finish", () => {
     // The member's log reads page by page.
     const labels = (await events(t)).map((event) => event.label);
     expect(labels).toEqual(expect.arrayContaining([
-      "Writing your 7 pages one at a time",
-      "Writing page 1 of 7: home, with the header, menu and footer",
+      "Writing your 5 pages one at a time",
+      "Writing page 1 of 5: home, with the header, menu and footer",
       "Wrote the header, menu and footer",
-      "Wrote page 1 of 7: home",
-      "Writing page 2 of 7: /food-menu",
-      "Wrote page 7 of 7: /cater",
-      "Wrote all 7 pages",
+      "Wrote page 1 of 5: home",
+      "Writing page 2 of 5: /food-menu",
+      "Wrote page 5 of 5: /events",
+      "Wrote all 5 pages",
     ]));
     // "Page written" moves the progress drawing on to the pictures, so no
     // page of a draft says it.
@@ -673,7 +674,7 @@ describe("when a draft cannot go on", () => {
     });
     expect(outcome).toBe("failed");
     expect(await brief(t, id)).toMatchObject({ status: "failed", error: "Your website couldn’t be completed. Your answers are saved. Try building again." });
-    expect((await events(t)).map((event) => event.label)).toContain("Stopped at page 2 of 7: it kept stopping part way");
+    expect((await events(t)).map((event) => event.label)).toContain("Stopped at page 2 of 5: it kept stopping part way");
 
     // A second member's draft that has already taken its most steps.
     const other = await createBuilder(t);
@@ -715,7 +716,7 @@ describe("when a draft cannot go on", () => {
     await t.mutation(internal.buildDraft.rescue, {});
     expect(await pending(t)).toEqual(["buildDraft:write"]);
     expect(await load(t, draft._id)).toMatchObject({ restarts: 1 });
-    expect((await events(t)).map((event) => event.label)).toContain("Started page 2 of 7 again: nothing had been heard from it for 120s");
+    expect((await events(t)).map((event) => event.label)).toContain("Started page 2 of 5 again: nothing had been heard from it for 120s");
     await dropScheduled(t);
 
     // Restarted, it carries on from the saved page rather than from nothing.

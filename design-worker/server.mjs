@@ -4,8 +4,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
 import { chromium } from 'playwright';
-import { publicUrl } from './capture.mjs';
-import { FORMAT, auditBuild, captureReference } from './reference.mjs';
+import { auditSite } from './auditors.mjs';
+import { discoverRoutes, MAX_PAGES } from './discover.mjs';
+import { assemblePrompt, FORMAT, referencePackage, runSkillui } from './extract.mjs';
+import { publicUrl } from './urls.mjs';
 
 const CITIES = ['Los Angeles', 'New York', 'San Diego', 'Miami'];
 const DIRECTORY = /(?:google|yelp|facebook|instagram|linkedin|tripadvisor|pinterest|tiktok|yellowpages|mapquest|thumbtack|angi)\./i;
@@ -102,8 +104,9 @@ async function research(input, emit, artifacts) {
     candidates = await search(categoryText, input.references, emit);
   }
   const browser = await chromium.launch({ headless: true });
+  let chosenUrl = known;
+  let routes = [];
   try {
-    let chosenUrl = known;
     if (!chosenUrl) {
       const measured = [];
       const byCity = new Map();
@@ -120,35 +123,53 @@ async function research(input, emit, artifacts) {
       if (!measured[0]) throw new Error('No reference site could be inspected');
       chosenUrl = measured[0].url;
     }
-    const { reference, prompt } = await captureReference(browser, chosenUrl, { emit, artifacts });
-    emit('uploading', { pages: reference.routes.length });
-    const upload = await fetch(input.uploadUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(reference),
-      signal: AbortSignal.timeout(45000),
-    });
-    if (!upload.ok) throw new Error(`Design reference upload failed (${upload.status})`);
-    const { storageId } = await upload.json();
-    if (!storageId) throw new Error('Design reference upload returned no storage ID');
-    return { storageId, referenceUrl: chosenUrl, prompt, inspectedPages: reference.routes.length, routes: reference.routes.map(route => route.path), artifacts };
+    emit('inspecting', { page: 1, total: 1 });
+    routes = await discoverRoutes(browser, chosenUrl);
+    if (!routes.length || routes.length > MAX_PAGES || routes[0].path !== '/') {
+      throw new Error('Page discovery did not return a home page within the five-page cap');
+    }
+    // SkillUI opens its own Chromium. Close this one first.
   } finally { await browser.close(); }
+  emit('measuring', { pages: routes.length });
+  const extracted = await runSkillui(chosenUrl, path.join(artifacts, 'skillui'), { screens: MAX_PAGES });
+  const reference = referencePackage(extracted, routes, chosenUrl);
+  const prompt = assemblePrompt(extracted, routes);
+  emit('uploading', { pages: routes.length });
+  const upload = await fetch(input.uploadUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(reference),
+    signal: AbortSignal.timeout(45000),
+  });
+  if (!upload.ok) throw new Error(`Design reference upload failed (${upload.status})`);
+  const { storageId } = await upload.json();
+  if (!storageId) throw new Error('Design reference upload returned no storage ID');
+  return { storageId, referenceUrl: chosenUrl, prompt, inspectedPages: routes.length, routes: routes.map(route => route.path), artifacts };
 }
 
-// The layout check: the site's pages against the measured reference, every
-// route at every width. Nothing about it is a judgement call.
-async function audit(input, emit, artifacts) {
+// Auditors, one page at a time, against the SkillUI Ultra extract. No mask
+// score. A page that any auditor refuses is not complete.
+async function audit(input, emit) {
   const source = publicUrl(input.reference);
   if (!source || !source.startsWith('https://')) throw new Error('The design reference address is not usable');
   const response = await fetch(source, { signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error(`The design reference could not be read (${response.status})`);
   const reference = await response.json();
   if (reference?.format !== FORMAT || !Array.isArray(reference.routes) || !reference.routes.length) {
-    throw new Error('The saved design reference is not a measured reference');
+    throw new Error('The saved design reference is not a SkillUI Ultra extract');
   }
-  const browser = await chromium.launch({ headless: true });
-  try { return { ...await auditBuild(browser, reference, input.pages, { emit, artifacts }), artifacts }; }
-  finally { await browser.close(); }
+  if (reference.routes.length > MAX_PAGES || input.pages.length > MAX_PAGES) {
+    throw new Error(`A build can have at most ${MAX_PAGES} pages`);
+  }
+  const reports = [];
+  for (let index = 0; index < input.pages.length; index += 1) {
+    emit('auditing', { page: index + 1, total: input.pages.length });
+    const one = auditSite(reference, [input.pages[index]]);
+    reports.push(...one.pages);
+  }
+  const passed = reports.length === input.pages.length && reports.every((report) => report.agreed);
+  const fixes = reports.flatMap((report) => report.fixes ?? []);
+  return { passed, pages: reports, fixes };
 }
 
 const LIMITS = { '/research': 16000, '/audit': 16 * 1024 * 1024 };

@@ -1,4 +1,5 @@
 import type { Doc } from "./_generated/dataModel";
+import { MAX_PAGES } from "./pageCrew";
 
 // A site is a shell and its pages. The shell is everything every page shares --
 // the head, the whole stylesheet, the nav and the footer -- and it is written
@@ -122,7 +123,8 @@ export function pagePlan(routes: readonly string[] | undefined): string[] {
     const path = normalizePath(route);
     if (path !== null && !plan.includes(path)) plan.push(path);
   }
-  return ["/", ...plan.filter((path) => path !== "/")];
+  // Home first, then discovered pages, never more than five.
+  return ["/", ...plan.filter((path) => path !== "/")].slice(0, MAX_PAGES);
 }
 
 // One page of a build, before it is stored.

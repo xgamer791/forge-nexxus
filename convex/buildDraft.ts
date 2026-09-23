@@ -32,8 +32,8 @@ import { imageRoute } from "./images";
 import {
   designHash, draftTurn, heartbeat, MOST_RESTARTS, PAGE_FLOOR_MS, PAGE_STEP_MS, rebuildNote, RESCUE_BATCH, STEP_QUIET_MS, stopAttempt,
 } from "./onboarding";
-import { designSource, siteParts, type SitePage } from "./pages";
-import { assertDesignRules, isMeasured } from "./siteDesign";
+import { composePage, designSource, siteParts, type SitePage } from "./pages";
+import { assertDesignRules, auditDesign, isMeasured } from "./siteDesign";
 import type { StreamStats } from "./stream";
 
 // Steps in a row that may finish nothing -- no page, and nothing more of one --
@@ -634,6 +634,31 @@ export const write = internalAction({
         }
         const text = carry ? joinCarry(carry.text, reply.content) : reply.content;
         const turn = readTurn(text, { draft, target, cut: reply.cut, referenceUrl: setting.referenceUrl, imagery });
+        // A page is not kept until the auditors agree it matches the SkillUI
+        // extract. One page at a time. A miss is the next turn's problem.
+        if (turn.pages.length) {
+          const shell = turn.shell ?? draft.shell;
+          const accepted: SitePage[] = [];
+          for (const page of turn.pages) {
+            const html = shell ? composePage({ shell, pages: [...draft.pages, ...accepted, page] }, page.path) : null;
+            if (!html) {
+              turn.problem = `the page at ${page.path} could not be assembled for the auditors.`;
+              continue;
+            }
+            try {
+              const outcome = await auditDesign(ctx, { storageId: draft.designStorageId, pages: [{ path: page.path, html }] }, trace, draft.step);
+              if (!outcome.passed) {
+                turn.problem = outcome.fixes[0] ?? `the auditors did not agree that ${page.path} matches the SkillUI Ultra extract.`;
+                continue;
+              }
+            } catch (error) {
+              turn.problem = `the auditors could not check ${page.path}: ${describe(error)}`;
+              continue;
+            }
+            accepted.push(page);
+          }
+          turn.pages = accepted;
+        }
         if (turn.shell || turn.pages.length) {
           const kept = await ctx.runMutation(internal.buildDraft.keep, { id, lease, shell: turn.shell, summary: turn.summary, pages: turn.pages });
           if (!kept) return null;
@@ -653,6 +678,14 @@ export const write = internalAction({
           // The page asked for may still be to write; if so, what was wrong
           // with it goes with the next ask.
           problem = turn.problem;
+          // Auditors refused the page just asked for. It is not complete, even
+          // when the shell was worth keeping. The next step is told why.
+          if (problem && !turn.pages.some((page) => page.path === target)) {
+            await ctx.runMutation(internal.buildDraft.stepped, {
+              id, lease, outcome: "nothing", reason: "The auditors did not agree", problem,
+            });
+            return null;
+          }
         }
         if (turn.partial) {
           await ctx.runMutation(internal.buildDraft.stepped, { id, lease, outcome: "partial", partial: turn.partial, stop: cutStop(reply) });

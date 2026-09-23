@@ -3,12 +3,12 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
 import type { ProviderTrace } from "./diagnostics";
+import { crewAgreed, MAX_PAGES } from "./pageCrew";
 import { normalizePath, siteParts, type BuiltSite } from "./pages";
 
-// A measured design reference: every route of the reference site at phone,
-// tablet and desktop widths, as the design worker measured it (see
-// design-worker/). A row without this format is from before measuring.
-export const MEASURED = "forge-measured-v1" as const;
+// A SkillUI Ultra extract: the discovered routes (at most five) and the
+// documents the CLI wrote. A mask-score package from before this is not one.
+export const MEASURED = "skillui-ultra-v1" as const;
 export function isMeasured(row: Pick<Doc<"siteDesignPackages">, "format"> | null | undefined) {
   return row?.format === MEASURED;
 }
@@ -21,7 +21,7 @@ const PHASES: Record<string, string> = {
   searching: "Searching for design references",
   candidate: "Comparing reference sites",
   inspecting: "Inspecting pages and menus",
-  measuring: "Measuring the reference site's layout",
+  measuring: "Extracting the design system with SkillUI Ultra",
   uploading: "Saving the design reference",
 };
 
@@ -104,7 +104,8 @@ export const save = internalMutation({
         (site.buildEpoch ?? 0) !== args.epoch) return false;
     if (args.lease !== undefined && brief.queueStep?.lease !== args.lease) return false;
     if (!/^https:\/\//.test(args.referenceUrl) || !args.prompt.trim() || args.prompt.length > PROMPT_LIMIT ||
-        args.inspectedPages < 1 || !args.routes.includes("/")) return false;
+        args.inspectedPages < 1 || args.inspectedPages > MAX_PAGES || args.routes.length > MAX_PAGES ||
+        !args.routes.includes("/")) return false;
     await discardSiteDesign(ctx, site._id);
     await ctx.db.insert("siteDesignPackages", {
       userId: site.userId, siteId: site._id, storageId: args.storageId,
@@ -241,16 +242,15 @@ export async function researchDesign(
 export type AuditOutcome = {
   passed: boolean;
   fixes: string[];
-  // The lowest region score over every route and width, and the regions that
-  // fell short, as `route width region score`.
+  // 1 when every auditor agreed, 0 otherwise. Kept so a gate round can record
+  // a pass or a miss without a clone score.
   lowest: number;
   failing: string[];
 };
 
-// The layout check, run by the design worker: each page of the site, served as
-// it would be, measured at every width and compared with the measured
-// reference, region by region. A worker that cannot say is a failure here,
-// never a pass.
+// The auditor gate. The worker checks one page at a time against the SkillUI
+// Ultra extract. A report that is not the header/body/footer crew, or that
+// contains any disagreement, is not a pass — including a bare `passed: true`.
 export async function auditDesign(
   ctx: ActionCtx,
   input: { storageId: Id<"_storage">; pages: { path: string; html: string }[] },
@@ -269,39 +269,17 @@ export async function auditDesign(
   if (!response.ok) throw new Error(`The layout check answered ${response.status}`);
   let outcome = null as AuditOutcome | null;
   await readLines(response, async (event) => {
-    if (event.type === "progress" && event.phase === "rendering" && Number.isInteger(event.detail?.total)) {
-      const done = Number(event.detail.done) || 0;
-      if (done === event.detail.total || done % 3 === 0) {
-        await trace.note({ phase: "layout_check_progress", label: `Layout check, round ${round}: measured ${done} of ${event.detail.total} pages and widths`, status: "reviewing", detail: { round, page: done, total: event.detail.total } });
-      }
-    } else if (event.type === "complete" && typeof event.passed === "boolean" && Array.isArray(event.routes)) {
-      const failing: string[] = [];
-      let lowest = 1;
-      for (const route of event.routes) {
-        if (route.problem) {
-          failing.push(`${route.path} ${route.problem}`);
-          lowest = 0;
-          continue;
-        }
-        for (const [width, result] of Object.entries(route.viewports ?? {}) as [string, any][]) {
-          if (!result?.regions) {
-            failing.push(`${route.path} ${width} not measured`);
-            lowest = 0;
-            continue;
-          }
-          for (const [region, score] of Object.entries(result.regions) as [string, any][]) {
-            lowest = Math.min(lowest, Number(score.score) || 0);
-            if (!score.passed) failing.push(`${route.path} ${width} ${region} ${Math.round((Number(score.score) || 0) * 1000) / 10}`);
-          }
-        }
-      }
-      outcome = {
-        // No route, or no score for one, is not a pass.
-        passed: event.passed === true && event.routes.length > 0 && failing.length === 0,
-        fixes: Array.isArray(event.fixes) ? event.fixes.filter((fix: unknown) => typeof fix === "string").slice(0, 400) : [],
-        lowest,
-        failing: failing.slice(0, 200),
-      };
+    if (event.type === "progress" && event.phase === "auditing" && Number.isInteger(event.detail?.total)) {
+      const page = Number(event.detail.page) || 0;
+      await trace.note({
+        phase: "page_audit",
+        label: `Auditing page ${page} of ${event.detail.total} against the SkillUI Ultra extract`,
+        status: "reviewing",
+        detail: { round, page, total: event.detail.total },
+      });
+    } else if (event.type === "complete" && typeof event.passed === "boolean" && Array.isArray(event.pages)) {
+      const agreed = crewAgreed(event);
+      outcome = { passed: agreed.passed, fixes: agreed.fixes, lowest: agreed.lowest, failing: agreed.failing };
     } else if (event.type === "error") {
       throw new Error(`The layout check failed: ${String(event.reason).slice(0, 180)}`);
     }

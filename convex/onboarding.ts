@@ -796,7 +796,8 @@ function titleOf(path: string) {
 // finished site now".
 function draftOrder(routes: string[]) {
   return `This is an onboarding BUILD. The site has ${routes.length} pages -- ${routes.join(", ")} -- which is more than one reply can hold, so it is written a page at a time and each turn writes only what it is asked for. ` +
-    "Read the attached website-build-brief.md and work privately. Do not ask questions, discuss your plan, or reply with planning prose.";
+    "Read the attached website-build-brief.md and work privately. Do not ask questions, discuss your plan, or reply with planning prose. " +
+    "Each page uses a fixed crew and is not complete until the auditors agree it matches the SkillUI Ultra extract: header, 1 build agent and 1 auditor; body, 2 build agents and 2 auditors; footer, 1 build agent and 1 auditor.";
 }
 
 function firstTurn(siteName: string, routes: string[]) {

@@ -1,9 +1,7 @@
-// The layout check, run as a chain of its own actions. A build parks its site
-// here instead of saving it. The design worker renders every page at phone,
-// tablet and desktop widths, measures it the way it measured the site's design
-// reference, and compares the two region by region: the whole page, the
-// header, the opened menu, the body and the footer (design-worker/layout.mjs,
-// THRESHOLDS). No model judges anything here.
+// The auditor gate, run as a chain of its own actions. A build parks its site
+// here instead of saving it. The design worker checks each page against the
+// SkillUI Ultra extract: one header auditor, two body auditors and one footer
+// auditor. A page is saved only when they agree. There is no clone score.
 //
 // A site that passes is saved exactly as it would have been without the check,
 // pictures and all. One that does not goes back to the builder with the
@@ -314,9 +312,7 @@ async function referenceFor(ctx: ActionCtx, gate: Gate) {
   return reference && reference.buildEpoch === gate.epoch && isMeasured(reference) ? reference : null;
 }
 
-const percent = (score: number) => `${Math.round(score * 1000) / 10}%`;
-
-// The check itself: the worker's scores for the site as it stands.
+// The check itself: the auditors' agreement for the site as it stands.
 export const check = internalAction({
   args: { id: v.id("designGates") },
   handler: async (ctx, { id }): Promise<null> => {
@@ -332,7 +328,7 @@ export const check = internalAction({
     const site = siteOf(gate);
     await trace.note({
       phase: "layout_check",
-      label: `Layout check, round ${round}: measuring every page at phone, tablet and desktop widths`,
+      label: `Design auditors, round ${round}: checking each page against the SkillUI Ultra extract`,
       status: "reviewing",
       detail: { round },
     });
@@ -348,8 +344,8 @@ export const check = internalAction({
     await trace.note({
       phase: "layout_verdict",
       label: outcome.passed
-        ? `Layout check, round ${round}: every page matches the design reference at every width`
-        : `Layout check, round ${round}: ${outcome.failing.length} ${outcome.failing.length === 1 ? "region is" : "regions are"} below the bar, the lowest at ${percent(outcome.lowest)}`,
+        ? `Design auditors, round ${round}: every auditor agreed`
+        : `Design auditors, round ${round}: ${outcome.failing.length} ${outcome.failing.length === 1 ? "check did" : "checks did"} not agree`,
       level: outcome.passed ? "info" : "warn",
       detail: { round },
     });
@@ -423,7 +419,7 @@ function reworkRequest(input: { fixes: string[]; inPages: boolean; problem?: str
     ? "Reply with one sentence saying what you changed, then the whole shell in a ```html shell block, then each page you changed in its own ```html path=\"/about\" title=\"About\" block, and nothing after. Every page you do not return stays exactly as it is. Write the shell out in full: the head, every style the pages use, every script and the <!--forge-page--> marker."
     : "Reply with one sentence saying what you changed, then the whole page in a ```html block, and nothing after. Write it all out.";
   return [
-    "Forge's layout check rendered every page of your site at phone, tablet and desktop widths and measured it against the measured design reference in your instructions. It does not match yet. Make every one of these changes:",
+    "The design auditors compared this site with the SkillUI Ultra extract, one page at a time. They do not agree yet. Make every one of these changes:",
     listed.join("\n"),
     ...(input.problem ? [`Your last rework could not be used: ${input.problem}`] : []),
     "Change the layout only: the header, the menu, the sections, their order, heights, columns and spacing, and the footer. Keep your words and pictures original, and keep one page for every route the reference lists and no others.",

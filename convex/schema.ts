@@ -34,7 +34,9 @@ export default defineSchema({
     inspectedPages: v.number(),
     buildEpoch: v.number(),
     createdAt: v.number(),
-    format: v.optional(v.literal("forge-measured-v1")),
+    // skillui-ultra-v1 is the live extract. forge-measured-v1 is a retired
+    // mask-score package: it still loads, and it is not a reference a build can use.
+    format: v.optional(v.union(v.literal("skillui-ultra-v1"), v.literal("forge-measured-v1"))),
     routes: v.optional(v.array(v.string())),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
   // A build held for the layout check: the site as the builder last wrote

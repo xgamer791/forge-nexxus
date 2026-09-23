@@ -8,8 +8,8 @@ defined( 'ABSPATH' ) || exit;
 <html <?php language_attributes(); ?>>
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
-<meta name="app-version" content="e2d3821a77c006c6f42064141f3b5051bbcaf3de">
-<meta name="app-build" content="83">
+<meta name="app-version" content="a7c91e4b2d08f6c35e1a9b74d0f28c6e5b3a1749">
+<meta name="app-build" content="84">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <meta name="convex-url" content="<?php echo esc_attr( FORGE_CONVEX_URL ); ?>">
@@ -30,7 +30,7 @@ defined( 'ABSPATH' ) || exit;
 <main class="app" hidden inert>
 <header class="chrome">
 <button class="hamburger" aria-label="Open navigation" data-open="navigation" aria-haspopup="dialog"><svg><use href="#menu"/></svg></button>
-<span class="build-stamp" data-build-stamp aria-label="Version 83">83</span>
+<span class="build-stamp" data-build-stamp aria-label="Version 84">84</span>
 <button class="globe-button" type="button" aria-label="Domains" data-open="address" aria-haspopup="dialog"><svg><use href="#globe"/></svg></button>
 <button class="website-preview-button" type="button" aria-label="Preview website" aria-haspopup="dialog" aria-expanded="false"><svg><use href="#preview-eye"/></svg></button>
 </header>

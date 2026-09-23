@@ -82,7 +82,16 @@ type TestRunner = {
   run: (fn: (ctx: PackageCtx) => Promise<Id<"_storage">>) => Promise<Id<"_storage">>;
 };
 
-const referenceJson = () => JSON.stringify({ format: "forge-measured-v1", routes: routes.map((path) => ({ path })) });
+const cappedRoutes = () => routes.slice(0, 5);
+const referenceJson = () => JSON.stringify({
+  format: "skillui-ultra-v1",
+  source: DESIGN_REFERENCE_URL,
+  design: "Primary #112233.",
+  claude: "Use the extract.",
+  skill: "Match it.",
+  tokens: { colors: { ink: "#112233" } },
+  routes: cappedRoutes().map((path) => ({ path })),
+});
 
 export function storeDesignPackage(t: TestRunner) {
   return t.run(async (ctx) => ctx.storage.store(new Blob([referenceJson()], { type: "application/json" })));
@@ -100,12 +109,12 @@ export async function insertDesignPackage(
     siteId,
     storageId,
     referenceUrl: DESIGN_REFERENCE_URL,
-    prompt: designPrompt(),
-    inspectedPages: 2,
+    prompt: designPrompt(cappedRoutes()),
+    inspectedPages: Math.min(5, Math.max(2, cappedRoutes().length)),
     buildEpoch: epoch,
     createdAt: Date.now(),
-    format: "forge-measured-v1",
-    routes,
+    format: "skillui-ultra-v1",
+    routes: cappedRoutes(),
   });
   return storageId;
 }
@@ -117,23 +126,27 @@ function ndjson(events: unknown[]) {
   });
 }
 
-const REGIONS = ["full", "header", "menu", "body", "footer"];
-const WIDTHS = ["phone", "tablet", "desktop"];
+function auditor(id: string, agree: boolean) {
+  return { id, agree, notes: agree ? "matches the SkillUI Ultra extract" : "does not match the SkillUI Ultra extract" };
+}
 
-function layoutCheck(passed: boolean, pages: { path: string }[]) {
-  const score = passed ? 0.97 : 0.41;
+// The crew the product requires. A failing script disagrees on both body
+// auditors, which is not a page.
+function auditorReport(passed: boolean, pages: { path: string }[]) {
+  const agree = passed && pages.length > 0 && pages.length <= 5;
   return {
     type: "complete",
-    passed,
-    routes: pages.map((page) => ({
+    passed: agree,
+    pages: pages.map((page) => ({
       path: page.path,
-      passed,
-      viewports: Object.fromEntries(WIDTHS.map((width) => [width, {
-        passed,
-        regions: Object.fromEntries(REGIONS.map((region) => [region, { score: region === "body" ? score : 0.97, threshold: 0.85, passed: region !== "body" || passed }])),
-      }])),
+      agreed: agree,
+      crew: {
+        header: { builders: 1, auditors: [auditor("header-1", true)] },
+        body: { builders: 2, auditors: [auditor("body-1", agree), auditor("body-2", agree)] },
+        footer: { builders: 1, auditors: [auditor("footer-1", true)] },
+      },
     })),
-    fixes: passed ? [] : [`${pages[0]?.path ?? "/"} at phone (390px), body (41% against 85%): the reference's is 4200px tall, yours 2900px.`],
+    fixes: agree ? [] : [`${pages[0]?.path ?? "/"}: the auditors did not agree it matches the SkillUI Ultra extract.`],
   };
 }
 
@@ -158,9 +171,10 @@ export async function answerDesignResearch(
     }
     if (!check.reference || !Array.isArray(check.pages) || !check.pages.length) return new Response("", { status: 400 });
     if (script === "audit-error") return ndjson([{ type: "error", reason: "The page could not be rendered" }]);
+    if (check.pages.length > 5) return ndjson([{ type: "error", reason: "A build can have at most 5 pages" }]);
     return ndjson([
-      { type: "progress", phase: "rendering", detail: { done: check.pages.length * 3, total: check.pages.length * 3 } },
-      layoutCheck(script !== "layout-fails", check.pages),
+      { type: "progress", phase: "auditing", detail: { page: 1, total: check.pages.length } },
+      auditorReport(script !== "layout-fails", check.pages),
     ]);
   }
   let body: { uploadUrl?: string; offer?: string };
@@ -183,9 +197,9 @@ export async function answerDesignResearch(
       type: "complete",
       storageId,
       referenceUrl: DESIGN_REFERENCE_URL,
-      prompt: designPrompt(),
-      inspectedPages: Math.max(2, routes.length),
-      routes,
+      prompt: designPrompt(cappedRoutes()),
+      inspectedPages: Math.min(5, Math.max(2, cappedRoutes().length)),
+      routes: cappedRoutes(),
     },
   ]);
 }
