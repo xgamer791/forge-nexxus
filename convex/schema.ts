@@ -338,6 +338,12 @@ export default defineSchema({
       loopRepeats: v.optional(v.number()),
       // Which round of the design check an event belongs to.
       round: v.optional(v.number()),
+      // Older build logs still store these. Optional so those rows keep validating.
+      city: v.optional(v.string()),
+      page: v.optional(v.number()),
+      total: v.optional(v.number()),
+      mode: v.optional(v.string()),
+      screens: v.optional(v.number()),
     })),
   })
     .index("by_run", ["runId"])
