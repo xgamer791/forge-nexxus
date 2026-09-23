@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { insertDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, insertDesignPackage } from "./designWorkerMock";
 import type { Id } from "./_generated/dataModel";
 import { QUESTIONS } from "./onboardingQuestions";
 import { REQUEST_COSTS, planFor } from "./plans";
@@ -72,9 +72,18 @@ function stubProvider(respond: (body: unknown, call: number) => Response) {
   const calls: unknown[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init: RequestInit) => {
-      calls.push(JSON.parse(String(init.body)));
-      return respond(JSON.parse(String(init.body)), calls.length);
+    vi.fn(async (url: string, init: RequestInit) => {
+      const layout = await answerDesignResearch(url, init, async () => {
+        throw new Error("This test does not research a design reference");
+      });
+      if (layout) return layout;
+      const body = JSON.parse(String(init.body));
+      const system = (body.messages ?? []).filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
+      if (/maintain Forge's memory/.test(system)) {
+        return json({ choices: [{ message: { content: '{"add":[],"forget":[],"replace":{}}' } }] });
+      }
+      calls.push(body);
+      return respond(body, calls.length);
     }),
   );
   return calls;

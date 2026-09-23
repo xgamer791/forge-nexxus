@@ -233,20 +233,20 @@ describe("a build with pages, start to finish", () => {
     const site = await onboarded(t, member);
     await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add the founding year to the story" });
 
-    // The strategist, the onboarding build, then the edit.
+    // The strategist, the onboarding build, then the edit. Captured before the
+    // layout check's drain, which also runs the memory note.
     const edit = providers.builds().at(-1)!;
     const handed = edit.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
     expect(handed).toContain("```html shell\n" + SHELL);
     expect(handed).toContain('```html path="/about" title="Our story"');
     expect(handed).toContain("return the whole updated site, every block");
 
+    // The edit is saved when the layout check passes.
+    await t.finishAllScheduledFunctions(() => {});
     const versions = await t.run((ctx) => ctx.db.query("siteVersions").collect());
     expect(versions).toHaveLength(2);
     expect(versions[1].pages!.find((page) => page.path === "/about")!.body).toContain("Founded in 2019.");
     expect(await (await t.fetch(`/sites/${site.slug}/about`)).text()).toContain("Founded in 2019.");
-    // An answered turn reflects on itself afterwards; let it, so it cannot
-    // reach the next test's provider and take the reply meant for its build.
-    await t.finishAllScheduledFunctions(() => {});
   });
 
   test("a first build that stopped short of a whole site is asked again for one in blocks, not one document", async () => {

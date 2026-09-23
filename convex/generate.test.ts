@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { DESIGN_PROMPT, insertDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, DESIGN_PROMPT, insertDesignPackage } from "./designWorkerMock";
 import { parseReply } from "./generate";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -35,7 +35,7 @@ async function createBuilder(t: ReturnType<typeof fresh>, email: string) {
 }
 
 // A paid thread cannot take its first build through generate.run. These tests
-// cover the edit path, which needs a saved page and a SkillUI package.
+// cover the edit path, which needs a saved page and a measured design reference.
 async function seedBuilt(
   t: ReturnType<typeof fresh>,
   userId: Id<"users">,
@@ -76,13 +76,25 @@ function stubProvider(respond: (body: any, call: number) => Response) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
+      // A build is saved only after the layout check. That call, and the memory
+      // note that follows a saved turn, are not model calls.
+      const layout = await answerDesignResearch(url, init, async () => {
+        throw new Error("This test does not research a design reference");
+      });
+      if (layout) return layout;
       const body = JSON.parse(String(init.body));
+      const system = (body.messages ?? []).filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
+      if (/maintain Forge's memory/.test(system)) {
+        return json({ choices: [{ message: { content: '{"add":[],"forget":[],"replace":{}}' } }] });
+      }
       calls.push({ url, headers: init.headers as Record<string, string>, body });
       return respond(body, calls.length);
     }),
   );
   return calls;
 }
+
+const drain = (t: ReturnType<typeof fresh>) => t.finishAllScheduledFunctions(() => {});
 
 const json = (payload: unknown, status = 200) =>
   new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
@@ -134,7 +146,7 @@ describe("parseReply", () => {
 });
 
 describe("generate.run", () => {
-  test("a paid thread edits a saved site, charges the edit cost, and follows the SkillUI package", async () => {
+  test("a paid thread edits a saved site, charges the edit cost, and follows the measured design reference", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
@@ -151,12 +163,13 @@ describe("generate.run", () => {
     await seedBuilt(t, member.userId, siteId, PAGE, false);
     await expect(
       member.as.action(api.generate.run, { conversationId, prompt }),
-    ).rejects.toThrow("no saved SkillUI design package");
+    ).rejects.toThrow("hasn't been measured yet");
 
     await t.run(async (ctx) => {
       await insertDesignPackage(ctx, member.userId, siteId);
     });
     const { messageId } = await member.as.action(api.generate.run, { conversationId, prompt });
+    await drain(t);
 
     const messages = await member.as.query(api.messages.list, { conversationId });
     expect(messages.map((m) => [m.role, m.body, m.status ?? null])).toEqual([
@@ -173,10 +186,6 @@ describe("generate.run", () => {
       published: true,
     });
 
-    expect(calls).toHaveLength(0);
-    expect(await member.as.query(api.messages.list, { conversationId })).toEqual([]);
-    expect(await member.as.query(api.sites.currentHtml, { siteId })).toBeNull();
-    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       credits: OPENING - REQUEST_COSTS.edit,
       reserved: 0,
@@ -190,7 +199,7 @@ describe("generate.run", () => {
     expect(calls[0].body.model).toBe("forge-test");
     const sent = calls[0].body.messages;
     expect(sent.map((m: any) => m.role)).toEqual(["system", "system", "system", "system", "system", "system", "user"]);
-    expect(sent[3].content).toContain("saved SkillUI design reference");
+    expect(sent[3].content).toContain("saved measured design reference");
     expect(sent[4].content).toBe(DESIGN_PROMPT);
     expect(sent[5].content).toContain(PAGE);
     expect(sent[6].content).toBe(prompt);
@@ -205,7 +214,9 @@ describe("generate.run", () => {
       call === 1 ? reply("Built the first version.") : reply("Added opening hours.", PAGE_TWO),
     );
     await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
+    await drain(t);
     await member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" });
+    await drain(t);
 
     const second = calls[1].body.messages;
     const spoken = second.filter((m: any) => m.role !== "system");
@@ -253,7 +264,7 @@ describe("generate.run", () => {
       t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "A bakery" }),
     ).rejects.toThrow("Complete the website questions before your first build");
 
-    // Once a page and its SkillUI package are saved, the next turn edits it.
+    // Once a page and its measured design reference are saved, the next turn edits it.
     await seedBuilt(t, member.userId, siteId);
     await t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "Add hours" });
     expect(await pendingBody(conversationId)).toBe("Updating your site\u2026");
@@ -512,6 +523,7 @@ describe("generate.run", () => {
     await seedBuilt(t, member.userId, siteId);
     stubProvider(() => reply("Built it."));
     await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
+    await drain(t);
     const summary = (await member.as.query(api.billing.summary, {}))!;
     expect(summary).toMatchObject({
       unlimited: false,

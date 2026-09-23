@@ -187,6 +187,8 @@ describe("a brand new build, start to finish", () => {
       "Answers submitted",
       "Build brief saved and read",
       "Agent started building your website",
+      "Checking the layout against the design reference",
+      "Layout passed the design check",
       "Page written",
       "Pictures made for your site",
       "Website received from the agent",
@@ -242,7 +244,7 @@ describe("a brand new build, start to finish", () => {
     expect(runs[0].endedAt).toBeDefined();
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(
-      expect.arrayContaining(["queued", "research", "research_searching", "research_skillui", "research_done", "design_loaded", "held", "provider_request", "provider_response", "images", "images_done", "saving", "complete"]),
+      expect.arrayContaining(["queued", "research", "research_searching", "research_candidate", "research_inspecting", "research_measuring", "research_uploading", "research_done", "design_loaded", "held", "provider_request", "provider_response", "layout_check", "layout_verdict", "images", "images_done", "saving", "complete"]),
     );
 
     // The member lands on the finished screen, with Rebuild on offer.
@@ -528,6 +530,8 @@ describe("a rebuild, start to finish", () => {
       "Rebuilding from your answers",
       "Build brief saved and read",
       "Agent started building your website",
+      "Checking the layout against the design reference",
+      "Layout passed the design check",
       "Page written",
       "Pictures made for your site",
       "Website received from the agent",

@@ -171,7 +171,7 @@ async function firstSite(t: T, member: Member) {
   return { id, site };
 }
 
-describe("a first build researches a SkillUI package and saves", () => {
+describe("a first build researches a measured design reference and saves", () => {
   test("the worker runs once, the package is kept, and the retired reviewer is not called", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
@@ -191,7 +191,7 @@ describe("a first build researches a SkillUI package and saves", () => {
     expect(design).toMatchObject({ prompt: DESIGN_PROMPT, inspectedPages: 2 });
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
-      "research", "research_searching", "research_skillui", "research_done", "design_loaded", "complete",
+      "research", "research_searching", "research_candidate", "research_inspecting", "research_measuring", "research_uploading", "research_done", "design_loaded", "layout_check", "layout_verdict", "complete",
     ]));
     expect(await versions(t)).toHaveLength(1);
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
@@ -225,7 +225,7 @@ describe("a first build researches a SkillUI package and saves", () => {
   });
 });
 
-describe("an edit uses the saved SkillUI package", () => {
+describe("an edit uses the saved measured design reference", () => {
   test("a later page is saved at once and told to follow the reference", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");

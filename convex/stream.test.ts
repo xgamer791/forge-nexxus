@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { insertDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, insertDesignPackage } from "./designWorkerMock";
 import type { Id } from "./_generated/dataModel";
 import { recordLastSign } from "./diagnostics";
 import { callProvider } from "./generate";
@@ -182,7 +182,11 @@ function stubBuilds(build: (call: number) => Response) {
   const calls: any[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init: RequestInit) => {
+    vi.fn(async (url: string, init: RequestInit) => {
+      const layout = await answerDesignResearch(url, init, async () => {
+        throw new Error("This test does not research a design reference");
+      });
+      if (layout) return layout;
       const request = JSON.parse(String(init.body));
       if (!request.messages.some((m: any) => /standing rules for the website agent/.test(m.content))) {
         return json({ choices: [{ message: { content: '{"add":[],"forget":[],"replace":[]}' } }] });
@@ -224,6 +228,7 @@ describe("a build reads its reply as a stream", () => {
     const { conversationId } = await seedBuiltSite(t, member.userId);
     const calls = stubBuilds(() => streamed(think("Plan."), say(edited), finish(), DONE));
     await member.as.action(api.generate.run, { conversationId, prompt: "Change the hours" });
+    await t.finishAllScheduledFunctions(() => {});
     expect(calls[0].stream).toBe(true);
     // Token counts are asked for only where the provider is known to send them.
     expect(calls[0].stream_options).toBeUndefined();
@@ -231,6 +236,7 @@ describe("a build reads its reply as a stream", () => {
     process.env.AI_STREAM = "0";
     const plain = stubBuilds(() => json({ choices: [{ message: { content: edited } }] }));
     await member.as.action(api.generate.run, { conversationId, prompt: "Change the hours again" });
+    await t.finishAllScheduledFunctions(() => {});
     expect(plain[0].stream).toBeUndefined();
     const versions = await t.run((ctx) => ctx.db.query("siteVersions").collect());
     expect(versions).toHaveLength(3);
@@ -244,6 +250,7 @@ describe("a build reads its reply as a stream", () => {
       call === 1 ? streamed(KEEP_ALIVE, think("Plan the hours.")) : streamed(think("Plan."), say(edited), finish(), DONE));
 
     await member.as.action(api.generate.run, { conversationId, prompt: "Change the hours" });
+    await t.finishAllScheduledFunctions(() => {});
     expect(calls).toHaveLength(2);
     const { run, events } = await runEvents(t);
     expect(run.status).toBe("complete");
