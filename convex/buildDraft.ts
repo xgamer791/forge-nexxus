@@ -61,6 +61,7 @@ import {
 import { designSource, pagePlan, siteParts } from "./pages";
 import { assertDesignRules, isSkillUI } from "./siteDesign";
 import type { StreamStats } from "./stream";
+import { allowAgree, comparePart, partDocument, referenceShots, visualGateOn } from "./visualGate";
 
 // Steps in a row that may finish nothing -- no part, and nothing more of one --
 // before the build stops with what stopped the last of them. A part's replies
@@ -490,14 +491,20 @@ export const partMissed = internalMutation({
 // An auditor's verdict on a part. Agreed, the part is done; sent back, its
 // builder gets the fixes; sent back once too often, the build stops.
 export const partAudited = internalMutation({
-  args: { id: v.id("buildDrafts"), lease: v.string(), part: partValidator, agree: v.boolean(), fixes: v.array(v.string()) },
+  args: {
+    id: v.id("buildDrafts"), lease: v.string(), part: partValidator, agree: v.boolean(), fixes: v.array(v.string()),
+    // Set only after the pixel gate measured a pass. Without it, agreement is refused while the gate is on.
+    visualPass: v.optional(v.boolean()),
+  },
   handler: async (ctx, args): Promise<{ state: "agreed" | "rework" | "exhausted" | "gone"; part?: CrewPart }> => {
     const draft = await live(ctx, args.id, args.lease);
     if (!draft?.crew) return { state: "gone" };
     const before = partOf(draft.crew, args.part);
     if (before.agreed || before.markup === undefined) return { state: "gone" };
     const round = before.round + 1;
-    if (args.agree) {
+    const agree = allowAgree(args.agree, args.visualPass);
+    const fixes = agree ? args.fixes : (args.fixes.length ? args.fixes : ["The pixel gate did not pass, so this part is not complete. Match the SkillUI reference screenshots."]);
+    if (agree) {
       const part: CrewPart = { ...before, round, agreed: true, fixes: [], asked: undefined, tries: 0, problem: undefined };
       await savePart(ctx, draft, part, true);
       return { state: "agreed", part: stored(part) };
@@ -513,7 +520,7 @@ export const partAudited = internalMutation({
       await failDraft(ctx, draft, outOfRounds(args.part, draft.crew.path));
       return { state: "exhausted" };
     }
-    const part: CrewPart = { ...before, round, fixes: args.fixes.slice(0, 40), asked: undefined, tries: 0, problem: undefined };
+    const part: CrewPart = { ...before, round, fixes: fixes.slice(0, 40), asked: undefined, tries: 0, problem: undefined };
     await savePart(ctx, draft, part, true);
     return { state: "rework", part: stored(part) };
   },
@@ -730,6 +737,18 @@ async function workCrew(
   const top = new Promise<void>((resolve) => {
     topWritten = resolve;
   });
+  // One signed URL for the SkillUI zip, reused by every part in this step.
+  let packageUrl: string | null | undefined;
+  async function packageLink() {
+    if (!visualGateOn()) return null;
+    if (packageUrl !== undefined) return packageUrl;
+    packageUrl = (await ctx.storage.getUrl(draft.designStorageId)) ?? null;
+    return packageUrl;
+  }
+  function partHtml(name: PartName, markup: string) {
+    if (written && isChrome(name)) return written.shell.replace("</head>", `${markup}\n</head>`);
+    return partDocument(setting.foundation, markup);
+  }
 
   // A reply that could not be used, or a call that failed: counted against its
   // part, and a few in a row, or one that nothing will change, stop the build.
@@ -755,6 +774,8 @@ async function workCrew(
     const partDetail = { ...detail, part: name };
     // A reply another model began is written again rather than carried on.
     const carry = part.partial !== undefined && draft.model === input.model ? part.partial : undefined;
+    const url = await packageLink();
+    const shots = url ? await referenceShots({ packageUrl: url, part: name, path }) : [];
     await trace.note(carry !== undefined
       ? {
           phase: "draft_resume",
@@ -770,7 +791,7 @@ async function workCrew(
               ? `${capital(where)}: making the auditor's ${part.fixes.length === 1 ? "change" : `${part.fixes.length} changes`} to the ${PART_NAMES[name]}`
               : `${capital(where)}: writing the ${PART_NAMES[name]}`,
           status: "calling",
-          detail: { ...partDetail, round: part.round },
+          detail: { ...partDetail, round: part.round, ...(shots.length ? { screens: shots.length } : {}) },
         });
     const messages = builderTurn({
       base: input.base,
@@ -786,6 +807,7 @@ async function workCrew(
       rebuild: setting.rebuild,
       imagery: name === "body1" && path === "/" && input.imagery ? NEW_IMAGERY : undefined,
       carry,
+      shots,
     });
     let answer: Awaited<ReturnType<typeof callProviderPart>>;
     try {
@@ -852,6 +874,53 @@ async function workCrew(
   async function audit(name: PartName) {
     const part = latest[name];
     const partDetail = { ...detail, part: name, round: part.round + 1 };
+    // The pixel gate runs before the auditor can agree. A miss retries this
+    // check; a measured fail is a rework, never an agreement.
+    let pixelPassed = !visualGateOn();
+    if (visualGateOn()) {
+      const url = await packageLink();
+      try {
+        if (!url) throw new Error("The SkillUI package could not be opened for the pixel gate");
+        const gate = await comparePart({ packageUrl: url, part: name, path, html: partHtml(name, part.markup ?? "") });
+        pixelPassed = gate.pass;
+        await trace.note({
+          phase: gate.pass ? "crew_visual_pass" : "crew_visual_fail",
+          label: gate.pass
+            ? `${capital(where)}: the ${PART_NAMES[name]} passed the pixel gate${gate.ratio === undefined ? "" : ` (${(gate.ratio * 100).toFixed(3)}% of pixels differ)`}`
+            : `${capital(where)}: the ${PART_NAMES[name]} failed the pixel gate and goes back to its builder`,
+          level: gate.pass ? undefined : "warn",
+          status: "reviewing",
+          detail: { ...partDetail, agree: gate.pass },
+        });
+        if (!gate.pass) {
+          const result = await ctx.runMutation(internal.buildDraft.partAudited, { id, lease, part: name, agree: false, fixes: gate.fixes });
+          if (result.state === "gone" || result.state === "exhausted") {
+            halted = true;
+            return;
+          }
+          latest[name] = result.part!;
+          progressed = true;
+          await trace.note({
+            phase: "crew_sent_back",
+            label: `${capital(where)}: the pixel gate sent the ${PART_NAMES[name]} back with ${gate.fixes.length === 1 ? "1 change" : `${gate.fixes.length} changes`}`,
+            level: "warn",
+            status: "reviewing",
+            detail: { ...partDetail, agree: false },
+          });
+          return;
+        }
+      } catch (error) {
+        await trace.note({
+          phase: "crew_visual_fail",
+          label: `${capital(where)}: the pixel gate could not check the ${PART_NAMES[name]}`,
+          level: "warn",
+          status: "reviewing",
+          detail: partDetail,
+        });
+        await miss(name, { reason: describe(error), problem: "The pixel gate could not compare this part with the SkillUI screenshots. It is not complete." });
+        return;
+      }
+    }
     await trace.note({
       phase: "crew_audit",
       label: `${capital(where)}: the auditor is checking the ${PART_NAMES[name]} against the reference`,
@@ -888,7 +957,10 @@ async function workCrew(
       await miss(name, { reason: "The design auditor didn't return a verdict" });
       return;
     }
-    const result = await ctx.runMutation(internal.buildDraft.partAudited, { id, lease, part: name, agree: verdict.agree, fixes: verdict.fixes });
+    const result = await ctx.runMutation(internal.buildDraft.partAudited, {
+      id, lease, part: name, agree: verdict.agree, fixes: verdict.fixes,
+      ...(pixelPassed && verdict.agree && visualGateOn() ? { visualPass: true as const } : {}),
+    });
     if (result.state === "gone" || result.state === "exhausted") {
       halted = true;
       return;

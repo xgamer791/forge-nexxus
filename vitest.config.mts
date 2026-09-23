@@ -13,6 +13,9 @@ export default defineConfig({
     env: {
       REBUILD_SAMPLE: "off",
       DESIGN_REVIEW: "off",
+      // The pixel gate is covered in convex/visualGate.test.ts, which turns it
+      // back on. A stubbed build must not call the design worker to render.
+      BUILDER_VISUAL_GATE: "0",
       DESIGN_WORKER_URL: "https://design-worker.test",
       DESIGN_WORKER_TOKEN: "test-design-worker-token",
     },

@@ -68,7 +68,13 @@ Convex environment:
 * `DESIGN_WORKER_TOKEN`: the same bearer token.
 
 `GET /health` reports process health. `POST /research` is authenticated and
-streams JSON lines; do not expose the worker without TLS and the bearer token.
+streams JSON lines. `POST /shots` returns the SkillUI reference PNGs for one
+crew part (header, body1, body2, footer). `POST /visual` renders that part's
+HTML in Chromium at 390 and 1440 and counts differing pixels against those
+PNGs. Do not expose the worker without TLS and the bearer token. The builder
+visual gate calls both; `BUILDER_VISUAL_GATE=0` on Convex skips them, and
+`BUILDER_VISUAL_MAX_DIFF` is the fraction of pixels that may differ (default
+0.001).
 Inspect a run with `npx convex run diagnostics:inspectRecent`, or in the
 member's Build activity view.
 
@@ -83,4 +89,5 @@ at the same address on its next rebuild, and edits wait for that rebuild.
 how a SkillUI package is read, turned into the extract and turned into the
 foundation, against a package written in the shape SkillUI 1.3.4 writes; and
 how the CLI is run -- in its own home, untimed, and stopped only when its
-request is closed -- against a stand-in for it.
+request is closed -- against a stand-in for it; and the pixel gate's zip
+reading, screenshot choice and 0.1% diff, with no browser.

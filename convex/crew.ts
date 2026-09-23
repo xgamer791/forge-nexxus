@@ -21,11 +21,43 @@
 // (designGate.ts). Nothing in this file calls a model or reads a table.
 import { elided, firstObject, lines, truth } from "./designCheck";
 import { DESIGN_GOD } from "./designgod";
-import { fenceAttr, fencedBlocks } from "./generate";
+import { fenceAttr, fencedBlocks, type ChatMessage } from "./generate";
 import { CARRY_ON } from "./onboarding";
 import { BODY_MARKER, TITLE_MARKER, type SitePage } from "./pages";
 
-type Message = { role: "system" | "user" | "assistant"; content: string };
+type Message = ChatMessage;
+
+// On every builder turn, in the system channel and again beside the ask.
+// The pixel measurement that keeps the part lives in visualGate.ts; this is
+// what the builder is told, with the reference screenshots beside it.
+export const VISUAL_INSPECT = [
+  "VISUAL GATE — match the SkillUI Ultra reference to the pixel.",
+  "Inspect the reference screenshot(s) attached to this turn. They are the design for this part (the header, the top half, the bottom half, or the footer).",
+  "Your part is not complete, and you must not treat it as done, until it matches those screenshots: the same structure, spacing, type scale, colour and alignment.",
+  "Forge renders the HTML you return and compares it, pixel by pixel, with the matching SkillUI screenshot at phone width (390) and desktop width (1440).",
+  "The part is kept only when at most 0.1% of pixels differ. Saying it matches does not count. If the part was sent back, the notes are measurements from that diff.",
+].join("\n");
+
+const VISUAL_LINE = "Visual gate: match the attached SkillUI screenshots to the pixel (at most 0.1% of pixels may differ). This part is not complete until that measured diff passes.";
+
+export type ReferenceImage = { label: string; mediaType: string; base64: string };
+
+function withVisual(text: string) {
+  return `${text}\n\n${VISUAL_LINE}`;
+}
+
+function imageMessage(shots: ReferenceImage[]): Message {
+  return {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: `SkillUI Ultra reference screenshot(s) for this part. Match these to the pixel.\n${shots.map((shot) => `- ${shot.label}`).join("\n")}`,
+      },
+      ...shots.map((shot) => ({ type: "image_url" as const, image_url: { url: `data:${shot.mediaType};base64,${shot.base64}` } })),
+    ],
+  };
+}
 
 export const PARTS = ["header", "body1", "body2", "footer"] as const;
 export type PartName = (typeof PARTS)[number];
@@ -252,6 +284,8 @@ export type BuilderInput = {
   imagery?: string;
   // The reply its step's clock stopped part way, to carry on.
   carry?: string;
+  // SkillUI reference screenshots for this part, already resized.
+  shots?: ReferenceImage[];
 };
 
 // One builder's turn: the rules every build turn carries, the reference, the
@@ -264,10 +298,13 @@ export function builderTurn(input: BuilderInput): Message[] {
     ...input.base,
     { role: "system", content: clip(input.extract, EXTRACT_LIMIT) },
     { role: "system", content: foundationNote(input.foundation) },
+    { role: "system", content: VISUAL_INSPECT },
     { role: "system", content: crewOrder(input.routes, path) },
     ...(input.rebuild ? [{ role: "system" as const, content: input.rebuild }] : []),
     { role: "user", content: `File: website-build-brief.md\n\n${input.brief}` },
   ];
+  const shots = (input.shots ?? []).filter((shot) => /^image\/(png|jpeg|webp)$/.test(shot.mediaType) && shot.base64.length > 0 && shot.base64.length <= 1_500_000).slice(0, 3);
+  if (shots.length) messages.push(imageMessage(shots));
   const context: string[] = [];
   if (input.written) context.push(siteSoFar(input.written.shell, adjusting ? undefined : input.written.home));
   if (part.name === "body2" && input.top !== undefined) {
@@ -285,17 +322,17 @@ export function builderTurn(input: BuilderInput): Message[] {
         : part.name === "body1"
           ? topAsk(path, input.siteName, input.imagery)
           : restAsk();
-  messages.push({ role: "user", content: [...context, ask].join("\n\n") });
+  messages.push({ role: "user", content: withVisual([...context, ask].join("\n\n")) });
   // Sent back: the builder's own last reply, then what its auditor asked for.
   // A later page's chrome states its fixes in the ask itself.
   if (!adjusting && part.fixes.length && part.markup) {
     messages.push({ role: "assistant", content: `\`\`\`html part="${part.name}"\n${clip(part.markup!, PART_LIMIT)}\n\`\`\`` });
     messages.push({
       role: "user",
-      content: [
-        `Your ${PART_NAMES[part.name]}'s auditor compared it with the SkillUI Ultra reference and did not agree it matches. Make every one of these changes, keep everything else as it is, and write the whole part out again, in the same kind of block:`,
+      content: withVisual([
+        `Your ${PART_NAMES[part.name]} was compared with the SkillUI Ultra reference and did not match. Make every one of these changes, keep everything else as it is, and write the whole part out again, in the same kind of block:`,
         part.fixes.map((fix) => `- ${fix}`).join("\n"),
-      ].join("\n"),
+      ].join("\n")),
     });
   }
   if (part.problem) {
