@@ -1,5 +1,6 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
@@ -179,7 +180,7 @@ async function research(input, emit) {
   const categoryText = category(input.offer);
   if (!categoryText) throw new Error('A business category is needed for design research');
   const candidates = await search(categoryText, input.references, emit);
-  const browser = await chromium.launch({ headless: true });
+  let browser = await chromium.launch({ headless: true });
   let chosen;
   try {
     const measured = [];
@@ -201,6 +202,10 @@ async function research(input, emit) {
       const name = `reference-${new URL(chosen.url).hostname.replace(/[^a-z0-9-]/gi, '-')}`.slice(0, 70);
       const dir = path.join(out, `${name}-design`);
       const inventory = await capture(browser, chosen, dir, emit);
+      // SkillUI starts its own Chromium processes. Release the inspection
+      // browser first so both captures do not compete for worker memory.
+      await browser.close();
+      browser = null;
       await runSkillUI(chosen.url, out, name, emit);
       const skill = await fs.readFile(path.join(dir, 'SKILL.md'), 'utf8');
       const design = await fs.readFile(path.join(dir, 'references', 'DESIGN.md'), 'utf8');
@@ -212,14 +217,19 @@ async function research(input, emit) {
       const prompt = `SkillUI ultra design reference for this site. Use this for the shared shell, layout and component rhythm on every page. Do not copy source text, images, logos, addresses or brand identity. Write original copy from the user's brief and request original subject images through forge-image. DESIGN_GOD's Type section overrides all fonts and typography below; choose only Fontshare fonts.\n\nSite structure and inspected pages:\n${reference.slice(0, 13000)}\n\nSkillUI SKILL.md:\n${skill.replace(/^.*(?:fonts\.googleapis\.com|Google Fonts|google fonts).*$/gim, '').slice(0, 42000)}\n\nDesign tokens:\n${design.replace(/^.*(?:fonts\.googleapis\.com|Google Fonts|google fonts).*$/gim, '').slice(0, 14000)}\n\nLayout measurements:\n${layout.slice(0, 5000)}`.slice(0, 79000);
       if (!skill.includes('Design System') || !inventory.length || !layout.trim()) throw new Error('SkillUI ultra produced no usable design reference');
       emit('uploading', { pages: inventory.length });
-      const zip = await fs.readFile(path.join(dir, `${name}-design.skill`));
-      const upload = await fetch(input.uploadUrl, { method: 'POST', headers: { 'content-type': 'application/zip' }, body: zip, signal: AbortSignal.timeout(45000) });
+      const archive = path.join(dir, `${name}-design.skill`);
+      const { size } = await fs.stat(archive);
+      const upload = await fetch(input.uploadUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/zip', 'content-length': String(size) },
+        body: createReadStream(archive), duplex: 'half', signal: AbortSignal.timeout(45000),
+      });
       if (!upload.ok) throw new Error(`Design package upload failed (${upload.status})`);
       const { storageId } = await upload.json();
       if (!storageId) throw new Error('Design package upload returned no storage ID');
       return { storageId, referenceUrl: chosen.url, prompt, inspectedPages: inventory.length };
     } finally { await fs.rm(out, { recursive: true, force: true }); }
-  } finally { await browser.close(); }
+  } finally { if (browser) await browser.close(); }
 }
 
 const server = http.createServer(async (req, res) => {
