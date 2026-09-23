@@ -2,10 +2,9 @@
   "name": "forge-design-worker",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node server.mjs" },
+  "scripts": { "start": "node server.mjs", "test": "node --test \"checks/*.mjs\"" },
   "dependencies": {
-    "playwright": "1.59.1",
-    "skillui": "1.3.4"
+    "playwright": "1.59.1"
   },
   "engines": { "node": ">=22" }
 }
