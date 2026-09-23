@@ -267,7 +267,7 @@ describe("a brand new build, start to finish", () => {
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(
       expect.arrayContaining([
-        "queued", "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
+        "queued", "research", "research_searching", "research_candidate", "research_vision", "research_vision_accepted", "research_discovering", "research_skillui", "research_uploading", "research_done",
         "design_loaded", "held", "draft_start", "crew_page", "crew_build", "provider_request", "provider_response", "crew_built", "crew_audit", "crew_agreed",
         "crew_page_done", "draft_done", "images", "images_done", "saving", "complete",
       ]),

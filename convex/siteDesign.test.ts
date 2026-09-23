@@ -136,8 +136,12 @@ describe("SkillUI Ultra design research", () => {
     });
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
-      "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
+      "research", "research_searching", "research_candidate", "research_vision", "research_vision_accepted", "research_discovering", "research_skillui", "research_uploading", "research_done",
     ]));
+    expect(events.find((event) => event.phase === "research_vision_accepted")).toMatchObject({
+      label: "Chose harbor-reference.example after seeing it",
+      detail: { domain: "harbor-reference.example", verdict: "accepted" },
+    });
     expect(events.find((event) => event.phase === "research_skillui")).toMatchObject({
       label: "Reading the reference's design with SkillUI Ultra, 1 screen",
       detail: { mode: "ultra", screens: 1 },

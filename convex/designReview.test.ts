@@ -199,7 +199,7 @@ describe("a first build researches a SkillUI Ultra design reference and saves", 
     expect(design).toMatchObject({ prompt: DESIGN_PROMPT, inspectedPages: 1, format: "skillui-ultra-v1" });
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
-      "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
+      "research", "research_searching", "research_candidate", "research_vision", "research_vision_accepted", "research_discovering", "research_skillui", "research_uploading", "research_done",
       "design_loaded", "draft_start", "crew_page", "crew_built", "crew_agreed", "crew_page_done", "draft_done", "complete",
     ]));
     expect(events.map((event) => event.phase)).not.toContain("layout_check");
