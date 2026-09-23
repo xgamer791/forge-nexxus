@@ -44,12 +44,14 @@ describe("one instruction, in one place", () => {
     expect(stack.length).toBeLessThan(35000);
   });
 
-  test("type lives in DESIGN_GOD, as guidance: Satoshi and Switzer are a start, not a rule", () => {
+  test("type lives in DESIGN_GOD, and every family comes from Fontshare", () => {
     expect(DESIGN_GOD).toContain("## Type");
-    expect(DESIGN_GOD).toContain("Fontshare and Google Fonts are both available");
-    expect(DESIGN_GOD).toContain("Satoshi and Switzer from Fontshare are good starting points, not requirements");
+    expect(DESIGN_GOD).toContain("https://www.fontshare.com/");
+    expect(DESIGN_GOD).toContain("Google Fonts and every other source are not permitted");
+    expect(DESIGN_GOD).toContain("Satoshi and Switzer are good starting points, not requirements");
+    expect(DESIGN_GOD).toContain("the Type section");
     expect(DESIGN_GOD).not.toContain("One typeface for the entire build");
-    expect(DESIGN_GOD).not.toContain("from Fontshare only");
+    expect(DESIGN_GOD).not.toContain("Fontshare and Google Fonts are both available");
     expect(FORGE_MD).not.toContain("https://www.fontshare.com/fonts/satoshi");
     // The contract does not restate type: design instruction has one home.
     expect(contract).not.toContain("Satoshi");
