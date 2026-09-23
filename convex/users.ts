@@ -93,6 +93,7 @@ export async function purgeUser(ctx: MutationCtx, userId: Id<"users">) {
     ...(await ctx.db.query("designReviews").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("designGates").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("buildDrafts").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
+    ...(await ctx.db.query("pageAgents").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
     ...(await ctx.db.query("memories").withIndex("by_user", (q) => q.eq("userId", userId)).collect()),
   ];
   await Promise.all(owned.map((row) => ctx.db.delete(row._id)));

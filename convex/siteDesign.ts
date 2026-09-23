@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { ProviderTrace } from "./diagnostics";
 import { normalizePath, siteParts, type BuiltSite } from "./pages";
 
@@ -44,6 +44,79 @@ export function routeSpec(spec: string, paths: string[]) {
   });
   return found ? kept.join("\n").trimEnd() : spec;
 }
+
+// A fresh build writes at most so many pages, one agent each (buildDraft.ts).
+// When the reference measured more, the site's reference is narrowed to the
+// pages the build writes -- the measured file the layout check compares with,
+// and the spec the agents build from -- so the check measures exactly those
+// pages, every region at every width, and neither the check nor the spec asks
+// for a page the build was never going to write. The spec keeps everything
+// before its first route, with the routes line naming the pages kept, and the
+// sections of those routes.
+export function capSpec(spec: string, paths: readonly string[]) {
+  const scoped = routeSpec(spec, [...paths]);
+  const lead = "ROUTES: build exactly these pages and no others: ";
+  return scoped.split("\n").map((line) => {
+    if (!line.startsWith(lead)) return line;
+    const rest = line.slice(lead.length);
+    const end = rest.search(/\.(\s|$)/);
+    return `${lead}${paths.join(", ")}.${end === -1 ? "" : rest.slice(end + 1)}`;
+  }).join("\n");
+}
+
+// The measured file narrowed to those pages, in the order the build writes
+// them. A page the file does not have is no page the check could measure, so
+// narrowing fails rather than checking less than the build wrote.
+export function capMeasured(text: string, paths: readonly string[]) {
+  let reference: { routes?: { path?: unknown }[] } & Record<string, unknown>;
+  try {
+    reference = JSON.parse(text);
+  } catch {
+    throw new Error("The measured design reference could not be read");
+  }
+  if (!Array.isArray(reference?.routes)) throw new Error("The measured design reference has no routes");
+  const routes = paths.map((path) => reference.routes!.find((route) =>
+    typeof route?.path === "string" && normalizePath(route.path) === path));
+  if (routes.some((route) => !route)) throw new Error("The measured design reference is missing a page the build writes");
+  return JSON.stringify({ ...reference, routes });
+}
+
+export async function capReference(ctx: ActionCtx, design: Doc<"siteDesignPackages">, paths: readonly string[]) {
+  const file = await ctx.storage.get(design.storageId);
+  if (!file) throw new Error("The measured design reference is missing from storage");
+  const narrowed = capMeasured(await file.text(), paths);
+  const storageId = await ctx.storage.store(new Blob([narrowed], { type: "application/json" }));
+  const capped = await ctx.runMutation(internal.siteDesign.cap, {
+    designId: design._id,
+    from: design.storageId,
+    storageId,
+    routes: [...paths],
+    prompt: capSpec(design.prompt, paths),
+  });
+  if (!capped) {
+    await ctx.storage.delete(storageId);
+    throw new Error("The site changed before its design reference could be narrowed to the pages being built");
+  }
+}
+
+// The narrowing, applied only to the reference it was made from.
+export const cap = internalMutation({
+  args: {
+    designId: v.id("siteDesignPackages"),
+    from: v.id("_storage"),
+    storageId: v.id("_storage"),
+    routes: v.array(v.string()),
+    prompt: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, { designId, from, storageId, routes, prompt }) => {
+    const design = await ctx.db.get(designId);
+    if (!design || design.storageId !== from || !isMeasured(design)) return false;
+    await ctx.db.patch(designId, { storageId, routes, prompt, inspectedPages: routes.length });
+    await ctx.storage.delete(from);
+    return true;
+  },
+});
 
 export function assertDesignRules(site: BuiltSite, referenceUrl: string) {
   const html = siteParts(site).join("\n");
@@ -317,4 +390,18 @@ export const GATE_QUIET_MS = 630000;
 // Whether a check is still carrying its build, for the thread's watchdog.
 export function gateInFlight(gate: { status: string; updatedAt: number } | null | undefined, now = Date.now()) {
   return Boolean(gate && ["checking", "reworking", "passed"].includes(gate.status) && now - gate.updatedAt < GATE_QUIET_MS);
+}
+
+// The last sign of life from the page agents writing a first build's draft, or
+// reworking a layout check's round (buildDraft.ts). Each agent beats on its own
+// row while its slice runs, so this is what the watchdogs read to tell a build
+// that is still being written from one that has gone quiet.
+export async function agentsHeard(
+  ctx: QueryCtx | MutationCtx,
+  owner: { draftId: Id<"buildDrafts"> } | { gateId: Id<"designGates">; round: number },
+) {
+  const agents = "draftId" in owner
+    ? await ctx.db.query("pageAgents").withIndex("by_draft", (q) => q.eq("draftId", owner.draftId)).collect()
+    : await ctx.db.query("pageAgents").withIndex("by_gate_round", (q) => q.eq("gateId", owner.gateId).eq("round", owner.round)).collect();
+  return agents.reduce((latest, agent) => (agent.status === "writing" || agent.status === "waiting" ? Math.max(latest, agent.beatAt) : latest), 0);
 }

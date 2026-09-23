@@ -9,35 +9,23 @@ import { designSource, pagePlan, serializeSite, siteParts, withParts, type Built
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import type { RequestKind } from "./plans";
 import { failOpenRun, openRun, providerTrace, recordEvent, recordLastSign, type ProviderTrace } from "./diagnostics";
-import { builtSite, callProvider, chatRoute, describe, parseReply } from "./generate";
+import { callProvider, describe, swarmRoute } from "./generate";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { inventSample, sampleRebuilds } from "./sampleBusiness";
 import { isAdminEmail } from "./admins";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
-import { assertDesignRules, isMeasured, NOT_MEASURED, researchDesign, routeSpec } from "./siteDesign";
+import { agentsHeard, capReference, isMeasured, NOT_MEASURED, researchDesign, routeSpec } from "./siteDesign";
+import { MAX_PAGES } from "./buildDraft";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
 
-// The words and the pictures share an action's ten minutes. The text gets the
-// larger part -- a reply is never cut off for being slow, only when the
-// platform's own clock is about to run out -- and the watchdog sits just
-// inside that limit, so it only ever speaks for a build that died without
-// saying so.
-const TEXT_BUDGET_MS = 480000;
-const RETRY_FLOOR_MS = 120000;
+// A measured build is written by page agents in slices (buildDraft.ts), each
+// slice an action of its own that hands on at its end, so nothing here gives
+// the words a clock. The watchdog speaks only for a build nothing has been
+// heard from for this long -- no step, agent, check or save beating -- which
+// is a build that died without saying so, never one that is only long.
 const WATCHDOG_MS = 570000;
-// A measured site in pages is more than one reply can write inside those
-// minutes, so it is written a page at a time (buildDraft.ts), each step an
-// action of its own. A step asks for pages until this much of its clock has
-// gone; a reply still streaming then is cut and saved where it got to, and
-// the rest of the action's ten minutes is headroom for that save and for
-// handing on to the next step -- never more words.
-export const PAGE_STEP_MS = 400000;
-// Another page is started inside the same step only while this much of the
-// step is left. Otherwise the step stops at the page boundary, and the next
-// step starts that page with a whole clock of its own.
-export const PAGE_FLOOR_MS = 180000;
 // While a queued attempt's step runs, its action beats at least this often.
 // An attempt quiet for longer has lost its step: the platform can drop a
 // scheduled action across a deploy or a restart, and nothing else would ever
@@ -188,8 +176,8 @@ export function heartbeat(send: () => Promise<unknown>) {
   };
 }
 
-// Research has its own action clock. A large reference crawl must not spend
-// the writing action's 480-second budget before the model has even started.
+// Research has its own action, so a large reference crawl never shares a
+// clock with the agents that write the site.
 export const research = internalAction({
   args: { id: v.id("siteOnboarding"), attempt: v.number() },
   handler: async (ctx, { id, attempt }): Promise<void> => {
@@ -764,7 +752,7 @@ export const milestone = internalMutation({
   },
 });
 
-const BUILD_ORDER = "This is an onboarding BUILD. Read the attached website-build-brief.md, work privately, and return the finished site now. Do not ask questions, discuss your plan, or reply with planning prose.";
+export const BUILD_ORDER = "This is an onboarding BUILD. Read the attached website-build-brief.md, work privately, and return the finished site now. Do not ask questions, discuss your plan, or reply with planning prose.";
 // What a rebuild owes the member on top of a new page: new pictures.
 export const NEW_IMAGERY = "Include at least one new subject-relevant photograph or illustration using an img with src=\"forge-image:1\" and a detailed data-forge-image prompt. Do not substitute an inline SVG diagram, CSS drawing, gradient or decorative icon for the principal subject image.";
 
@@ -773,8 +761,8 @@ export const NEW_IMAGERY = "Include at least one new subject-relevant photograph
 export function rebuildNote(id: Id<"siteOnboarding">, attempt: number, revision: number) {
   return `This turn is a rebuild: the previous page, its versions, thread and assets are already deleted, so build from the saved answers alone rather than trying to recover any of it. Do not print this line or the identifier on the website.\nRebuild identifier: ${id}/${attempt}/${revision}`;
 }
-const BUILD_AGAIN = "Your last reply did not contain a complete website. Return the whole website now: one sentence, then the shell in a ```html shell block that ends with </html>, then each page in its own ```html path=\"/about\" title=\"About\" block, every block closed with its fence. No planning prose, and keep the CSS lean enough to finish.";
-const DIFFERENT_BUILD = "The page you returned matched a discarded design and was rejected. Create a genuinely different page composition from the business answers. Start the HTML and CSS again; changing pictures or whitespace is not a new design. Return a complete website now.";
+export const BUILD_AGAIN = "Your last reply did not contain a complete website. Return the whole website now: one sentence, then the shell in a ```html shell block that ends with </html>, then each page in its own ```html path=\"/about\" title=\"About\" block, every block closed with its fence. No planning prose, and keep the CSS lean enough to finish.";
+export const DIFFERENT_BUILD = "The page you returned matched a discarded design and was rejected. Create a genuinely different page composition from the business answers. Start the HTML and CSS again; changing pictures or whitespace is not a new design. Return a complete website now.";
 
 // A measured site in pages is written a page at a time (buildDraft.ts). These
 // are that build's own mechanics: which part a turn writes, what it is handed
@@ -795,7 +783,7 @@ function titleOf(path: string) {
 // What every turn is told in place of a one-reply build's "return the
 // finished site now".
 function draftOrder(routes: string[]) {
-  return `This is an onboarding BUILD. The site has ${routes.length} pages -- ${routes.join(", ")} -- which is more than one reply can hold, so it is written a page at a time and each turn writes only what it is asked for. ` +
+  return `This is an onboarding BUILD. The site has ${routes.length} pages -- ${routes.join(", ")} -- which is more than one reply can hold, so each page is written by an agent of its own and each turn writes only what it is asked for. ` +
     "Read the attached website-build-brief.md and work privately. Do not ask questions, discuss your plan, or reply with planning prose.";
 }
 
@@ -886,55 +874,69 @@ export function draftTurn(input: {
   return messages;
 }
 
-// The page, asked for until it is whole. A reply that talked instead of
-// building, or stopped short of </html>, is worth one more go while there is
-// time for it; a provider that refused will only say the same thing twice.
-async function writePage(
-  messages: Parameters<typeof callProvider>[0],
-  deadline: number,
-  trace?: Parameters<typeof callProvider>[3],
-  discardedDesignHashes: string[] = [],
-  redesign?: { requireImages: boolean },
-) {
-  let shortfall: unknown;
-  let repeated = false;
-  for (let round = 0; round < 2; round += 1) {
-    const remaining = deadline - Date.now();
-    if (round > 0 && remaining < RETRY_FLOOR_MS) break;
-    try {
-      const reply = await callProvider(
-        [...messages.slice(0, -1),
-          ...(redesign?.requireImages ? [{ role: "system" as const, content: NEW_IMAGERY }] : []),
-          ...(round > 0 ? [{ role: "system" as const, content: repeated ? DIFFERENT_BUILD : BUILD_AGAIN }] : []),
-          messages[messages.length - 1],
-        ],
-        undefined,
-        remaining,
-        trace,
-        "build",
-      );
-      const parsed = parseReply(reply);
-      const site = builtSite(parsed);
-      if (site) {
-        const duplicate = discardedDesignHashes.includes(await designHash(designSource(site)));
-        const requestedPicture = (siteParts(site).join("\n").match(/<img\b[^>]*>/gi) ?? [])
-          .some(tag => /\bdata-forge-image\s*=\s*["'][^"']+/i.test(tag));
-        if (!duplicate && (!redesign?.requireImages || requestedPicture)) return { site, summary: parsed.summary, clones: parsed.clones };
-        if (!duplicate) {
-          shortfall = new Error("The rebuild did not include its required new imagery. Try rebuilding again.");
-          continue;
-        }
-        repeated = true;
-        shortfall = new Error("The model repeated the discarded design. Rebuild again to request a new one.");
-        continue;
-      }
-      shortfall = new Error("The agent did not return a website");
-    } catch (error) {
-      if (error instanceof ConvexError || !(error instanceof Error) || !/complete page|complete site|empty reply/i.test(error.message)) throw error;
-      shortfall = error;
-    }
+// A one-page site is written by one agent, which is asked what a one-reply
+// build always was: the whole site from the whole spec, with the same order,
+// and on a second go the same words about what was wrong with the first.
+export function oneTurn(input: {
+  base: TurnMessage[];
+  spec: string;
+  brief: string;
+  rebuild?: string;
+  imagery?: boolean;
+  problem?: string;
+  carry?: string;
+}): TurnMessage[] {
+  const again = input.problem ? (input.problem === DIFFERENT_BUILD ? DIFFERENT_BUILD : BUILD_AGAIN) : undefined;
+  const messages: TurnMessage[] = [
+    ...input.base,
+    { role: "system", content: input.spec },
+    { role: "system", content: BUILD_ORDER },
+    ...(input.rebuild ? [{ role: "system" as const, content: input.rebuild }] : []),
+    ...(input.imagery ? [{ role: "system" as const, content: NEW_IMAGERY }] : []),
+    ...(again ? [{ role: "system" as const, content: again }] : []),
+    { role: "user", content: `File: website-build-brief.md\n\n${input.brief}` },
+  ];
+  if (input.carry !== undefined) {
+    messages.push({ role: "assistant", content: input.carry });
+    messages.push({ role: "user", content: CARRY_ON });
   }
-  throw shortfall ?? new Error("The agent did not return a website");
+  return messages;
+}
+
+// Thinking carried from one slice to the next. A slice that ends while the
+// model is still thinking hands that thinking to the agent's next slice, so
+// the next slice goes on from it rather than thinking it all again. More than
+// a slice's worth is kept to its opening and its most recent stretch.
+const THOUGHT_HEAD = 12000;
+const THOUGHT_TAIL = 48000;
+export function keptThought(text: string) {
+  if (text.length <= THOUGHT_HEAD + THOUGHT_TAIL) return text;
+  return `${text.slice(0, THOUGHT_HEAD)}\n\n[…]\n\n${text.slice(-THOUGHT_TAIL)}`;
+}
+export function joinThought(before: string | undefined, more: string) {
+  return keptThought(before?.trim() ? `${before}\n\n${more}` : more);
+}
+
+// What the next slice is told about the thinking it carries: the thinking
+// itself, as the model's own notes, and to go on from where they end. After a
+// second checkpoint it is also told the planning is enough. Nothing here asks
+// for less of the site, only for less planning of it.
+export function thoughtNote(text: string, slices: number) {
+  return [
+    "Your last reply was paused at a checkpoint while you were still thinking it through. These are your own notes from before the pause, as far as they got:",
+    `<notes>\n${text}\n</notes>`,
+    "Carry on from where the notes end. Do not start the planning over or repeat what they already settle: finish only what is still open, then write the reply in full, in the form asked for above.",
+    ...(slices >= 2 ? [`The planning has now run across ${slices} checkpoints, which is enough to build from. Settle what is still open and write the reply now.`] : []),
+  ].join("\n\n");
+}
+
+// A turn with the thinking its slice carries, in front of the message the
+// turn ends on, which is where this build puts its instructions.
+export function withThought(messages: TurnMessage[], thought?: { text: string; slices: number }) {
+  if (!thought?.text.trim()) return messages;
+  const last = messages[messages.length - 1];
+  const note = { role: "system" as const, content: thoughtNote(thought.text, thought.slices) };
+  return last ? [...messages.slice(0, -1), note, last] : [note];
 }
 
 // sample-business block: a rebuild's invented answers replace the old ones,
@@ -1025,12 +1027,13 @@ export const build = internalAction({
     const lease = await ctx.runMutation(internal.onboarding.claimStep, { id, attempt, step: "build" });
     if (!lease) return;
     const stop = heartbeat(() => ctx.runMutation(internal.onboarding.beat, { id, attempt, lease }));
-    const deadline = Date.now() + TEXT_BUDGET_MS;
     // Everything from here on is inside the one catch, so whatever stops the
     // build -- the log as much as the model -- marks the attempt failed now
     // rather than leaving it queued for the watchdog to find.
     try {
-      const route = chatRoute("build");
+      // Every agent that writes the site runs on DeepSeek v4.1 Flash. A
+      // deployment with no route to it stops here, before anything is held.
+      const route = swarmRoute();
       let providerHost = route.baseUrl;
       try { providerHost = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
       const existing = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
@@ -1077,10 +1080,26 @@ export const build = internalAction({
       // Past its checkpoint the attempt is building, and the watchdog speaks for it.
       stop();
       const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
-      const savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
+      let savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
       if (!savedDesign || savedDesign.buildEpoch !== epoch || !isMeasured(savedDesign)) throw new Error(NOT_MEASURED);
-      const designPrompt = savedDesign.prompt;
       await trace.note({ phase: "design_loaded", label: "Loaded the saved design reference" });
+      // A fresh build writes at most MAX_PAGES pages, one agent each: the home
+      // page and the next in the order they were measured. A reference that
+      // measured more is narrowed to those pages first -- the measured file
+      // the layout check compares with and the spec the agents build from --
+      // so the check measures every page the build writes, and only those.
+      const measured = pagePlan(savedDesign.routes);
+      const routes = measured.slice(0, MAX_PAGES);
+      if (routes.length < measured.length) {
+        await capReference(ctx, savedDesign, routes);
+        savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
+        if (!savedDesign || savedDesign.buildEpoch !== epoch || !isMeasured(savedDesign)) throw new Error(NOT_MEASURED);
+        await trace.note({
+          phase: "design_capped",
+          label: `Building ${routes.length} of the ${measured.length} pages the design reference measured`,
+          detail: { total: routes.length, page: measured.length },
+        });
+      }
       const job = await ctx.runMutation(internal.generate.beginOnboarding, { id, attempt });
       await ctx.runMutation(internal.diagnostics.attach, {
         runId,
@@ -1094,58 +1113,27 @@ export const build = internalAction({
         label: "Credits held for a build",
         detail: { requestKind: job.result.requestKind, host: providerHost, model: route.model, keySet: Boolean(route.apiKey) },
       });
-      // A reference with more than one page is written a page at a time, each
-      // step its own action, and reaches the layout check from there once
-      // every page is written (buildDraft.ts). One page is one reply, as ever.
-      const routes = pagePlan(savedDesign.routes);
-      if (routes.length > 1) {
-        const draftId = await ctx.runMutation(internal.buildDraft.start, {
-          onboardingId: id,
-          attempt,
-          runId,
-          siteId: job.result.siteId,
-          assistantId: job.result.assistantId,
-          holdId: job.result.holdId,
-          epoch: job.result.epoch,
-          siteName: job.siteName,
-          rebuild: row.discardedDesignHashes !== undefined,
-          designId: savedDesign._id,
-          designStorageId: savedDesign.storageId,
-          model: route.model,
-          ...(job.memory ? { memory: job.memory } : {}),
-          routes,
-        });
-        if (!draftId) throw new Error("This build is no longer active");
-        return;
-      }
-      const page = await writePage([...job.messages,
-        { role: "system", content: designPrompt },
-        { role: "system", content: BUILD_ORDER },
-        ...(row.discardedDesignHashes !== undefined ? [{ role: "system" as const, content: rebuildNote(id, attempt, row.revision) }] : []),
-        { role: "user", content: `File: website-build-brief.md\n\n${brief}` },
-      ], deadline, trace, row.discardedDesignHashes,
-      row.discardedDesignHashes !== undefined ? { requireImages: Boolean(imageRoute().apiKey) } : undefined);
-      const design = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (!design || design.buildEpoch !== epoch || !isMeasured(design)) throw new Error("The saved design reference disappeared during the build");
-      assertDesignRules(page.site, design.referenceUrl);
-      // The site is saved only once the layout check passes it
-      // (designGate.ts), which finishes the build from there.
-      await ctx.runMutation(internal.designGate.open, {
-        source: "onboarding",
+      // Every page has an agent of its own, each writing in slices, and the
+      // site reaches the layout check once every page is written
+      // (buildDraft.ts). A one-page reference is one agent.
+      const draftId = await ctx.runMutation(internal.buildDraft.start, {
+        onboardingId: id,
+        attempt,
         runId,
-        userId: row.userId,
         siteId: job.result.siteId,
         assistantId: job.result.assistantId,
         holdId: job.result.holdId,
-        requestKind: job.result.requestKind,
         epoch: job.result.epoch,
-        onboardingId: id,
-        attempt,
-        rebuild: row.discardedDesignHashes !== undefined,
         siteName: job.siteName,
-        ...page.site,
-        summary: page.summary,
+        rebuild: row.discardedDesignHashes !== undefined,
+        designId: savedDesign._id,
+        designStorageId: savedDesign.storageId,
+        model: route.model,
+        ...(job.memory ? { memory: job.memory } : {}),
+        routes,
+        ...(routes.length < measured.length ? { measuredRoutes: measured.length } : {}),
       });
+      if (!draftId) throw new Error("This build is no longer active");
     } catch (error) {
       // What stopped the build is what the member reads, in the same words the
       // thread would use: a provider's answer, a clock that ran out, a balance.
@@ -1165,13 +1153,20 @@ export const expire = internalMutation({
     if (!args.reason && !args.failed) {
       const row = await ctx.db.get(args.id);
       if (row?.attempt === args.attempt && isActiveBuild(row.status)) {
-        // A build written a page at a time beats on its draft, not on this
-        // row, and a draft keeps beating for as long as its steps run.
+        // A build written by page agents beats on its agents, not on this
+        // row, and they keep beating for as long as their slices run -- while
+        // the site is written, and while a layout check has it reworked.
         const draft = await ctx.db
           .query("buildDrafts")
           .withIndex("by_onboarding_attempt", (q) => q.eq("onboardingId", args.id).eq("attempt", args.attempt))
           .first();
-        const heard = Math.max(row.updatedAt, draft?.status === "writing" ? draft.beatAt : 0);
+        let heard = Math.max(row.updatedAt, draft?.status === "writing" ? draft.beatAt : 0);
+        if (draft?.status === "writing") heard = Math.max(heard, await agentsHeard(ctx, { draftId: draft._id }));
+        const gate = row.assistantId
+          ? await ctx.db.query("designGates").withIndex("by_message", (q) => q.eq("assistantId", row.assistantId!)).order("desc").first()
+          : null;
+        if (gate?.status === "reworking") heard = Math.max(heard, gate.updatedAt, await agentsHeard(ctx, { gateId: gate._id, round: gate.round }));
+        else if (gate && (gate.status === "checking" || gate.status === "passed")) heard = Math.max(heard, gate.updatedAt);
         if (Date.now() - heard < WATCHDOG_MS) {
           await ctx.scheduler.runAfter(Math.max(1000, WATCHDOG_MS - (Date.now() - heard)),
             internal.onboarding.expire, { id: args.id, attempt: args.attempt });
@@ -1227,5 +1222,11 @@ async function closeDrafts(
   for (const draft of drafts) {
     if (draft.status !== "writing") continue;
     await ctx.db.patch(draft._id, { status, shell: undefined, pages: [], partial: undefined, lease: undefined, updatedAt: Date.now() });
+    // Its agents stop too: a slice still running finds its agent closed and
+    // writes nothing more.
+    for (const agent of await ctx.db.query("pageAgents").withIndex("by_draft", (q) => q.eq("draftId", draft._id)).collect()) {
+      if (agent.status === "done" || agent.status === "failed" || agent.status === "cancelled") continue;
+      await ctx.db.patch(agent._id, { status, partial: undefined, thought: undefined, wrote: undefined, lease: undefined, updatedAt: Date.now() });
+    }
   }
 }

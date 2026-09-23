@@ -13,12 +13,16 @@
 // keep-alive comments. That is a connection that is alive and a reply that has
 // not started, so it is counted, not called a stall.
 //
-// Nothing here keeps the text. The reply goes back to the caller, the thinking
-// is held only long enough to see whether it repeats, and what the build's log
-// gets is counts and phases.
+// Nothing here keeps the text for the log. The reply goes back to the caller,
+// and so does the thinking, because a build's slice that ends while the model is
+// still thinking carries that thinking into the next slice rather than throwing
+// it away; what the build's log gets is counts and phases.
 
 export type StreamPhase = "waiting" | "thinking" | "writing" | "finished";
-export type StopReason = "dropped" | "provider_error" | "looping" | "out_of_time";
+// `slice_end` is not a stall: it is a build's own checkpoint, the moment one
+// slice of the build hands what the reply has produced so far to the next.
+// `out_of_time` is left for the one-action callers that still have a deadline.
+export type StopReason = "dropped" | "provider_error" | "looping" | "out_of_time" | "slice_end";
 
 export type StreamStats = {
   phase: StreamPhase;
@@ -50,6 +54,8 @@ export class StreamStopped extends Error {
     // The page as far as it got, so a reply that stopped part way through
     // writing can be picked up where it stopped rather than started again.
     readonly content: string,
+    // The thinking as far as it got, for the same reason.
+    readonly reasoning = "",
   ) {
     super(`The reply stopped: ${reason}`);
     this.name = "StreamStopped";
@@ -92,13 +98,13 @@ export async function readStream(
   body: ReadableStream<Uint8Array>,
   options: {
     started: number;
-    // Why the read was cut short, when the caller cut it: the build's own
-    // time running out is the only reason it does.
+    // Why the read was cut short, when the caller cut it: a build's slice
+    // ending, or a one-action caller's own time running out.
     cutShort: () => StopReason | null;
     scrub: (text: string) => string;
     onMilestone?: (milestone: Milestone) => Promise<void> | void;
   },
-): Promise<{ content: string; stats: StreamStats }> {
+): Promise<{ content: string; reasoning: string; stats: StreamStats }> {
   const stats: StreamStats = { phase: "waiting", reasoningChars: 0, contentChars: 0, chunks: 0, keepAlives: 0, bytes: 0, sawDone: false };
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -111,7 +117,7 @@ export async function readStream(
   let nextLoopCheck = LOOP_WINDOW * LOOP_REPEATS;
   const stop = async (reason: StopReason): Promise<never> => {
     try { await reader.cancel(); } catch { /* already closed */ }
-    throw new StreamStopped(reason, { ...stats }, content);
+    throw new StreamStopped(reason, { ...stats }, content, thinking);
   };
   const note = async (milestone: Milestone) => {
     try { await options.onMilestone?.(milestone); } catch { /* the log never stops a reply */ }
@@ -201,7 +207,7 @@ export async function readStream(
     } catch (error) {
       const why = options.cutShort();
       if (!why) stats.providerError = options.scrub(error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 160);
-      throw new StreamStopped(why ?? "dropped", { ...stats }, content);
+      throw new StreamStopped(why ?? "dropped", { ...stats }, content, thinking);
     }
     if (next.done) break;
     stats.bytes += next.value.byteLength;
@@ -219,7 +225,7 @@ export async function readStream(
   // The connection closed. A reply that said it was finished -- a finish
   // reason, or the stream's own end marker -- finished; one that did not was
   // cut off wherever it had got to.
-  if (!stats.finishReason && !stats.sawDone) throw new StreamStopped("dropped", { ...stats }, content);
+  if (!stats.finishReason && !stats.sawDone) throw new StreamStopped("dropped", { ...stats }, content, thinking);
   stats.phase = "finished";
-  return { content, stats };
+  return { content, reasoning: thinking, stats };
 }

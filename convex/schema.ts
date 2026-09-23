@@ -84,6 +84,8 @@ export default defineSchema({
       at: v.number(),
     })),
     error: v.optional(v.string()),
+    // The copy saving a site that passed, so it is saved once.
+    landLease: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]).index("by_message", ["assistantId"]),
@@ -144,12 +146,88 @@ export default defineSchema({
     restarts: v.number(),
     status: v.union(v.literal("writing"), v.literal("done"), v.literal("failed"), v.literal("cancelled")),
     error: v.optional(v.string()),
+    // A draft written by a swarm of page agents (pageAgents) says how many it
+    // has; a draft without it is from before the swarm, written a page at a
+    // time by one step after another, and is taken over by agents when it is
+    // next started (buildDraft.adopt).
+    agents: v.optional(v.number()),
+    // How many routes the reference measured, when that was more than a fresh
+    // build writes and the reference was narrowed to the pages it does.
+    measuredRoutes: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
     .index("by_onboarding_attempt", ["onboardingId", "attempt"])
     .index("by_status_beat", ["status", "beatAt"]),
+  // One agent of a measured build's swarm. It writes one page -- the frame
+  // agent writes the shell every page shares as well, with the home page --
+  // in slices, each slice an action of its own with a fresh budget that ends
+  // at a checkpoint rather than a failure (buildDraft.ts). The checkpoint is
+  // here: the reply as far as it got, the thinking as far as it got, and the
+  // slice the agent is on. A first build's agents belong to its draft; the
+  // agents that rework a site after a layout check belong to the check and
+  // the round they rework.
+  pageAgents: defineTable({
+    userId: v.id("users"),
+    runId: v.id("buildRuns"),
+    draftId: v.optional(v.id("buildDrafts")),
+    gateId: v.optional(v.id("designGates")),
+    round: v.optional(v.number()),
+    // The page it writes, whether it writes the shell too, its place among the
+    // pages and how many there are.
+    path: v.string(),
+    role: v.union(v.literal("frame"), v.literal("page")),
+    order: v.number(),
+    total: v.number(),
+    // A rework agent's share of the layout check's measured differences.
+    fixes: v.optional(v.array(v.string())),
+    // The model it runs on, which is DeepSeek v4.1 Flash and nothing else.
+    model: v.string(),
+    // A page agent waits for the frame agent's shell, then writes.
+    status: v.union(v.literal("waiting"), v.literal("writing"), v.literal("done"), v.literal("failed"), v.literal("cancelled")),
+    // The copy running its current slice, and its last sign of life.
+    lease: v.optional(v.string()),
+    beatAt: v.number(),
+    // Slices claimed so far; slices in a row with nothing to show; times the
+    // rescue has started a quiet slice again.
+    slice: v.number(),
+    tries: v.number(),
+    restarts: v.number(),
+    // The checkpoint: the reply as far as it got and how many slices have
+    // carried it on, and the thinking as far as it got and how many slices it
+    // has run across without a word of the page written.
+    partial: v.optional(v.object({ text: v.string(), resumes: v.number() })),
+    thought: v.optional(v.object({ text: v.string(), slices: v.number() })),
+    // Why its last reply could not be used, for its next slice to put right.
+    problem: v.optional(v.string()),
+    // Times the frame agent started over because the site repeated a
+    // discarded design.
+    redesigns: v.optional(v.number()),
+    lastStop: v.optional(v.object({
+      reason: v.string(),
+      phase: v.string(),
+      reasoningChars: v.optional(v.number()),
+      replyChars: v.optional(v.number()),
+      at: v.number(),
+    })),
+    // What it wrote once its part is whole: the frame agent's shell (or a
+    // one-page site's single document), and its pages.
+    wrote: v.optional(v.object({
+      shell: v.optional(v.string()),
+      html: v.optional(v.string()),
+      pages: v.array(v.object({ path: v.string(), title: v.string(), body: v.string() })),
+      summary: v.optional(v.string()),
+      clones: v.optional(v.string()),
+    })),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_draft", ["draftId"])
+    .index("by_gate_round", ["gateId", "round"])
+    .index("by_status_beat", ["status", "beatAt"])
+    .index("by_user", ["userId"]),
   siteOnboarding: defineTable({
     userId: v.id("users"),
     siteId: v.optional(v.id("sites")),
@@ -493,6 +571,11 @@ export default defineSchema({
       // step that wrote it.
       path: v.optional(v.string()),
       step: v.optional(v.number()),
+      // A build written by page agents: the agent's slice an event belongs to,
+      // how many agents there are, and how much thinking a checkpoint carried.
+      slice: v.optional(v.number()),
+      agents: v.optional(v.number()),
+      thoughtChars: v.optional(v.number()),
     })),
   })
     .index("by_run", ["runId"])

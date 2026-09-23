@@ -79,6 +79,9 @@ const detailValidator = v.object({
   round: v.optional(v.number()),
   path: v.optional(v.string()),
   step: v.optional(v.number()),
+  slice: v.optional(v.number()),
+  agents: v.optional(v.number()),
+  thoughtChars: v.optional(v.number()),
 });
 
 const eventValidator = v.object({
@@ -168,6 +171,11 @@ export type EventDetail = {
   // step that wrote it.
   path?: string;
   step?: number;
+  // A build written by page agents: the agent's slice, how many agents there
+  // are, and how much thinking a checkpoint carried on.
+  slice?: number;
+  agents?: number;
+  thoughtChars?: number;
 };
 
 export type ProviderTrace = {
@@ -199,6 +207,10 @@ export function classifyError(reason: string) {
   if (/dropped/i.test(reason)) return "stream_dropped";
   if (/repeating itself/i.test(reason)) return "looping";
   if (/stopped part way with an error/i.test(reason)) return "provider_stream_error";
+  // A measured build's agents stop for a stall, never for a clock.
+  if (/stopped answering/i.test(reason)) return "stalled";
+  if (/kept planning/i.test(reason)) return "thinking_stall";
+  if (/kept stopping part way/i.test(reason)) return "page_stall";
   if (/ran out of time/i.test(reason)) return "out_of_time";
   if (/too long|timed out|Timeout|Abort/i.test(reason)) return "timeout";
   if (/empty reply/i.test(reason)) return "empty";

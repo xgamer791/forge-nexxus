@@ -15,7 +15,7 @@ import { memoryEnabled, memoryNote } from "./memory";
 import { hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
-import { assertDesignRules, gateInFlight, isMeasured, NOT_MEASURED } from "./siteDesign";
+import { agentsHeard, assertDesignRules, GATE_QUIET_MS, gateInFlight, isMeasured, NOT_MEASURED } from "./siteDesign";
 import { isEventStream, readStream, StreamStopped, type Milestone, type StopReason, type StreamPhase, type StreamStats } from "./stream";
 
 // How much of the thread the model sees, and how long a page it may write.
@@ -162,10 +162,13 @@ export function completionBody(
 }
 
 // No call is cut off for taking long: a reply is read as it streams, and it is
-// stopped only by what the stream shows (see `complete`). What is left of the
-// clock is the platform's own -- an action has ten minutes -- and the words get
-// all of it the pictures and the save do not need: up to a minute for the
-// pictures, which are made side by side, and a few seconds to store the page.
+// stopped only by what the stream shows (see `complete`). A measured build is
+// written by agents in slices (buildDraft.ts), each slice an action of its own
+// that hands its reply on at its end, so no clock ever fails one. The clock
+// below is only for the turns that still answer inside one action -- a thread
+// turn, the strategist, the memory note, the reviewer -- where what is left of
+// the platform's ten minutes goes to the words, less what the pictures and the
+// save need.
 const TEXT_BUDGET_MS = 480000;
 const CONTINUE_FLOOR_MS = 45000;
 // A second go at a whole site is another long call, so one is only started
@@ -222,6 +225,26 @@ export function chatRoute(purpose: Purpose = "chat") {
         ? model
         : process.env.AI_MODEL_LABEL?.trim() || (model === CHAT_MODEL ? CHAT_MODEL_LABEL : model),
   };
+}
+
+// Every agent that writes a measured site -- the agent that writes the shell
+// and the home page, each page agent, and each agent that reworks their pages
+// after a layout check (buildDraft.ts) -- runs on DeepSeek v4.1 Flash and on
+// nothing else. The build route is used when that is its model, and otherwise
+// the chat route is, when that is its model, with a build's thinking and length
+// ceiling either way. A deployment where neither route is DeepSeek v4.1 Flash
+// has no route for them, and a build says so rather than letting another model
+// write a page. Nothing here changes where any other turn goes.
+export const SWARM_MODEL = CHAT_MODEL;
+export const SWARM_MODEL_LABEL = CHAT_MODEL_LABEL;
+export const SWARM_UNSET = `Site building isn't set up for ${SWARM_MODEL_LABEL} on this deployment yet`;
+
+export function swarmRoute(): ReturnType<typeof chatRoute> {
+  const build = chatRoute("build");
+  if (build.model === SWARM_MODEL) return { ...build, label: SWARM_MODEL_LABEL };
+  const chat = chatRoute("chat");
+  if (chat.model === SWARM_MODEL) return { ...chat, purpose: "build", label: SWARM_MODEL_LABEL };
+  throw new ConvexError(SWARM_UNSET);
 }
 
 // The ceiling one reply is given, thinking included. `AI_MAX_TOKENS` is the
@@ -762,7 +785,10 @@ export const expire = internalMutation({
         .withIndex("by_message", (q) => q.eq("assistantId", assistantId))
         .order("desc")
         .first();
-      if (gateInFlight(gate)) {
+      // A check whose site is being reworked by agents is moving for as long
+      // as they beat, each on its own row.
+      const reworking = gate?.status === "reworking" ? await agentsHeard(ctx, { gateId: gate._id, round: gate.round }) : 0;
+      if (gateInFlight(gate) || (reworking && Date.now() - reworking < GATE_QUIET_MS)) {
         await ctx.scheduler.runAfter(RUN_WATCHDOG_MS, internal.generate.expire, { assistantId, holdId });
         return null;
       }
@@ -855,6 +881,27 @@ export function designAgentTurn(siteName: string, site: BuiltSite, clones: strin
   return messages;
 }
 
+// A page agent's turn when its page is sent back (buildDraft.ts): the same
+// instructions a build reads, its route's measured spec, the shell every page
+// sits in -- final, as the frame agent left it -- and the page as it stands,
+// then its share of the fixes as the request.
+export function reworkPageTurn(
+  siteName: string,
+  shown: { shell: string; page: SitePage | null; path: string },
+  request: string,
+  design: string,
+) {
+  const messages = buildMessages(siteName, null, [], request, null, "build", null);
+  const page = shown.page
+    ? `The page ${shown.path} of the site "${siteName}" currently looks like this:\n\n\`\`\`html path="${shown.page.path}" title="${shown.page.title.replace(/"/g, "'")}"\n${shown.page.body}\n\`\`\``
+    : `The site "${siteName}" has no page at ${shown.path} yet.`;
+  messages.splice(4, 0,
+    { role: "system", content: design },
+    { role: "system", content: `The shell every page of the site sits in is final and cannot change:\n\n\`\`\`html shell\n${shown.shell}\n\`\`\`\n\n${page}` },
+  );
+  return messages;
+}
+
 type Route = ReturnType<typeof chatRoute>;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -911,6 +958,7 @@ const STOP_CLASS: Record<StopReason, string> = {
   provider_error: "provider_stream_error",
   looping: "looping",
   out_of_time: "out_of_time",
+  slice_end: "slice_end",
 };
 
 function stopLabel(reason: StopReason, phase: StreamPhase) {
@@ -943,6 +991,7 @@ export class ReplyStopped extends Error {
 }
 
 function stoppedMessage(stop: StreamStopped) {
+  if (stop.reason === "slice_end") return "The build paused at a checkpoint.";
   if (stop.reason === "looping") return "The model got stuck repeating itself instead of writing your website. Try again.";
   if (stop.reason === "provider_error") {
     const said = stop.stats.providerError?.replace(/[.!?]?\s*$/, "");
@@ -1010,10 +1059,13 @@ async function complete(
   maxTokens: number,
   deadline: number,
   trace?: ProviderTrace,
-  // `keepPartial`: a build written a page at a time wants a page its clock
-  // stopped part way back as far as it got, not a failure (callProviderPart).
-  meta?: { continuation?: number; keepPartial?: boolean },
-): Promise<{ content: string; truncated: boolean; outOfTime?: boolean; stats?: StreamStats }> {
+  // `slice`: the call is one slice of a measured build's agent
+  // (buildDraft.ts). Its deadline is that slice's end, which is a checkpoint
+  // and never a failure: whatever the reply has produced by then -- the page
+  // as far as it got, or the thinking as far as it got -- comes back as a
+  // `sliced` reply, for the agent's next slice to carry on from.
+  meta?: { continuation?: number; slice?: boolean },
+): Promise<SliceReply> {
   let limit = maxTokens;
   // The most this provider will take, once it has said so itself. Widening
   // after an all-thinking reply stops here: asking again above a cap the
@@ -1045,16 +1097,18 @@ async function complete(
         stream: streaming,
       },
     });
-    // The one clock left is the platform's own: an action has ten minutes, and
-    // the pictures and the save need the end of them. It never decides that a
-    // reply has stalled. When it does run out, what the reply was doing then is
-    // what gets recorded -- still writing, still thinking, or never started.
+    // The one clock here never decides that a reply has stalled. For a slice
+    // it is the slice's end: the reply is handed on to the next slice as far
+    // as it got. For a one-action caller it is the platform's own ten minutes,
+    // and what the reply was doing when it ran out is what gets recorded --
+    // still writing, still thinking, or never started.
     const clock = new AbortController();
     let outOfTime = false;
     const timer = setTimeout(() => { outOfTime = true; clock.abort(); }, Math.max(1000, deadline - Date.now()));
+    const cutReason: StopReason = meta?.slice ? "slice_end" : "out_of_time";
     let response: Response | undefined;
     let bodyText = "";
-    let streamed: { content: string; stats: StreamStats } | undefined;
+    let streamed: { content: string; reasoning: string; stats: StreamStats } | undefined;
     let stopped: StreamStopped | undefined;
     let unreachable: unknown;
     try {
@@ -1067,7 +1121,7 @@ async function complete(
       if (response.ok && isEventStream(response)) {
         streamed = await readStream(response.body!, {
           started,
-          cutShort: () => (outOfTime ? "out_of_time" : null),
+          cutShort: () => (outOfTime ? cutReason : null),
           scrub: scrubKeys,
           onMilestone: (milestone) => progressNote(trace, milestone, started, attempt, meta?.continuation),
         });
@@ -1077,7 +1131,7 @@ async function complete(
     } catch (error) {
       if (error instanceof StreamStopped) stopped = error;
       else if (outOfTime) {
-        stopped = new StreamStopped("out_of_time", { phase: "waiting", reasoningChars: 0, contentChars: 0, chunks: 0, keepAlives: 0, bytes: 0, sawDone: false }, "");
+        stopped = new StreamStopped(cutReason, { phase: "waiting", reasoningChars: 0, contentChars: 0, chunks: 0, keepAlives: 0, bytes: 0, sawDone: false }, "");
       } else if (response) {
         // The headers came and the body did not: the connection went while a
         // whole reply was on its way.
@@ -1104,11 +1158,21 @@ async function complete(
     }
     if (stopped) {
       const { reason, stats } = stopped;
-      // The step's clock ran out while the page was being written. Kept, this
-      // is a checkpoint rather than a stop: the next step carries the page on
-      // from this character, and says so in the build's log.
-      if (reason === "out_of_time" && meta?.keepPartial && stats.phase === "writing" && stopped.content) {
-        return { content: stopped.content, truncated: true, outOfTime: true, stats };
+      // The slice ended. That is a checkpoint rather than a stop: the page as
+      // far as it got and the thinking as far as it got go back to the agent,
+      // which saves them and carries the reply on in its next slice. A reply
+      // that had produced nothing at all is handed back too, and the agent
+      // counts that one as a slice with nothing to show.
+      if (reason === "slice_end") {
+        const phase: StreamPhase = stats.phase === "writing" && !stopped.content ? "thinking" : stats.phase;
+        await trace?.note({
+          phase: "provider_slice",
+          label: sliceLabel(phase),
+          level: phase === "waiting" ? "warn" : "info",
+          status: "calling",
+          detail: { attempt, continuation: meta?.continuation, host, model: route.model, stopReason: reason, ...streamDetail(stats, started) },
+        });
+        return { content: stopped.content, truncated: true, sliced: { phase, reasoning: stopped.reasoning }, stats };
       }
       await trace?.note({
         phase: "provider_stop",
@@ -1184,10 +1248,12 @@ async function complete(
     let content: unknown;
     let finishReason: string | undefined;
     let reasoningChars = 0;
+    let reasoningText = "";
     if (streamed) {
       content = streamed.content;
       finishReason = streamed.stats.finishReason;
       reasoningChars = streamed.stats.reasoningChars;
+      reasoningText = streamed.reasoning;
     } else {
       let data: {
         choices?: {
@@ -1209,7 +1275,8 @@ async function complete(
       const choice = data?.choices?.[0];
       content = choice?.message?.content;
       finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined;
-      reasoningChars = reasoningOf(choice?.message).length;
+      reasoningText = reasoningOf(choice?.message);
+      reasoningChars = reasoningText.length;
     }
     const readDetail = streamed ? streamDetail(streamed.stats, started) : { stream: false, reasoningChars: reasoningChars || undefined, finishReason };
     if (typeof content !== "string" || !content.trim()) {
@@ -1245,6 +1312,24 @@ async function complete(
           },
         });
         continue;
+      }
+      // A slice's reply that thought its whole ceiling away has still done
+      // the thinking: it goes on to the agent's next slice as a checkpoint,
+      // with a fresh ceiling and the request to write, rather than failing.
+      if (spentThinking && meta?.slice && reasoningText.trim()) {
+        await trace?.note({
+          phase: "provider_slice",
+          label: sliceLabel("thinking"),
+          level: "warn",
+          status: "calling",
+          detail: { ...readDetail, httpStatus: 200, attempt, durationMs: Date.now() - started, errorClass: "reasoning_budget", tokensAsked: limit, host, model: route.model },
+        });
+        return {
+          content: "",
+          truncated: true,
+          sliced: { phase: "thinking", reasoning: reasoningText },
+          ...(streamed ? { stats: streamed.stats } : {}),
+        };
       }
       await trace?.note({
         phase: "provider_error",
@@ -1290,6 +1375,25 @@ async function complete(
   throw new Error("The model provider kept refusing this request.");
 }
 
+// What `complete` hands back: the reply, whether it was cut short -- by the
+// provider's length limit, or by the end of a slice -- and, when a slice
+// ended it, where the reply had got to and the thinking it had done.
+export type SliceReply = {
+  content: string;
+  truncated: boolean;
+  sliced?: { phase: StreamPhase; reasoning: string };
+  stats?: StreamStats;
+};
+
+// The build's log, at the end of a slice, by where the reply had got to.
+function sliceLabel(phase: StreamPhase) {
+  return phase === "writing"
+    ? "Checkpoint: saved the page as far as the model had written it"
+    : phase === "thinking"
+      ? "Checkpoint: saved the model's thinking so far"
+      : "Checkpoint: the model hadn't sent anything yet";
+}
+
 // The chat route, and only the chat route: the deployment names the base URL,
 // the key and the model, and nothing about them reaches a client. A page cut
 // off by the output cap is picked up where it stopped rather than thrown away,
@@ -1304,26 +1408,39 @@ export async function callProvider(
   return (await provide(messages, { tokenLimit, budgetMs, trace, purpose })).content;
 }
 
-// A reply for a build written a page at a time (buildDraft.ts): the same call
-// on the build route, except that a reply the step's clock stops while it is
-// writing comes back as far as it got, marked cut, instead of failing -- the
-// next step carries it on from that character. `resuming` is a reply that is
-// itself carrying a page on, so it starts mid-page rather than at a fence.
-export async function callProviderPart(
+// One slice of a measured build's agent (buildDraft.ts): the same call, on the
+// route the agent was given, run until the slice's own end rather than a text
+// budget. A reply the slice ends part way comes back as far as it got --
+// written, or still being thought through -- marked cut, instead of failing:
+// the agent's next slice carries it on from there. `resuming` is a reply that
+// is itself carrying a page on, so it starts mid-page rather than at a fence.
+export async function callProviderSlice(
+  route: Route,
   messages: ChatMessage[],
-  budgetMs: number,
+  deadline: number,
   trace?: ProviderTrace,
   resuming = false,
 ) {
-  return await provide(messages, { budgetMs, trace, purpose: "build", keepPartial: true, resuming });
+  return await provide(messages, { route, deadline, trace, purpose: "build", slice: true, resuming });
 }
 
 async function provide(
   messages: ChatMessage[],
-  options: { tokenLimit?: number; budgetMs: number; trace?: ProviderTrace; purpose: Purpose; keepPartial?: boolean; resuming?: boolean },
-): Promise<{ content: string; cut: boolean; outOfTime?: boolean; stats?: StreamStats }> {
-  const { trace, purpose, keepPartial, resuming } = options;
-  const route = chatRoute(purpose);
+  options: {
+    tokenLimit?: number;
+    // A one-action caller's text budget.
+    budgetMs?: number;
+    // A slice's end, which replaces the text budget.
+    deadline?: number;
+    route?: Route;
+    trace?: ProviderTrace;
+    purpose: Purpose;
+    slice?: boolean;
+    resuming?: boolean;
+  },
+): Promise<{ content: string; cut: boolean; sliced?: SliceReply["sliced"]; stats?: StreamStats }> {
+  const { trace, purpose, slice, resuming } = options;
+  const route = options.route ?? chatRoute(purpose);
   if (!route.apiKey) {
     await trace?.note({
       phase: "provider_error",
@@ -1334,13 +1451,15 @@ async function provide(
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
   const maxTokens = options.tokenLimit ?? maxTokensFor(purpose);
-  const deadline = Date.now() + Math.min(options.budgetMs, TEXT_BUDGET_MS);
+  const deadline = slice && options.deadline !== undefined
+    ? options.deadline
+    : Date.now() + Math.min(options.budgetMs ?? TEXT_BUDGET_MS, TEXT_BUDGET_MS);
   const carried = resuming ? 1 : 0;
-  let reply = await complete(route, messages, maxTokens, deadline, trace, { continuation: carried || undefined, keepPartial });
+  let reply = await complete(route, messages, maxTokens, deadline, trace, { continuation: carried || undefined, slice });
   let content = reply.content;
   for (
     let round = 0;
-    reply.truncated && !reply.outOfTime && round < MAX_CONTINUATIONS && (resuming || /```html|<!doctype html/i.test(content)) && deadline - Date.now() > CONTINUE_FLOOR_MS;
+    reply.truncated && !reply.sliced && round < MAX_CONTINUATIONS && (resuming || /```html|<!doctype html/i.test(content)) && deadline - Date.now() > CONTINUE_FLOOR_MS;
     round += 1
   ) {
     try {
@@ -1360,21 +1479,18 @@ async function provide(
         maxTokens,
         deadline,
         trace,
-        { continuation: carried + round + 1, keepPartial },
+        { continuation: carried + round + 1, slice },
       );
     } catch (error) {
-      // What the reply had written stays written: a build that keeps its
-      // pages carries it on in its next step rather than losing it here.
-      if (keepPartial) {
-        const outOfTime = error instanceof ReplyStopped && error.stop.reason === "out_of_time";
-        return { content, cut: true, outOfTime, stats: outOfTime ? error.stop.stats : reply.stats };
-      }
+      // What the reply had written stays written: an agent carries it on in
+      // its next slice rather than losing it here.
+      if (slice) return { content, cut: true, stats: reply.stats };
       throw error;
     }
     // A continuation that opens its own fence anyway would split the page in two.
     content += reply.content.replace(/^\s*```(?:html)?[ \t]*\r?\n/i, "");
   }
-  return { content, cut: reply.truncated, outOfTime: reply.outOfTime, stats: reply.stats };
+  return { content, cut: reply.truncated, sliced: reply.sliced, stats: reply.stats };
 }
 
 // The page is the fenced block; the sentence before it is the summary. A
