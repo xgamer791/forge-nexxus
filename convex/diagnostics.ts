@@ -24,6 +24,7 @@ const statusValidator = v.union(
   v.literal("queued"),
   v.literal("started"),
   v.literal("calling"),
+  v.literal("reviewing"),
   v.literal("images"),
   v.literal("saving"),
   v.literal("complete"),
@@ -69,6 +70,7 @@ const detailValidator = v.object({
   reasoningTokens: v.optional(v.number()),
   providerError: v.optional(v.string()),
   loopRepeats: v.optional(v.number()),
+  round: v.optional(v.number()),
 });
 
 const eventValidator = v.object({
@@ -147,6 +149,8 @@ export type EventDetail = {
   reasoningTokens?: number;
   providerError?: string;
   loopRepeats?: number;
+  // Which round of the design check an event belongs to.
+  round?: number;
 };
 
 export type ProviderTrace = {
@@ -159,6 +163,7 @@ export type ProviderTrace = {
       | "queued"
       | "started"
       | "calling"
+      | "reviewing"
       | "images"
       | "saving"
       | "complete"
@@ -167,6 +172,9 @@ export type ProviderTrace = {
 };
 
 export function classifyError(reason: string) {
+  // A build the design reviewer never agreed to. First, because its wording
+  // names what the build is and would fall into the tests below.
+  if (/design check|rework the header/i.test(reason)) return "design_check";
   // Ahead of the length and emptiness tests below, which this one's wording
   // would otherwise fall into.
   if (/only its reasoning/i.test(reason)) return "reasoning_budget";
@@ -190,7 +198,7 @@ export function classifyError(reason: string) {
 type OpenArgs = {
   userId: Id<"users">;
   source: "generate" | "onboarding" | "rebuild";
-  status?: "queued" | "started" | "calling" | "images" | "saving" | "complete" | "failed";
+  status?: "queued" | "started" | "calling" | "reviewing" | "images" | "saving" | "complete" | "failed";
   siteId?: Id<"sites">;
   conversationId?: Id<"conversations">;
   onboardingId?: Id<"siteOnboarding">;
@@ -554,6 +562,7 @@ function publicRun(row: {
     | "queued"
     | "started"
     | "calling"
+    | "reviewing"
     | "images"
     | "saving"
     | "complete"

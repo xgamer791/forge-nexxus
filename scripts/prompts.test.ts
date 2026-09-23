@@ -183,17 +183,37 @@ describe("the contract sets a floor, not a mould", () => {
 
   test("navigation is designed, and DESIGN_GOD is where that is said", () => {
     expect(DESIGN_GOD).toContain("## Navigation");
-    expect(DESIGN_GOD).toContain("the header, the dropdown, and the footer are cloned as the Header, menu and footer section requires");
+    expect(DESIGN_GOD).toContain("At every width, the header, the dropdown menu and the footer are cloned as the Header, menu and footer section requires");
     expect(DESIGN_GOD).toContain("at least 44px");
+    // Cloning is not a wide-screen rule: a phone gets the original's phone header.
+    expect(DESIGN_GOD).not.toContain("On a wide screen the header, the dropdown, and the footer are cloned");
   });
 
-  test("header, dropdown and footer are cloned from Awwwards", () => {
-    expect(DESIGN_GOD).toContain("## Header, menu and footer");
-    expect(DESIGN_GOD).toContain("https://www.awwwards.com/");
-    expect(DESIGN_GOD).toContain("Structure and spacing must match that original completely");
-    expect(DESIGN_GOD).toContain("A second and separate agent compares your header");
-    expect(DESIGN_GOD).toContain("Fonts and colors match the aesthetic of the site you are building");
+  test("header, dropdown and footer are cloned from Awwwards, in the owner's words", () => {
+    const section = DESIGN_GOD.slice(DESIGN_GOD.indexOf("## Header, menu and footer"), DESIGN_GOD.indexOf("## Icons"));
+    expect(section).toContain("Header, dropdown menu and footer designs must be chosen from the following list: https://www.awwwards.com/");
+    expect(section).toContain("You must choose a beautiful design for each from the list above, replicate its design and clone it. Your design must match the original completely.");
+    expect(section).toContain("only when that second agent agrees they are equal in design and spacing is the task complete and can you move on");
+    expect(section).toContain("All fonts and colors must match the aesthetic of the site you are building.");
     expect(DESIGN_GOD).toContain("the Header, menu and footer section");
+  });
+
+  test("the design agent names what it cloned, and a separate reviewer holds it to it", () => {
+    const section = DESIGN_GOD.slice(DESIGN_GOD.indexOf("## Header, menu and footer"), DESIGN_GOD.indexOf("## Icons"));
+    expect(section).toContain("### Name what you cloned");
+    expect(section).toContain("Every build reply carries a clones block");
+    expect(section).toContain("Describe the original as it is, not as you built it.");
+    expect(section).toContain("### The second agent");
+    expect(section).toContain("a design reviewer that did not build the site");
+    expect(section).toContain("The build is finished only when it agrees.");
+    // Fonts, palette and icons stay the site's own while the structure is cloned.
+    expect(section).toContain("Families still come from Fontshare and nowhere else");
+    expect(section).toContain("icons still come from Phosphor or Lucide");
+    // The reply format that carries the declaration is the contract's to say.
+    expect(contract).toContain("then a \\`\\`\\`clones block, then the shell");
+    expect(contract).toContain("Header: Site name, https://its-address");
+    expect(contract).toContain("Dropdown menu: Site name, https://its-address");
+    expect(contract).toContain("Footer: Site name, https://its-address");
   });
 
   test("every icon, including a hamburger, comes from Phosphor or Lucide", () => {

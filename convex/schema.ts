@@ -2,7 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-import { storedPlanKey } from "./plans";
+import { requestKind, storedPlanKey } from "./plans";
 
 export default defineSchema({
   ...authTables,
@@ -92,10 +92,76 @@ export default defineSchema({
     ),
     summary: v.string(),
     requestKind: v.string(),
+    // The Awwwards originals the header, the dropdown menu and the footer were
+    // cloned from, as the design agent named them. Absent on builds from
+    // before the design reviewer.
+    clones: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_site", ["siteId"])
     .index("by_user", ["userId"]),
+  // The second agent's check on a build's header, dropdown menu and footer. A
+  // build that needs one parks its site here instead of saving it: the design
+  // reviewer reads it and either lets it through to be saved or sends it back
+  // to the design agent with fixes, until it agrees or the rounds run out.
+  // The site is cleared from the row once the check ends; the verdicts stay
+  // for `designReview:inspect`. Nothing here is shown to a member.
+  designReviews: defineTable({
+    userId: v.id("users"),
+    siteId: v.id("sites"),
+    runId: v.id("buildRuns"),
+    source: v.union(v.literal("thread"), v.literal("onboarding")),
+    assistantId: v.id("messages"),
+    holdId: v.id("creditHolds"),
+    requestKind,
+    epoch: v.number(),
+    // An onboarding build's own: which attempt this is, and whether it is a
+    // rebuild that owes the member new pictures.
+    onboardingId: v.optional(v.id("siteOnboarding")),
+    attempt: v.optional(v.number()),
+    rebuild: v.optional(v.boolean()),
+    // A thread turn's own: what was asked, for the memory note once it lands.
+    siteName: v.string(),
+    prompt: v.optional(v.string()),
+    remember: v.optional(v.boolean()),
+    blockedNote: v.optional(v.string()),
+    // The site under review, as the design agent last wrote it.
+    html: v.optional(v.string()),
+    shell: v.optional(v.string()),
+    pages: v.optional(v.array(v.object({ path: v.string(), title: v.string(), body: v.string() }))),
+    summary: v.string(),
+    clones: v.optional(v.string()),
+    status: v.union(
+      v.literal("checking"),
+      v.literal("revising"),
+      v.literal("passed"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    // Round 1 is the first check; every rework the reviewer asks for adds one.
+    round: v.number(),
+    // Steps in a row that came back with nothing to use.
+    trouble: v.number(),
+    fixes: v.array(v.string()),
+    // Why the last rework could not be used, for the next one to put right.
+    problem: v.optional(v.string()),
+    verdicts: v.array(v.object({
+      round: v.number(),
+      equal: v.boolean(),
+      header: v.boolean(),
+      menu: v.boolean(),
+      footer: v.boolean(),
+      originals: v.array(v.string()),
+      fixes: v.array(v.string()),
+      at: v.number(),
+    })),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_message", ["assistantId"])
+    .index("by_onboarding_attempt", ["onboardingId", "attempt"]),
   conversations: defineTable({
     userId: v.id("users"),
     title: v.string(),
@@ -194,6 +260,7 @@ export default defineSchema({
       v.literal("queued"),
       v.literal("started"),
       v.literal("calling"),
+      v.literal("reviewing"),
       v.literal("images"),
       v.literal("saving"),
       v.literal("complete"),
@@ -269,6 +336,8 @@ export default defineSchema({
       reasoningTokens: v.optional(v.number()),
       providerError: v.optional(v.string()),
       loopRepeats: v.optional(v.number()),
+      // Which round of the design check an event belongs to.
+      round: v.optional(v.number()),
     })),
   })
     .index("by_run", ["runId"])

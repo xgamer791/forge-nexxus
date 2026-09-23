@@ -2,11 +2,12 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import { action, internalMutation, internalQuery, type ActionCtx } from "./_generated/server";
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import { closeRun, providerTrace, recordLastSign, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
+import { chromeHash, designReviewOn, needsReview, reviewInFlight } from "./designCheck";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
@@ -184,12 +185,15 @@ const RUN_WATCHDOG_MS = 610000;
 // `AI_BUILD_API_KEY` and `AI_BUILD_MODEL`. Any of those left unset falls back
 // to the chat route, so a deployment that has not chosen still plans and
 // builds on the model chat uses.
-// The three kinds of turn this route carries. They differ in what they are
-// worth thinking about and, for planning and a build, which provider answers.
-export type Purpose = "chat" | "build" | "strategy";
+// The kinds of turn this route carries. They differ in what they are worth
+// thinking about and, for planning, a build and its design review, which
+// provider answers. The design reviewer is a separate agent with its own
+// instructions, but it rides the build route: it judges the build's work, so
+// it answers on the model the deployment chose for building.
+export type Purpose = "chat" | "build" | "strategy" | "review";
 
 function agentTurn(purpose: Purpose) {
-  return purpose === "build" || purpose === "strategy";
+  return purpose === "build" || purpose === "strategy" || purpose === "review";
 }
 
 export function chatRoute(purpose: Purpose = "chat") {
@@ -234,11 +238,13 @@ export const routing = internalQuery({
     const chat = chatRoute();
     const build = chatRoute("build");
     const strategy = chatRoute("strategy");
+    const review = chatRoute("review");
     const image = imageRoute();
     return {
       chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl, chat.model, "chat") ?? null, maxTokens: maxTokensFor("chat") },
       build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, keySet: Boolean(build.apiKey), sameAsChat: build.model === chat.model && build.baseUrl === chat.baseUrl, reasoningEffort: reasoningEffort(build.baseUrl, build.model, "build") ?? null, maxTokens: maxTokensFor("build") },
       strategy: { host: new URL(strategy.baseUrl).host, model: strategy.model, label: strategy.label, sameAsBuild: strategy.model === build.model && strategy.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(strategy.baseUrl, strategy.model, "strategy") ?? null },
+      review: { host: new URL(review.baseUrl).host, model: review.model, on: designReviewOn(), sameAsBuild: review.model === build.model && review.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(review.baseUrl, review.model, "review") ?? null, maxTokens: maxTokensFor("review") },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -289,7 +295,17 @@ What this platform can serve, which is not a matter of taste:
 
 ${pictures}
 
-Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change.
+Reply with one sentence saying what you built or changed, then a \`\`\`clones block, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change.
+
+The clones block names the Awwwards originals that DESIGN_GOD's Header, menu and footer section asks for, one entry each, in this form. It is read by Forge's design reviewer, a second agent that checks the header, the dropdown menu and the footer against those originals before the site is saved, and it is never published.
+\`\`\`clones
+Header: Site name, https://its-address
+That original's header, described as DESIGN_GOD asks.
+Dropdown menu: Site name, https://its-address
+That original's dropdown menu, described the same way.
+Footer: Site name, https://its-address
+That original's footer, described the same way.
+\`\`\`
 
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
@@ -365,75 +381,31 @@ export const run = action({
       });
       const reply = await callProvider(job.messages, undefined, undefined, trace, purpose);
       const parsed = parseReply(reply);
-      // The pictures a page asked for are made before it is stored, so the
-      // version that lands never points at anything that does not exist. A page
-      // that came back on a talk-only turn is about to be dropped: it gets none.
-      let imageWanted = 0;
-      let imageMade = 0;
-      let site = builtSite(parsed);
-      if (site && job.requestKind !== "chat") {
-        const parts = siteParts(site);
-        if (wantsImages(parts.join("\n"))) {
-          await trace.note({ phase: "images", label: "Making pictures", status: "images" });
-        }
-        const pictures = await fulfilImages(ctx, { parts, userId, siteId: job.siteId, epoch: job.epoch });
-        site = withParts(site, pictures.parts);
-        imageWanted = pictures.wanted;
-        imageMade = pictures.made;
-        if (pictures.wanted) {
-          await trace.note({
-            phase: "images_done",
-            label: pictures.made ? "Pictures made for your site" : "No new pictures to make",
-            detail: { imageWanted: pictures.wanted, imageMade: pictures.made },
-          });
-        }
-      }
-      const siteChars = site ? siteParts(site).join("").length : undefined;
-      await trace.note({
-        phase: "saving",
-        label: job.requestKind === "chat" ? "Saving the reply" : "Saving your website",
-        status: "saving",
-        detail: { htmlChars: siteChars, requestKind: job.requestKind },
-      });
-      const finished = await ctx.runMutation(internal.generate.finish, {
-        assistantId: job.assistantId,
+      const site = builtSite(parsed);
+      const turn = {
+        runId,
+        userId,
         siteId: job.siteId,
+        assistantId: job.assistantId,
         holdId: job.holdId,
         requestKind: job.requestKind,
-        ...site,
-        summary: parsed.summary,
-        blockedNote: job.blockedNote,
         epoch: job.epoch,
-      });
-      if (finished === "cancelled") {
-        await ctx.runMutation(internal.diagnostics.close, {
-          runId,
-          status: "failed",
-          error: "Build cancelled",
-        });
+        siteName: job.siteName,
+        prompt: text,
+        remember: job.remember,
+        blockedNote: job.blockedNote,
+        summary: parsed.summary,
+        clones: parsed.clones,
+      };
+      // A header, menu or footer the design agent has just made goes to the
+      // design reviewer before anything is saved. The turn ends here and the
+      // check carries the site on: the reply stays pending in the thread until
+      // the reviewer agrees, and `finishThreadBuild` is where it lands then.
+      if (site && job.requestKind !== "chat" && (await needsReview(job.requestKind, job.chrome, site))) {
+        await ctx.runMutation(internal.designReview.open, { ...turn, source: "thread", ...site });
         return { messageId: job.assistantId };
       }
-      await ctx.runMutation(internal.diagnostics.close, {
-        runId,
-        status: "complete",
-        htmlChars: siteChars,
-        imageWanted,
-        imageMade,
-      });
-      // What was said is reflected on after the reply has landed, on its own
-      // clock: the page never goes along, and a hiccup here is not the turn's.
-      if (job.remember) {
-        try {
-          await ctx.scheduler.runAfter(0, internal.memory.reflect, {
-            userId,
-            siteName: job.siteName,
-            prompt: text,
-            reply: parsed.summary,
-          });
-        } catch (error) {
-          console.error("Forge could not queue the memory update:", describe(error));
-        }
-      }
+      await finishThreadBuild(ctx, trace, { ...turn, site });
     } catch (error) {
       const reason = describe(error);
       if (assistantId && holdId) {
@@ -449,6 +421,101 @@ export const run = action({
     return { messageId: assistantId! };
   },
 });
+
+// The end of a thread turn: the pictures a page asked for, the save, the log
+// and the memory note. A build the design reviewer held comes here from
+// `designReview.ts` once the reviewer agrees, with the site it agreed to.
+export async function finishThreadBuild(
+  ctx: ActionCtx,
+  trace: ProviderTrace,
+  turn: {
+    runId: Id<"buildRuns">;
+    userId: Id<"users">;
+    siteId: Id<"sites">;
+    assistantId: Id<"messages">;
+    holdId: Id<"creditHolds">;
+    requestKind: RequestKind;
+    epoch: number;
+    siteName: string;
+    prompt: string;
+    remember: boolean;
+    blockedNote?: string;
+    site: BuiltSite | null;
+    summary: string;
+    clones?: string;
+  },
+) {
+  // The pictures a page asked for are made before it is stored, so the
+  // version that lands never points at anything that does not exist. A page
+  // that came back on a talk-only turn is about to be dropped: it gets none.
+  let imageWanted = 0;
+  let imageMade = 0;
+  let site = turn.site;
+  if (site && turn.requestKind !== "chat") {
+    const parts = siteParts(site);
+    if (wantsImages(parts.join("\n"))) {
+      await trace.note({ phase: "images", label: "Making pictures", status: "images" });
+    }
+    const pictures = await fulfilImages(ctx, { parts, userId: turn.userId, siteId: turn.siteId, epoch: turn.epoch });
+    site = withParts(site, pictures.parts);
+    imageWanted = pictures.wanted;
+    imageMade = pictures.made;
+    if (pictures.wanted) {
+      await trace.note({
+        phase: "images_done",
+        label: pictures.made ? "Pictures made for your site" : "No new pictures to make",
+        detail: { imageWanted: pictures.wanted, imageMade: pictures.made },
+      });
+    }
+  }
+  const siteChars = site ? siteParts(site).join("").length : undefined;
+  await trace.note({
+    phase: "saving",
+    label: turn.requestKind === "chat" ? "Saving the reply" : "Saving your website",
+    status: "saving",
+    detail: { htmlChars: siteChars, requestKind: turn.requestKind },
+  });
+  const finished = await ctx.runMutation(internal.generate.finish, {
+    assistantId: turn.assistantId,
+    siteId: turn.siteId,
+    holdId: turn.holdId,
+    requestKind: turn.requestKind,
+    ...site,
+    summary: turn.summary,
+    blockedNote: turn.blockedNote,
+    epoch: turn.epoch,
+    clones: turn.clones,
+  });
+  if (finished === "cancelled") {
+    await ctx.runMutation(internal.diagnostics.close, {
+      runId: turn.runId,
+      status: "failed",
+      error: "Build cancelled",
+    });
+    return;
+  }
+  await ctx.runMutation(internal.diagnostics.close, {
+    runId: turn.runId,
+    status: "complete",
+    htmlChars: siteChars,
+    imageWanted,
+    imageMade,
+  });
+  // What was said is reflected on after the reply has landed, on its own
+  // clock: the page never goes along, and a hiccup here is not the turn's.
+  if (turn.remember) {
+    try {
+      await ctx.scheduler.runAfter(0, internal.memory.reflect, {
+        userId: turn.userId,
+        siteName: turn.siteName,
+        prompt: turn.prompt,
+        reply: turn.summary,
+      });
+    } catch (error) {
+      console.error("Forge could not queue the memory update:", describe(error));
+    }
+  }
+}
 
 // Records the prompt, holds the credits, and hands the action everything the
 // model needs, all in one transaction.
@@ -501,6 +568,9 @@ export const begin = internalMutation({
     return {
       siteId: site._id,
       siteName: site.name,
+      // What the current header, menu and footer are made of, so the turn can
+      // tell whether a reply changed them and needs the design reviewer.
+      chrome: current ? await chromeHash(current) : null,
       // Whether this turn is reflected on once it is answered.
       remember: await memoryEnabled(ctx, userId),
       holdId,
@@ -554,8 +624,11 @@ export const finish = internalMutation({
     onboardingId: v.optional(v.id("siteOnboarding")),
     attempt: v.optional(v.number()),
     epoch: v.optional(v.number()),
+    // The Awwwards originals the header, the dropdown menu and the footer were
+    // cloned from, as the design agent named them.
+    clones: v.optional(v.string()),
   },
-  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, shell, pages, summary, blockedNote, onboardingId, attempt, epoch }) => {
+  handler: async (ctx, { assistantId, siteId, holdId, requestKind: kind, html, shell, pages, summary, blockedNote, onboardingId, attempt, epoch, clones }) => {
     const now = Date.now();
     const site = await ctx.db.get(siteId);
     if (epoch !== undefined && (site?.buildEpoch ?? 0) !== epoch) {
@@ -588,10 +661,15 @@ export const finish = internalMutation({
       await releaseHold(ctx, holdId, now);
       return "cancelled" as const;
     }
+    // A reply that did not name its originals again keeps the ones the site
+    // already had, so the next edit is still told what it is keeping.
+    const previous = site.currentVersionId ? await ctx.db.get(site.currentVersionId) : null;
+    const named = clones?.trim() || previous?.clones;
     const versionId = await ctx.db.insert("siteVersions", {
       userId: site.userId,
       siteId,
       ...built,
+      ...(named ? { clones: named } : {}),
       summary,
       requestKind: kind,
       createdAt: now,
@@ -641,7 +719,26 @@ export const expire = internalMutation({
     const reason = "The build stopped responding. Try again.";
     const message = await ctx.db.get(assistantId);
     if (message?.status === "pending") {
-      await ctx.db.patch(assistantId, { body: reason, status: "failed" });
+      // A build the design reviewer is checking outlives this clock, because
+      // each step of the check is an action of its own. While the check is
+      // moving the watchdog waits for it; once it has gone quiet for longer
+      // than a step can run, the watchdog speaks for it.
+      const review = await ctx.db
+        .query("designReviews")
+        .withIndex("by_message", (q) => q.eq("assistantId", assistantId))
+        .order("desc")
+        .first();
+      if (reviewInFlight(review)) {
+        await ctx.scheduler.runAfter(RUN_WATCHDOG_MS, internal.generate.expire, { assistantId, holdId });
+        return null;
+      }
+      if (review?.status === "checking" || review?.status === "revising") {
+        await ctx.db.patch(review._id, { status: "failed", error: reason, html: undefined, shell: undefined, pages: undefined, updatedAt: Date.now() });
+      }
+      // The turn that started a check has already answered the member, so a
+      // check that went quiet has only the thread to say so in: its reply
+      // stays visible rather than failing out of sight.
+      await ctx.db.patch(assistantId, review ? { body: reason, status: undefined } : { body: reason, status: "failed" });
       const run = await ctx.db
         .query("buildRuns")
         .withIndex("by_message", (q) => q.eq("messageId", assistantId))
@@ -658,7 +755,7 @@ export const expire = internalMutation({
 
 function buildMessages(
   siteName: string,
-  current: BuiltSite | null,
+  current: (BuiltSite & { clones?: string }) | null,
   history: Doc<"messages">[],
   prompt: string,
   // Set when the balance cannot cover a build, which makes this turn TALK.
@@ -680,9 +777,12 @@ function buildMessages(
   // return, so an edit is a change to what is there and not a fresh build.
   const shown = current ? serializeSite(current) : null;
   if (shown) {
+    const clones = current?.clones?.trim()
+      ? `\n\nIts header, dropdown menu and footer are clones of these originals. Keep them as they are unless the request is about them, and return this clones block with the site:\n\n\`\`\`clones\n${current.clones.trim()}\n\`\`\``
+      : "";
     messages.push({
       role: "system",
-      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form.\n\n${shown}`,
+      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form.\n\n${shown}${clones}`,
     });
   }
   if (talkOnly) {
@@ -701,6 +801,13 @@ function buildMessages(
   }
   messages.push({ role: "user", content: prompt });
   return messages;
+}
+
+// The design agent's turn when the design reviewer sends its work back: the
+// same instructions a build reads, the site as it stands with the originals it
+// named, and the reviewer's fixes as the request.
+export function designAgentTurn(siteName: string, site: BuiltSite, clones: string | undefined, request: string) {
+  return buildMessages(siteName, { ...site, clones }, [], request, null, "build", null);
 }
 
 type Route = ReturnType<typeof chatRoute>;
@@ -1179,7 +1286,9 @@ export async function callProvider(
 // reply that is nothing but a document still counts. A reply that never
 // reaches for a page at all is an answer rather than a build, and comes back
 // with `html: null` so the caller charges for a conversation instead.
-export type ParsedReply = { html: string | null; shell?: string; pages?: SitePage[]; summary: string };
+// `clones` is the design agent's clones block: the Awwwards originals it says
+// the header, the dropdown menu and the footer were cloned from.
+export type ParsedReply = { html: string | null; shell?: string; pages?: SitePage[]; summary: string; clones?: string };
 
 // What a reply built, or null when it answered instead of building.
 export function builtSite(parsed: ParsedReply): BuiltSite | null {
@@ -1199,6 +1308,10 @@ function fencedBlocks(content: string) {
     if (!match[3]) break;
   }
   return blocks;
+}
+
+function clonesIn(blocks: ReturnType<typeof fencedBlocks>) {
+  return blocks.find((block) => /^clones\b/i.test(block.info))?.body.trim() || undefined;
 }
 
 function fenceAttr(info: string, name: string) {
@@ -1252,7 +1365,7 @@ export function parseReply(content: string): ParsedReply {
     if (!pages.some((page) => page.path === "/")) {
       throw new Error("The model did not return a complete site: there is no home page");
     }
-    return { html: null, shell: shellBlock.body, pages, summary: summaryBefore(content, blocks[0].index) };
+    return { html: null, shell: shellBlock.body, pages, summary: summaryBefore(content, blocks[0].index), clones: clonesIn(blocks) };
   }
   // One document and no blocks: a reply in the form builds took before pages
   // existed, which the model may still give and which is still a whole site.
@@ -1286,7 +1399,32 @@ export function parseReply(content: string): ParsedReply {
   if (!html || !/<html[\s>]/i.test(html) || !/<\/html>\s*$/i.test(html)) {
     throw new Error("The model did not return a complete page");
   }
-  return { html, summary: summaryBefore(content, fence?.index ?? unfenced?.index) };
+  // The sentence comes before every block, the clones block included.
+  const opened = Math.min(fence?.index ?? unfenced?.index ?? Infinity, blocks[0]?.index ?? Infinity);
+  return { html, summary: summaryBefore(content, Number.isFinite(opened) ? opened : undefined), clones: clonesIn(blocks) };
+}
+
+// A rework's reply. The design reviewer sends back the header, the menu and
+// the footer, and those live in the shell, so the shell is what has to come
+// back whole. A page that comes back with it replaces the page at its path; a
+// page that does not, or that the length limit cut off, stays as it was.
+export function parseShellReply(content: string): { shell: string; pages: SitePage[]; summary: string; clones?: string } {
+  const blocks = fencedBlocks(content);
+  const isPage = (info: string) => fenceAttr(info, "path") !== null || /^html\s+\/\S*/i.test(info);
+  const shellBlock =
+    blocks.find((block) => /^html\s+shell\b/i.test(block.info)) ??
+    blocks.find((block) => /^html\b/i.test(block.info) && !isPage(block.info) && /<html[\s>]/i.test(block.body));
+  if (!shellBlock || !shellBlock.closed || !/<html[\s>]/i.test(shellBlock.body) || !/<\/html>\s*$/i.test(shellBlock.body)) {
+    throw new Error("The model did not return a complete site: the shell is missing or unfinished");
+  }
+  const pages: SitePage[] = [];
+  for (const block of blocks) {
+    if (block === shellBlock || !block.closed || !/^html\b/i.test(block.info) || !isPage(block.info)) continue;
+    const path = normalizePath(fenceAttr(block.info, "path") ?? block.info.match(/^html\s+(\/\S*)/i)?.[1] ?? "/");
+    if (path === null || pages.some((page) => page.path === path)) continue;
+    pages.push({ path, title: (fenceAttr(block.info, "title") ?? titleFor(block.body, path)).trim(), body: block.body });
+  }
+  return { shell: shellBlock.body, pages, summary: summaryBefore(content, blocks[0]?.index), clones: clonesIn(blocks) };
 }
 
 // Where a reasoning model keeps its thinking. It is not an answer and never

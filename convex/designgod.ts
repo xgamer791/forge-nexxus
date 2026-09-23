@@ -9,6 +9,10 @@
 //
 // Add new visual training here. Type, colour, layout, navigation, icons, the
 // header, menu and footer, and the floor every page meets all live in this file.
+//
+// The Header, menu and footer section is not left to the design agent's word:
+// `designCheck.ts` hands the finished shell to a second, separate agent that
+// holds it to that section, and a build is only saved once that agent agrees.
 
 export const DESIGN_GOD = [
   "# Design God — custom design requirements",
@@ -50,16 +54,32 @@ export const DESIGN_GOD = [
   "",
   "- It carries the destinations this business actually has, in its own words: \"Book a table\" and \"This week's roast\", not \"Services\" and \"Products\".",
   "- Anything a thumb has to hit is at least 44px, with space around it.",
-  "- On a phone, keep those destinations usable. A short row that fits is fine. A menu that opens is fine. JavaScript is available, so the menu is not a checkbox and it does not have to say Menu.",
-  "- On a wide screen the header, the dropdown, and the footer are cloned as the Header, menu and footer section requires. A header that stays on screen gives each section a scroll-margin-top so a heading never lands underneath it.",
+  "- On a phone, keep those destinations usable in the shape the cloned original gives them. JavaScript is available, so the menu is not a checkbox and it does not have to say Menu.",
+  "- At every width, the header, the dropdown menu and the footer are cloned as the Header, menu and footer section requires. A header that stays on screen gives each section a scroll-margin-top so a heading never lands underneath it.",
   "",
   "## Header, menu and footer",
   "",
-  "The header, the dropdown menu, and the footer are chosen from https://www.awwwards.com/. Pick a beautiful design there for each one. Replicate it and clone it. Structure and spacing must match that original completely.",
+  "Header, dropdown menu and footer designs must be chosen from the following list: https://www.awwwards.com/",
   "",
-  "A second and separate agent compares your header, your dropdown, and your footer to those originals. Only when that agent agrees they are equal in design and spacing is the task complete, and only then do you move on.",
+  "You must choose a beautiful design for each from the list above, replicate its design and clone it. Your design must match the original completely. A second and separate agent compares your design to the original, and only when that second agent agrees they are equal in design and spacing is the task complete and can you move on.",
   "",
-  "Fonts and colors match the aesthetic of the site you are building. Families still come from Fontshare and nowhere else, the palette still comes from this business, and icons still come from Phosphor or Lucide.",
+  "All fonts and colors must match the aesthetic of the site you are building.",
+  "",
+  "### Name what you cloned",
+  "",
+  "Every build reply carries a clones block, in the form the build rules give, with one entry for the header, one for the dropdown menu and one for the footer. Each entry names its original (the site on Awwwards, and its address) and then describes that original's header, menu or footer precisely enough to rebuild it without seeing it: every element in order and what it does, the spacing in values (heights, padding, gaps, margins, the grid), the type's sizes, weights, case and tracking, and how it behaves on a phone and on a wide screen. Describe the original as it is, not as you built it. The reviewer checks your description against the original as well as your work against your description.",
+  "",
+  "### The second agent",
+  "",
+  "Forge runs that second agent for you: a design reviewer that did not build the site. It reads your clones block and your shell and compares the header, the dropdown menu and the footer with their originals. When it does not agree they are equal, your work comes back with its fixes, and you make every one of them. The build is finished only when it agrees.",
+  "",
+  "### What cloning covers",
+  "",
+  "- Structure and spacing come from the original at every width: its phone header and menu on a phone, its desktop ones on a wide screen.",
+  "- The dropdown menu is the original's: how it opens, where it opens from, what it covers and what it holds.",
+  "- The header, the dropdown menu and the footer live in the shell, because every page shares them.",
+  "- Fonts and colors are this site's, never the original's brand. Families still come from Fontshare and nowhere else, the palette still comes from this business, and icons still come from Phosphor or Lucide.",
+  "- The destinations are this business's own, in its own words, and the floor still holds: targets of at least 44px, visible focus, a menu that opens and closes by touch and by keyboard, and nothing that scrolls sideways.",
   "",
   "## Icons",
   "",

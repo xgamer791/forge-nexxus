@@ -58,15 +58,24 @@ const ENABLED = true;
     }
     return rows;
   }
+  // Whether the design agent is reworking what the design check sent back,
+  // read from the run's own log: a rework is the latest step since a check.
+  function reworking(draft) {
+    if (!belongsToDraft(draft)) return false;
+    const phases = (trace?.events ?? []).map(event => event.phase);
+    return phases.lastIndexOf('design_revision') > phases.lastIndexOf('design_review');
+  }
   // Where the build has got to, as one of the four stages the page drawing
   // shows. Nothing here guesses at a percentage: a stage only moves when the
-  // server says the build did.
+  // server says the build did. The design check belongs to writing: the page
+  // is not finished until the header, menu and footer pass it.
   function buildStage(draft, events) {
     const phase = belongsToDraft(draft) ? trace?.latest?.status : null;
     if (draft.status === 'queued' || phase === 'queued') return { step: 1, label: 'Waiting for the build to start…' };
     if (draft.status === 'saving' || phase === 'saving') return { step: 4, label: 'Saving your website…' };
     if (phase === 'images') return { step: 3, label: 'Making the pictures…' };
-    if (phase === 'calling') return { step: 2, label: 'Writing your website…' };
+    if (phase === 'reviewing') return { step: 2, label: 'Checking the header, menu and footer…' };
+    if (phase === 'calling') return { step: 2, label: reworking(draft) ? 'Reworking the header, menu and footer…' : 'Writing your website…' };
     const has = label => events.some(event => event.label === label);
     return has('Pictures made for your site') ? { step: 4, label: 'Putting it together…' }
       : has('Page written') ? { step: 3, label: 'Making the pictures…' }

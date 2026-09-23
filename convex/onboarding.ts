@@ -2,12 +2,14 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireMemberId } from "./access";
 import { designSource, siteParts, withParts, type BuiltSite } from "./pages";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
-import { failOpenRun, openRun, providerTrace, recordLastSign } from "./diagnostics";
+import type { RequestKind } from "./plans";
+import { failOpenRun, openRun, providerTrace, recordLastSign, type ProviderTrace } from "./diagnostics";
+import { needsReview, reviewInFlight } from "./designCheck";
 import { builtSite, callProvider, chatRoute, describe, parseReply } from "./generate";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
@@ -552,7 +554,7 @@ export const milestone = internalMutation({
 });
 
 const BUILD_ORDER = "This is an onboarding BUILD. Read the attached website-build-brief.md, work privately, and return the finished site now. Do not ask questions, discuss your plan, or reply with planning prose.";
-const BUILD_AGAIN = "Your last reply did not contain a complete website. Return the whole website now: one sentence, then the shell in a ```html shell block that ends with </html>, then each page in its own ```html path=\"/about\" title=\"About\" block, every block closed with its fence. No planning prose, and keep the CSS lean enough to finish.";
+const BUILD_AGAIN = "Your last reply did not contain a complete website. Return the whole website now: one sentence, then the clones block, then the shell in a ```html shell block that ends with </html>, then each page in its own ```html path=\"/about\" title=\"About\" block, every block closed with its fence. No planning prose, and keep the CSS lean enough to finish.";
 const DIFFERENT_BUILD = "The page you returned matched a discarded design and was rejected. Create a genuinely different page composition from the business answers. Start the HTML and CSS again; changing pictures or whitespace is not a new design. Return a complete website now.";
 
 // The page, asked for until it is whole. A reply that talked instead of
@@ -588,7 +590,7 @@ async function writePage(
         const duplicate = discardedDesignHashes.includes(await designHash(designSource(site)));
         const requestedPicture = (siteParts(site).join("\n").match(/<img\b[^>]*>/gi) ?? [])
           .some(tag => /\bdata-forge-image\s*=\s*["'][^"']+/i.test(tag));
-        if (!duplicate && (!redesign?.requireImages || requestedPicture)) return { site, summary: parsed.summary };
+        if (!duplicate && (!redesign?.requireImages || requestedPicture)) return { site, summary: parsed.summary, clones: parsed.clones };
         if (!duplicate) {
           shortfall = new Error("The rebuild did not include its required new imagery. Try rebuilding again.");
           continue;
@@ -623,6 +625,67 @@ export const adoptSample = internalMutation({
     return true;
   },
 });
+
+// The end of an onboarding build: the pictures the page asked for, the save,
+// and the log. A build the design reviewer held comes here from
+// `designReview.ts` once the reviewer agrees, with the site it agreed to.
+export async function finishOnboardingBuild(
+  ctx: ActionCtx,
+  trace: ProviderTrace,
+  build: {
+    id: Id<"siteOnboarding">;
+    attempt: number;
+    runId: Id<"buildRuns">;
+    userId: Id<"users">;
+    result: { siteId: Id<"sites">; holdId: Id<"creditHolds">; assistantId: Id<"messages">; requestKind: RequestKind; epoch: number };
+    rebuild: boolean;
+    site: BuiltSite;
+    summary: string;
+    clones?: string;
+  },
+) {
+  const { id, attempt, runId } = build;
+  // The pictures the page asked for are made before it is saved, so the
+  // first version a member opens is the finished one.
+  let site: BuiltSite = build.site;
+  let imageWanted = 0;
+  let imageMade = 0;
+  if (wantsImages(siteParts(site).join("\n"))) {
+    if (!await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Page written" })) return;
+    await trace.note({ phase: "images", label: "Making pictures", status: "images" });
+    const pictures = await fulfilImages(ctx, { parts: siteParts(site), userId: build.userId, siteId: build.result.siteId, epoch: build.result.epoch });
+    site = withParts(site, pictures.parts);
+    imageWanted = pictures.wanted;
+    imageMade = pictures.made;
+    if (pictures.made) await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Pictures made for your site" });
+    await trace.note({
+      phase: "images_done",
+      label: pictures.made ? "Pictures made for your site" : "No new pictures to make",
+      detail: { imageWanted: pictures.wanted, imageMade: pictures.made },
+    });
+  }
+  if (build.rebuild && imageRoute().apiKey && imageMade === 0) {
+    throw new Error("The new pictures could not be generated. The rebuild was not published. Try again.");
+  }
+  if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, saving: true })) {
+    await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
+    return;
+  }
+  const siteChars = siteParts(site).join("").length;
+  await trace.note({ phase: "saving", label: "Saving your website", status: "saving", detail: { htmlChars: siteChars } });
+  const finished = await ctx.runMutation(internal.generate.finish, { ...build.result, ...site, summary: build.summary || "Your first website is ready.", onboardingId: id, attempt, clones: build.clones });
+  if (finished === "cancelled") {
+    await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "Build cancelled" });
+    return;
+  }
+  await ctx.runMutation(internal.diagnostics.close, {
+    runId,
+    status: "complete",
+    htmlChars: siteChars,
+    imageWanted,
+    imageMade,
+  });
+}
 
 export const build = internalAction({
   args: { id: v.id("siteOnboarding"), attempt: v.number() },
@@ -708,46 +771,41 @@ export const build = internalAction({
         { role: "user", content: `File: website-build-brief.md\n\n${brief}` },
       ], deadline, trace, row.discardedDesignHashes,
       row.discardedDesignHashes !== undefined ? { requireImages: Boolean(imageRoute().apiKey) } : undefined);
-      // The pictures the page asked for are made before it is saved, so the
-      // first version a member opens is the finished one.
-      let site: BuiltSite = page.site;
-      let imageWanted = 0;
-      let imageMade = 0;
-      if (wantsImages(siteParts(site).join("\n"))) {
-        if (!await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Page written" })) return;
-        await trace.note({ phase: "images", label: "Making pictures", status: "images" });
-        const pictures = await fulfilImages(ctx, { parts: siteParts(site), userId: row.userId, siteId: row.siteId, epoch: job.result.epoch });
-        site = withParts(site, pictures.parts);
-        imageWanted = pictures.wanted;
-        imageMade = pictures.made;
-        if (pictures.made) await ctx.runMutation(internal.onboarding.milestone, { id, attempt, label: "Pictures made for your site" });
-        await trace.note({
-          phase: "images_done",
-          label: pictures.made ? "Pictures made for your site" : "No new pictures to make",
-          detail: { imageWanted: pictures.wanted, imageMade: pictures.made },
-        });
-      }
-      if (row.discardedDesignHashes !== undefined && imageRoute().apiKey && imageMade === 0) {
-        throw new Error("The new pictures could not be generated. The rebuild was not published. Try again.");
-      }
-      if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, saving: true })) {
-        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
-        return;
-      }
-      const siteChars = siteParts(site).join("").length;
-      await trace.note({ phase: "saving", label: "Saving your website", status: "saving", detail: { htmlChars: siteChars } });
-      const finished = await ctx.runMutation(internal.generate.finish, { ...job.result, ...site, summary: page.summary || "Your first website is ready.", onboardingId: id, attempt });
-      if (finished === "cancelled") {
-        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "Build cancelled" });
-        return;
-      }
-      await ctx.runMutation(internal.diagnostics.close, {
+      const build = {
+        id,
+        attempt,
         runId,
-        status: "complete",
-        htmlChars: siteChars,
-        imageWanted,
-        imageMade,
-      });
+        userId: row.userId,
+        result: job.result,
+        rebuild: row.discardedDesignHashes !== undefined,
+        summary: page.summary,
+        clones: page.clones,
+      };
+      // The header, the menu and the footer go to the design reviewer before
+      // anything is saved. This action ends here and the check carries the
+      // site on; `finishOnboardingBuild` is where it lands once the reviewer
+      // agrees.
+      if (await needsReview("generate", null, page.site)) {
+        await ctx.runMutation(internal.designReview.open, {
+          source: "onboarding",
+          userId: row.userId,
+          siteId: row.siteId,
+          runId,
+          assistantId: job.result.assistantId,
+          holdId: job.result.holdId,
+          requestKind: job.result.requestKind,
+          epoch: job.result.epoch,
+          onboardingId: id,
+          attempt,
+          rebuild: build.rebuild,
+          siteName: answers[0] || "This website",
+          ...page.site,
+          summary: page.summary,
+          clones: page.clones,
+        });
+        return;
+      }
+      await finishOnboardingBuild(ctx, trace, { ...build, site: page.site });
     } catch (error) {
       // What stopped the build is what the member reads, in the same words the
       // thread would use: a provider's answer, a clock that ran out, a balance.
@@ -761,23 +819,51 @@ export const build = internalAction({
 
 export const expire = internalMutation({
   args: { id: v.id("siteOnboarding"), attempt: v.number(), failed: v.optional(v.boolean()), reason: v.optional(v.string()) },
-  handler: async (ctx, { id, attempt, failed, reason }) => {
-    const row = await ctx.db.get(id);
-    if (!row || row.attempt !== attempt || !["queued", "building", "saving"].includes(row.status)) return;
-    if (row.holdId) await releaseHold(ctx, row.holdId);
-    const error = reason ? `${reason.replace(/[.!?]?\s*$/, ".")} Your answers are saved.`
-      : failed ? "Your website couldn’t be completed. Your answers are saved. Try building again." : "The build stopped responding. Your answers are saved. Try building again.";
-    if (row.assistantId && await ctx.db.get(row.assistantId)) await ctx.db.patch(row.assistantId, { status: "failed", body: error });
-    await ctx.db.patch(id, { status: "failed", error, holdId: undefined, updatedAt: Date.now() });
-    // No reason and no failure means the build never came back to say how it
-    // ended: this is the watchdog, and the log gets its last sign of life.
-    if (!reason && !failed) {
-      const run = await ctx.db
-        .query("buildRuns")
-        .withIndex("by_onboarding_attempt", (q) => q.eq("onboardingId", id).eq("attempt", attempt))
+  handler: async (ctx, args) => {
+    // No reason and no failure is the watchdog. A build the design reviewer is
+    // checking outlives it, because each step of the check is an action of its
+    // own: while the check is moving the watchdog waits for it, and once it
+    // has gone quiet for longer than a step can run, the watchdog speaks.
+    if (!args.reason && !args.failed) {
+      const review = await ctx.db
+        .query("designReviews")
+        .withIndex("by_onboarding_attempt", (q) => q.eq("onboardingId", args.id).eq("attempt", args.attempt))
+        .order("desc")
         .first();
-      if (run) await recordLastSign(ctx, run._id);
+      if (reviewInFlight(review)) {
+        await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id: args.id, attempt: args.attempt });
+        return;
+      }
+      if (review?.status === "checking" || review?.status === "revising") {
+        await ctx.db.patch(review._id, { status: "failed", error: "The build stopped responding.", html: undefined, shell: undefined, pages: undefined, updatedAt: Date.now() });
+      }
     }
-    await failOpenRun(ctx, { onboardingId: id, attempt, error });
+    await stopAttempt(ctx, args);
   },
 });
+
+// Ends an attempt that is still running: its credits go back, and the member
+// is told why in the words the thread would use. The design reviewer ends a
+// build it never agreed to through here too.
+export async function stopAttempt(
+  ctx: MutationCtx,
+  { id, attempt, failed, reason }: { id: Id<"siteOnboarding">; attempt: number; failed?: boolean; reason?: string },
+) {
+  const row = await ctx.db.get(id);
+  if (!row || row.attempt !== attempt || !["queued", "building", "saving"].includes(row.status)) return;
+  if (row.holdId) await releaseHold(ctx, row.holdId);
+  const error = reason ? `${reason.replace(/[.!?]?\s*$/, ".")} Your answers are saved.`
+    : failed ? "Your website couldn’t be completed. Your answers are saved. Try building again." : "The build stopped responding. Your answers are saved. Try building again.";
+  if (row.assistantId && await ctx.db.get(row.assistantId)) await ctx.db.patch(row.assistantId, { status: "failed", body: error });
+  await ctx.db.patch(id, { status: "failed", error, holdId: undefined, updatedAt: Date.now() });
+  // No reason and no failure means the build never came back to say how it
+  // ended: this is the watchdog, and the log gets its last sign of life.
+  if (!reason && !failed) {
+    const run = await ctx.db
+      .query("buildRuns")
+      .withIndex("by_onboarding_attempt", (q) => q.eq("onboardingId", id).eq("attempt", attempt))
+      .first();
+    if (run) await recordLastSign(ctx, run._id);
+  }
+  await failOpenRun(ctx, { onboardingId: id, attempt, error });
+}
