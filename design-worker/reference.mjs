@@ -72,12 +72,28 @@ async function shotsFor(dir, name) {
   return path.join(dir, name);
 }
 
+// A reference page is measured twice, and a third time when the two differ;
+// what two measurements agree on is kept. A site's own scripts can paint
+// something on one load and not the next, and the reference every build is
+// held to must not carry a one-off.
+const sameBoxes = (a, b) => a.boxes.length === b.boxes.length && a.boxes.every((box, i) => box.join() === b.boxes[i].join()) &&
+  JSON.stringify(a.menu?.boxes ?? []) === JSON.stringify(b.menu?.boxes ?? []);
+async function measureSteadily(browser, url, name, options) {
+  const first = await measurePage(browser, url, name, options);
+  const second = await measurePage(browser, url, name, { ...options, shots: null });
+  if (sameBoxes(first, second)) return { ...first, steady: true };
+  const third = await measurePage(browser, url, name, { ...options, shots: null });
+  if (sameBoxes(first, third)) return { ...first, steady: true };
+  if (sameBoxes(second, third)) return { ...second, steady: true };
+  return { ...third, steady: false };
+}
+
 // The reference: every chosen route at every width. The home page must be
 // measured at every width or there is no reference at all; another page that
 // cannot be loaded is left out of the routes rather than half-measured.
 export async function captureReference(browser, homeUrl, { emit = () => {}, artifacts = null, concurrency = 2 } = {}) {
   emit("inspecting", { page: 1, total: 1 });
-  const first = await measurePage(browser, homeUrl, "desktop", { discover: true, shots: await shotsFor(artifacts, "home-desktop") });
+  const first = await measureSteadily(browser, homeUrl, "desktop", { discover: true, shots: await shotsFor(artifacts, "home-desktop") });
   const routes = chooseRoutes(homeUrl, first.links);
   const jobs = [];
   for (const [index, route] of routes.entries()) {
@@ -91,7 +107,7 @@ export async function captureReference(browser, homeUrl, { emit = () => {}, arti
   await inPool(jobs, concurrency, async ({ route, name, index }) => {
     const slug = route.path === "/" ? "home" : route.path.slice(1).replace(/[^a-z0-9]+/g, "-");
     try {
-      measured.set(`${index}:${name}`, await measurePage(browser, route.url, name, { shots: await shotsFor(artifacts, `${slug}-${name}`) }));
+      measured.set(`${index}:${name}`, await measureSteadily(browser, route.url, name, { shots: await shotsFor(artifacts, `${slug}-${name}`) }));
     } catch (error) {
       measured.set(`${index}:${name}`, { error: String(error?.message ?? error).slice(0, 200) });
     }

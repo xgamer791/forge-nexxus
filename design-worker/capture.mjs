@@ -25,7 +25,7 @@ const UA =
 // and a half or more; held from the first line of script, every measurement
 // of a page sees its first slide. Loading, lazy images and this file's own
 // waits all run on shorter timers and are untouched.
-const HOLD_LONG_TIMERS = `(() => {
+export const HOLD_LONG_TIMERS = `(() => {
   const LONG = 1500;
   const timeout = window.setTimeout;
   const interval = window.setInterval;
@@ -100,7 +100,7 @@ async function imagesSettled(page, { timeout = 4000 } = {}) {
     .catch(() => {});
 }
 
-async function settle(page) {
+export async function settle(page) {
   await Promise.all([
     page.waitForLoadState("networkidle", { timeout: 4000 }).catch(() => {}),
     page.evaluate(() => document.fonts?.ready).catch(() => {}),
@@ -111,7 +111,7 @@ async function settle(page) {
 
 // Half-viewport steps to the bottom and back: IntersectionObserver thresholds
 // commonly need an element substantially in view.
-async function autoScroll(page) {
+export async function autoScroll(page) {
   await page
     .evaluate(async () => {
       const step = window.innerHeight / 2;
@@ -131,7 +131,7 @@ async function autoScroll(page) {
 
 // Animations jump to their end state rather than `animation: none`, which
 // would revert fill-mode entry animations to their invisible first frame.
-async function freeze(page) {
+export async function freeze(page) {
   await page
     .addStyleTag({
       content:
@@ -161,7 +161,7 @@ async function freeze(page) {
 // Both sides of every comparison get exactly this.
 // ---------------------------------------------------------------------------
 
-function normalizeInPage() {
+export function normalizeInPage() {
   const W = window.innerWidth;
   const H = window.innerHeight;
   const cover = (el) => {
@@ -205,7 +205,7 @@ function normalizeInPage() {
 // The measurement itself, run inside the page.
 // ---------------------------------------------------------------------------
 
-function measureInPage(options) {
+export function measureInPage(options) {
   const { viewportOnly = false, discover = false } = options || {};
   window.scrollTo(0, 0);
   const sx = window.scrollX;
@@ -442,16 +442,47 @@ function measureInPage(options) {
         const clipText = cs.backgroundClip === "text" || cs.webkitBackgroundClip === "text";
         if (!clipText && ink && ink.a < 0.05) continue;
         const kind = heading || Number.parseFloat(cs.fontSize) >= 24 ? KIND.heading : KIND.text;
+        const block = blockOf(el);
+        let run = textRuns.get(block);
+        if (!run) {
+          run = { kind, top: Number.POSITIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY, order: order++, z: next.z, layer: next.layer, clip: next.clip };
+          textRuns.set(block, run);
+        }
+        if (kind === KIND.heading) run.kind = KIND.heading;
         const range = document.createRange();
         range.selectNodeContents(node);
         for (const line of range.getClientRects()) {
           if (line.width < 1 || line.height < 1) continue;
-          paint(kind, rectOf(line), next);
+          const clipped = intersect(rectOf(line), next.clip);
+          if (!clipped) continue;
+          run.top = Math.min(run.top, clipped.y0);
+          run.bottom = Math.max(run.bottom, clipped.y1);
         }
       }
     }
   };
+  // Text is painted as the block it runs in -- the width that block gives its
+  // lines, from its first line's top to its last line's foot -- because where
+  // each line ends is the words' and the font's doing, and neither is the
+  // layout's. How many lines a block holds still shows as its height.
+  const textRuns = new Map();
+  const blockOf = (el) => {
+    for (let cur = el; cur && cur !== document.body; cur = cur.parentElement) {
+      const display = getComputedStyle(cur).display;
+      if (display !== "inline" && display !== "contents") return cur;
+    }
+    return document.body;
+  };
   if (document.body) walk(document.body, { clip: PAGE, z: 0, layer: 0, bg: ground, heading: false });
+  for (const [block, run] of textRuns) {
+    if (!Number.isFinite(run.top)) continue;
+    const b = block.getBoundingClientRect();
+    const bcs = getComputedStyle(block);
+    const x0 = b.left + sx + (Number.parseFloat(bcs.borderLeftWidth) || 0) + (Number.parseFloat(bcs.paddingLeft) || 0);
+    const x1 = b.right + sx - (Number.parseFloat(bcs.borderRightWidth) || 0) - (Number.parseFloat(bcs.paddingRight) || 0);
+    const box = x1 > x0 ? intersect({ x0, y0: run.top, x1, y1: run.bottom }, run.clip) : null;
+    if (box) out.push([run.kind, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0, run.z, run.layer, run.order]);
+  }
   out.sort((a, b) => a[5] - b[5] || a[6] - b[6] || a[7] - b[7]);
   const boxes = out.map(([kind, x, y, w, h]) => [kind, Math.round(x), Math.round(y), Math.round(w), Math.round(h)]).filter((box) => box[3] > 0 && box[4] > 0);
 
@@ -693,7 +724,11 @@ export async function measurePage(browser, url, viewportName, { serve = null, di
     if (!response || response.status() >= 400) throw new Error(`The page answered ${response ? response.status() : "nothing"}`);
     await settle(page);
     await page.evaluate(normalizeInPage).catch(() => 0);
+    // Frozen before the scroll, so whatever the scroll sets off lands at once
+    // and not part-way through a transition.
+    await freeze(page);
     await autoScroll(page);
+    await settle(page);
     await page.evaluate(normalizeInPage).catch(() => 0);
     await freeze(page);
     const measured = await page.evaluate(measureInPage, { discover });

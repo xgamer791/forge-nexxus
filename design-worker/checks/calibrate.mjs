@@ -157,6 +157,21 @@ for (const region of REGIONS) {
   const row = [extreme("self", region, Math.min), extreme("restyle", region, Math.min), extreme("chrome", region, Math.max), extreme("draft", region, Math.max)];
   console.log(`${region.padEnd(8)} ${String(THRESHOLDS[region]).padEnd(10)} ${row.map((s) => (s === null ? "-" : (s * 100).toFixed(1)).padEnd(12)).join("")}`);
 }
+if (out) {
+  const scores = Object.fromEntries(Object.entries(results).map(([name, audit]) => [name, {
+    passed: audit.passed,
+    routes: audit.routes.map((route) => ({
+      path: route.path,
+      viewports: Object.fromEntries(VIEWPORT_NAMES.map((width) => [width, route.viewports[width]?.regions
+        ? Object.fromEntries(REGIONS.map((region) => {
+            const r = route.viewports[width].regions[region];
+            return [region, { score: r.score, passed: r.passed, heights: r.heights, lowestBand: Math.min(1, ...r.bands.map((band) => band.score)) }];
+          }))
+        : { problem: route.viewports[width]?.problem ?? route.problem ?? "not measured" }])),
+    })),
+  }]));
+  await fs.writeFile(path.join(out, "calibration.json"), JSON.stringify({ thresholds: THRESHOLDS, fixtures: scores }, null, 2));
+}
 const bodyOf = (name, route) => results[name].routes.find((r) => r.path === route);
 const ok = results.self.passed && results.restyle.passed &&
   VIEWPORT_NAMES.some((width) => bodyOf("chrome", "/")?.viewports[width]?.regions?.body?.passed === false) &&
