@@ -152,6 +152,28 @@ describe("publishing", () => {
     });
   }
 
+  // The first address is taken from the website questions, not the site's name.
+  async function nameTheBusiness(t: ReturnType<typeof fresh>, siteId: Id<"sites">, name: string) {
+    await t.run(async (ctx) => {
+      const site = (await ctx.db.get(siteId))!;
+      const now = Date.now();
+      await ctx.db.insert("siteOnboarding", {
+        userId: site.userId,
+        siteId,
+        answers: [name],
+        step: 1,
+        revision: 1,
+        assets: [],
+        status: "complete",
+        attempt: 1,
+        dismissed: false,
+        events: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+  }
+
   test("slugify keeps a readable, safe address", () => {
     expect(slugify("Bakery on Main!")).toBe("bakery-on-main");
     expect(slugify("  Café — Résumé  ")).toBe("cafe-resume");
@@ -173,6 +195,7 @@ describe("publishing", () => {
       "Build the site before publishing",
     );
     const first = await build(t, siteId);
+    await nameTheBusiness(t, siteId, "Bakery on Main");
     const published = await member.as.mutation(api.sites.publish, { id: siteId });
     // The name is not the address. Forge assigns one when the build is published.
     expect(published.slug).toMatch(/^[a-z]+-[a-z]+-[a-z0-9]{4}$/);
@@ -242,15 +265,16 @@ describe("publishing", () => {
     const bob = await createUser(t, { email: "b@example.com" });
     await t.mutation(internal.billing.grantPlan, { userId: alice.userId, plan: "starter" });
     await t.mutation(internal.billing.grantPlan, { userId: bob.userId, plan: "starter" });
-    const a = await alice.as.mutation(api.sites.create, { name: "Shop" });
-    const b = await bob.as.mutation(api.sites.create, { name: "Shop" });
+    const a = await alice.as.mutation(api.sites.create, { name: "Harbor Roasters" });
+    const b = await bob.as.mutation(api.sites.create, { name: "Harbor Roasters" });
     await build(t, a.siteId);
     await build(t, b.siteId);
+    await nameTheBusiness(t, a.siteId, "Harbor Roasters");
+    await nameTheBusiness(t, b.siteId, "Harbor Roasters");
     const first = await alice.as.mutation(api.sites.publish, { id: a.siteId });
     const second = await bob.as.mutation(api.sites.publish, { id: b.siteId });
-    expect(first.slug).toMatch(/^[a-z]+-[a-z]+-[a-z0-9]{4}$/);
-    expect(second.slug).toMatch(/^[a-z]+-[a-z]+-[a-z0-9]{4}$/);
-    expect(first.slug).not.toBe(second.slug);
+    expect(first.slug).toBe("harbor-roasters");
+    expect(second.slug).toMatch(/^harbor-roasters-[a-z0-9]{4}$/);
     await expect(bob.as.mutation(api.sites.publish, { id: a.siteId })).rejects.toThrow("Site not found");
     await expect(bob.as.mutation(api.sites.unpublish, { id: a.siteId })).rejects.toThrow("Site not found");
     expect(await bob.as.query(api.sites.currentHtml, { siteId: a.siteId })).toBeNull();
@@ -273,7 +297,7 @@ describe("publishing", () => {
     const member = await createUser(t, { email: "m@example.com" });
     const other = await createUser(t, { email: "o@example.com" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
-    // Choosing an address is the same entitlement as publishing to one.
+    // Changing an address is the same entitlement as publishing to one.
     await expect(
       member.as.mutation(api.sites.setSlug, { id: siteId, slug: "The Bakery!" }),
     ).rejects.toThrow("A site address comes with the Starter plan");
@@ -300,6 +324,7 @@ describe("publishing", () => {
       other.as.mutation(api.sites.setSlug, { id: theirs.siteId, slug: "the-bakery" }),
     ).rejects.toThrow("when the build finishes");
     await build(t, theirs.siteId);
+    await nameTheBusiness(t, theirs.siteId, "Other Roastery");
     await other.as.mutation(api.sites.publish, { id: theirs.siteId });
     await expect(
       other.as.mutation(api.sites.setSlug, { id: theirs.siteId, slug: "the-bakery" }),
@@ -343,7 +368,7 @@ describe("publishing", () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
-    const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
+    const { siteId } = await member.as.mutation(api.sites.create, { name: "Harbor Roasters" });
     await build(t, siteId);
     const published = await member.as.mutation(api.sites.publish, { id: siteId });
     await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });

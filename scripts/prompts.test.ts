@@ -183,8 +183,10 @@ describe("the contract sets a floor, not a mould", () => {
 
   test("navigation is designed, and DESIGN_GOD is where that is said", () => {
     expect(DESIGN_GOD).toContain("## Navigation");
-    expect(DESIGN_GOD).toContain("a bar with the name on the left and links on the right is one answer, not the answer");
-    expect(DESIGN_GOD).toContain("at least 44px");
+    expect(DESIGN_GOD).toContain("A header that stays on screen gives each section a scroll-margin-top so a heading never lands underneath it.");
+    expect(DESIGN_GOD).not.toContain("a bar with the name on the left and links on the right is one answer, not the answer");
+    expect(DESIGN_GOD).not.toContain("Anything a thumb has to hit");
+    expect(DESIGN_GOD).not.toContain("at least 44px");
   });
 
   test("the reply follows the saved SkillUI reference instead of naming Awwwards clones", () => {

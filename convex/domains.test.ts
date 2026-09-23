@@ -129,7 +129,10 @@ describe("domains", () => {
     const member = await createUser(t, { email: "m@example.com" });
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
-    await publishThenRename(t, member, siteId, "shop");
+    // The first address is assigned, not chosen. The DNS record is what this test checks.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(siteId, { slug: "shop" });
+    });
     await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });
     await member.as.mutation(api.domains.add, { siteId, hostname: "shop.example" });
     const [subdomain, root] = await member.as.query(api.domains.list, {});
@@ -178,7 +181,9 @@ describe("domains", () => {
     const member = await createUser(t, { email: "m@example.com" });
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
-    await publishThenRename(t, member, siteId, "shop");
+    await t.run(async (ctx) => {
+      await ctx.db.patch(siteId, { slug: "shop" });
+    });
     const id = await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });
     const answers: Array<{ type: number; data: string }[]> = [
       [],

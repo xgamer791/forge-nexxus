@@ -52,7 +52,7 @@ describe("periods", () => {
       granted: 300,
       cancelAtPeriodEnd: false,
     };
-    expect(projected(sub, start + 1000)).toEqual(sub);
+    expect(projected(sub, start + 1000)).toStrictEqual(sub);
     const twoLater = addMonth(addMonth(start));
     const later = projected(sub, twoLater + 5);
     expect(later.periodStart).toBe(twoLater);
@@ -478,12 +478,19 @@ describe("admins", () => {
       expect(summary.plan.key).toBe(ultra.key);
       // An upgrade carries the leftover over, as any other upgrade does.
       expect(summary.credits).toBe((ultra.monthlyCredits ?? 0) + OPENING);
-      // A downgrade — a cancelled card, a Stripe deletion — does not stick.
-      // The summary reads the admin rule directly, so it stays on the top plan
-      // even before the next ensure writes the row back.
+      // A downgrade can be written onto the row, but the read path still names
+      // the top plan, and the next ensure puts the row back there.
       await t.mutation(internal.billing.grantPlan, { email: "boss@example.com", plan: "free" });
       expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe(ultra.key);
+      const stored = await t.run(async (ctx) =>
+        ctx.db.query("subscriptions").withIndex("by_user", (q) => q.eq("userId", user.userId)).unique(),
+      );
+      expect(stored!.planKey).toBe("free");
       await t.mutation(internal.billing.ensure, { userId: user.userId });
+      const restored = await t.run(async (ctx) =>
+        ctx.db.query("subscriptions").withIndex("by_user", (q) => q.eq("userId", user.userId)).unique(),
+      );
+      expect(restored!.planKey).toBe(ultra.key);
       expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe(ultra.key);
     } finally {
       delete process.env.ADMIN_EMAILS;

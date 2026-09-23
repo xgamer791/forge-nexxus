@@ -173,6 +173,10 @@ describe("generate.run", () => {
       published: true,
     });
 
+    expect(calls).toHaveLength(0);
+    expect(await member.as.query(api.messages.list, { conversationId })).toEqual([]);
+    expect(await member.as.query(api.sites.currentHtml, { siteId })).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       credits: OPENING - REQUEST_COSTS.edit,
       reserved: 0,
@@ -192,7 +196,7 @@ describe("generate.run", () => {
     expect(sent[6].content).toBe(prompt);
   });
 
-  test("a second prompt is an edit: the current page goes along and the edit cost is charged", async () => {
+  test("a prompt against a built site is an edit: the current page goes along and the edit cost is charged", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { conversationId, siteId } = await member.as.mutation(api.sites.create, { name: "Bakery" });

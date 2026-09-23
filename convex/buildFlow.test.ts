@@ -97,6 +97,11 @@ function stubProviders(build: (call: number) => Response) {
       if (/private website strategist/.test(system)) {
         return json({ choices: [{ message: { content: "Lead with the roastery. Warm palette, one clear call." } }] });
       }
+      // The memory note runs after a turn and is not a page. A scheduled one
+      // from an earlier test must not be counted as this test's build.
+      if (/maintain Forge's memory/.test(system)) {
+        return json({ choices: [{ message: { content: '{"add":[],"forget":[],"replace":{}}' } }] });
+      }
       builds += 1;
       return build(builds);
     }),
@@ -509,7 +514,7 @@ describe("a rebuild, start to finish", () => {
     expect(rebuiltContext).not.toContain("Harbor Roasters</h1>");
     expect(rebuiltContext).not.toContain(oldImage.storageId);
     expect(rebuiltContext).not.toContain(oldBriefStorageId);
-    expect(rebuiltContext).toContain("This turn is a rebuild");
+    expect(rebuiltContext).toContain("This turn is a rebuild:");
     expect(rebuiltContext).toContain("Rebuild identifier:");
     expect(rebuildCall.body.messages.some((m: any) => m.role === "assistant")).toBe(false);
     expect(rebuildCall.body).not.toHaveProperty("previous_response_id");
@@ -684,6 +689,9 @@ describe("a rebuild, start to finish", () => {
     expect(await versions(t)).toEqual([]);
     expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "released"]]);
     expect((await t.run((ctx) => ctx.db.get(siteId)))!.currentVersionId).toBeUndefined();
+    // Rebuild schedules the next build immediately. Run it here so its provider
+    // calls do not land in the following test's stub.
+    await drain(t);
   });
 
   test("an identical design is retried without sending the discarded page to the model", async () => {
@@ -763,8 +771,10 @@ describe("what actually reaches the model", () => {
     expect(systems[3]).toContain("You are Forge, the website-building agent");
     expect(systems.at(-1)).toContain("This is an onboarding BUILD");
 
-    expect(systems[0]).toContain("What every page owes");
+    expect(systems[0]).toContain("What every page owes, whatever shape it takes");
     expect(systems[1]).toContain("from Fontshare and nowhere else");
+    expect(systems[1]).not.toContain("name on the left and links on the right");
+    expect(systems[1]).not.toContain("at least 44px");
     expect(systems[2]).toContain("plan, review against the brief, build, critique");
   });
 
@@ -859,8 +869,8 @@ describe("a rebuild starts the plan over, not just the page", () => {
 
   test("the strategist no longer draws a skeleton for the build to follow", () => {
     const onboarding = readFileSync(new URL("./onboarding.ts", import.meta.url), "utf8");
-    expect(onboarding).toContain("You are Forge's private website strategist");
-    expect(onboarding).not.toMatch(/say nothing about page structure/i);
+    expect(onboarding).toContain("who this is for, what the site has to get them to do, what it must cover, what the copy should lead with, and the feel the brand asks for");
+    expect(onboarding).not.toContain("page structure");
     expect(onboarding).not.toMatch(/conversion goal, page structure, copy priorities/);
   });
 });
