@@ -1,0 +1,2800 @@
+{
+  "passed": false,
+  "routes": [
+    {
+      "path": "/",
+      "passed": false,
+      "viewports": {
+        "phone": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0.3587,
+              "agreement": 0.3514,
+              "kinds": {
+                "surface": 0.4632,
+                "media": 0.4807,
+                "text": 0.2739,
+                "heading": 0.1709,
+                "control": 0.0757,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 8660,
+                "candidate": 5902
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 864,
+                  "score": 0.5323
+                },
+                {
+                  "from": 864,
+                  "to": 1728,
+                  "score": 0.2552
+                },
+                {
+                  "from": 1728,
+                  "to": 2592,
+                  "score": 0.2847
+                },
+                {
+                  "from": 2592,
+                  "to": 3464,
+                  "score": 0.0795
+                },
+                {
+                  "from": 3464,
+                  "to": 4328,
+                  "score": 0.459
+                },
+                {
+                  "from": 4328,
+                  "to": 5192,
+                  "score": 0.187
+                },
+                {
+                  "from": 5192,
+                  "to": 6064,
+                  "score": 0
+                },
+                {
+                  "from": 6064,
+                  "to": 6928,
+                  "score": 0.4082
+                },
+                {
+                  "from": 6928,
+                  "to": 7792,
+                  "score": 0.1152
+                },
+                {
+                  "from": 7792,
+                  "to": 8664,
+                  "score": 0.6511
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.0797,
+              "agreement": 0.0367,
+              "kinds": {
+                "surface": 0,
+                "media": 0,
+                "control": 0.3556,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 70,
+                "candidate": 69
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 0
+                },
+                {
+                  "from": 8,
+                  "to": 16,
+                  "score": 0.1371
+                },
+                {
+                  "from": 16,
+                  "to": 24,
+                  "score": 0.1168
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0.1168
+                },
+                {
+                  "from": 32,
+                  "to": 40,
+                  "score": 0.1371
+                },
+                {
+                  "from": 40,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 56,
+                  "score": 0
+                },
+                {
+                  "from": 56,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 1
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.1562,
+              "agreement": 0.1479,
+              "kinds": {
+                "surface": 0,
+                "media": 0.2341,
+                "text": 0.3094,
+                "heading": 0.2442,
+                "control": 0.0388,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 844,
+                "candidate": 844
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 80,
+                  "score": 0.0685
+                },
+                {
+                  "from": 80,
+                  "to": 168,
+                  "score": 0.0717
+                },
+                {
+                  "from": 168,
+                  "to": 248,
+                  "score": 0.098
+                },
+                {
+                  "from": 248,
+                  "to": 336,
+                  "score": 0.0544
+                },
+                {
+                  "from": 336,
+                  "to": 424,
+                  "score": 0.019
+                },
+                {
+                  "from": 424,
+                  "to": 504,
+                  "score": 0.5392
+                },
+                {
+                  "from": 504,
+                  "to": 592,
+                  "score": 0.1155
+                },
+                {
+                  "from": 592,
+                  "to": 672,
+                  "score": 0
+                },
+                {
+                  "from": 672,
+                  "to": 760,
+                  "score": 0
+                },
+                {
+                  "from": 760,
+                  "to": 848,
+                  "score": 0.2567
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0.2922,
+              "agreement": 0.2746,
+              "kinds": {
+                "surface": 0.221,
+                "media": 0.4776,
+                "text": 0.2577,
+                "heading": 0.2473,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 8322,
+                "candidate": 4913
+              },
+              "cell": 8,
+              "refTop": 70,
+              "candTop": 69,
+              "bands": [
+                {
+                  "from": 70,
+                  "to": 902,
+                  "score": 0.564
+                },
+                {
+                  "from": 902,
+                  "to": 1734,
+                  "score": 0.2484
+                },
+                {
+                  "from": 1734,
+                  "to": 2566,
+                  "score": 0.3002
+                },
+                {
+                  "from": 2566,
+                  "to": 3398,
+                  "score": 0.1073
+                },
+                {
+                  "from": 3398,
+                  "to": 4230,
+                  "score": 0.4077
+                },
+                {
+                  "from": 4230,
+                  "to": 5062,
+                  "score": 0.2783
+                },
+                {
+                  "from": 5062,
+                  "to": 5894,
+                  "score": 0
+                },
+                {
+                  "from": 5894,
+                  "to": 6726,
+                  "score": 0.3688
+                },
+                {
+                  "from": 6726,
+                  "to": 7558,
+                  "score": 0.0301
+                },
+                {
+                  "from": 7558,
+                  "to": 8398,
+                  "score": 0.1343
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0,
+              "heights": {
+                "reference": 268,
+                "candidate": 920
+              },
+              "cell": 8,
+              "refTop": 8392,
+              "candTop": 4982,
+              "bands": [],
+              "reason": "height",
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        },
+        "tablet": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0.4047,
+              "agreement": 0.4327,
+              "kinds": {
+                "surface": 0.5068,
+                "media": 0.6661,
+                "text": 0.0842,
+                "heading": 0.0322,
+                "control": 0.0249,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 7423,
+                "candidate": 4994
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 736,
+                  "score": 0.5257
+                },
+                {
+                  "from": 736,
+                  "to": 1480,
+                  "score": 0.1799
+                },
+                {
+                  "from": 1480,
+                  "to": 2224,
+                  "score": 0.0657
+                },
+                {
+                  "from": 2224,
+                  "to": 2968,
+                  "score": 0.3105
+                },
+                {
+                  "from": 2968,
+                  "to": 3712,
+                  "score": 0
+                },
+                {
+                  "from": 3712,
+                  "to": 4448,
+                  "score": 0.3772
+                },
+                {
+                  "from": 4448,
+                  "to": 5192,
+                  "score": 0.5842
+                },
+                {
+                  "from": 5192,
+                  "to": 5936,
+                  "score": 0.5125
+                },
+                {
+                  "from": 5936,
+                  "to": 6680,
+                  "score": 0
+                },
+                {
+                  "from": 6680,
+                  "to": 7424,
+                  "score": 0.5612
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.0327,
+              "agreement": 0.0171,
+              "kinds": {
+                "surface": 0,
+                "media": 0,
+                "text": 0,
+                "control": 0.1624,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 121,
+                "candidate": 69
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 0
+                },
+                {
+                  "from": 8,
+                  "to": 24,
+                  "score": 0
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0
+                },
+                {
+                  "from": 32,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 0.077
+                },
+                {
+                  "from": 72,
+                  "to": 88,
+                  "score": 0.0899
+                },
+                {
+                  "from": 88,
+                  "to": 96,
+                  "score": 0.1085
+                },
+                {
+                  "from": 96,
+                  "to": 112,
+                  "score": 0
+                },
+                {
+                  "from": 112,
+                  "to": 128,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.4054,
+              "agreement": 0.5031,
+              "kinds": {
+                "surface": 0,
+                "media": 0.7249,
+                "text": 0.2237,
+                "heading": 0.4538,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 1024,
+                "candidate": 1024
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 96,
+                  "score": 0.0315
+                },
+                {
+                  "from": 96,
+                  "to": 200,
+                  "score": 0.6803
+                },
+                {
+                  "from": 200,
+                  "to": 304,
+                  "score": 0.8925
+                },
+                {
+                  "from": 304,
+                  "to": 408,
+                  "score": 0.7708
+                },
+                {
+                  "from": 408,
+                  "to": 512,
+                  "score": 1
+                },
+                {
+                  "from": 512,
+                  "to": 608,
+                  "score": 1
+                },
+                {
+                  "from": 608,
+                  "to": 712,
+                  "score": 0.4008
+                },
+                {
+                  "from": 712,
+                  "to": 816,
+                  "score": 0
+                },
+                {
+                  "from": 816,
+                  "to": 920,
+                  "score": 0.1113
+                },
+                {
+                  "from": 920,
+                  "to": 1024,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0.3533,
+              "agreement": 0.3785,
+              "kinds": {
+                "surface": 0.2887,
+                "media": 0.6781,
+                "text": 0.0674,
+                "heading": 0.0474,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 7061,
+                "candidate": 4515
+              },
+              "cell": 8,
+              "refTop": 121,
+              "candTop": 69,
+              "bands": [
+                {
+                  "from": 121,
+                  "to": 825,
+                  "score": 0.6894
+                },
+                {
+                  "from": 825,
+                  "to": 1529,
+                  "score": 0.1406
+                },
+                {
+                  "from": 1529,
+                  "to": 2233,
+                  "score": 0.0765
+                },
+                {
+                  "from": 2233,
+                  "to": 2945,
+                  "score": 0.3166
+                },
+                {
+                  "from": 2945,
+                  "to": 3649,
+                  "score": 0
+                },
+                {
+                  "from": 3649,
+                  "to": 4353,
+                  "score": 0.3504
+                },
+                {
+                  "from": 4353,
+                  "to": 5065,
+                  "score": 0.8192
+                },
+                {
+                  "from": 5065,
+                  "to": 5769,
+                  "score": 0.3879
+                },
+                {
+                  "from": 5769,
+                  "to": 6473,
+                  "score": 0.0774
+                },
+                {
+                  "from": 6473,
+                  "to": 7185,
+                  "score": 0.0946
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0.6728,
+              "agreement": 0.8375,
+              "kinds": {
+                "surface": 0.9097,
+                "text": 0.3005,
+                "heading": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 241,
+                "candidate": 410
+              },
+              "cell": 8,
+              "refTop": 7182,
+              "candTop": 4584,
+              "bands": [
+                {
+                  "from": 7182,
+                  "to": 7206,
+                  "score": 0.8114
+                },
+                {
+                  "from": 7206,
+                  "to": 7230,
+                  "score": 0.3543
+                },
+                {
+                  "from": 7230,
+                  "to": 7254,
+                  "score": 0.5194
+                },
+                {
+                  "from": 7254,
+                  "to": 7278,
+                  "score": 0.5099
+                },
+                {
+                  "from": 7278,
+                  "to": 7302,
+                  "score": 0.6484
+                },
+                {
+                  "from": 7302,
+                  "to": 7326,
+                  "score": 0.7223
+                },
+                {
+                  "from": 7326,
+                  "to": 7350,
+                  "score": 0.8688
+                },
+                {
+                  "from": 7350,
+                  "to": 7374,
+                  "score": 1
+                },
+                {
+                  "from": 7374,
+                  "to": 7398,
+                  "score": 0.814
+                },
+                {
+                  "from": 7398,
+                  "to": 7430,
+                  "score": 1
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        },
+        "desktop": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0.2911,
+              "agreement": 0.2863,
+              "kinds": {
+                "surface": 0.3271,
+                "media": 0.4591,
+                "text": 0.0593,
+                "heading": 0.0622,
+                "control": 0.0124,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 8154,
+                "candidate": 4304
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 816,
+                  "score": 0.687
+                },
+                {
+                  "from": 816,
+                  "to": 1632,
+                  "score": 0.3469
+                },
+                {
+                  "from": 1632,
+                  "to": 2448,
+                  "score": 0.2353
+                },
+                {
+                  "from": 2448,
+                  "to": 3264,
+                  "score": 0.115
+                },
+                {
+                  "from": 3264,
+                  "to": 4080,
+                  "score": 0.1249
+                },
+                {
+                  "from": 4080,
+                  "to": 4896,
+                  "score": 0.1215
+                },
+                {
+                  "from": 4896,
+                  "to": 5712,
+                  "score": 0.0315
+                },
+                {
+                  "from": 5712,
+                  "to": 6528,
+                  "score": 0
+                },
+                {
+                  "from": 6528,
+                  "to": 7344,
+                  "score": 0.0356
+                },
+                {
+                  "from": 7344,
+                  "to": 8160,
+                  "score": 0.4926
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.1034,
+              "agreement": 0.0757,
+              "kinds": {
+                "surface": 0,
+                "media": 0.2222,
+                "text": 0.0684,
+                "control": 0.1218,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 121,
+                "candidate": 73
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 0
+                },
+                {
+                  "from": 8,
+                  "to": 24,
+                  "score": 0
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0
+                },
+                {
+                  "from": 32,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 0.0702
+                },
+                {
+                  "from": 72,
+                  "to": 88,
+                  "score": 0.0382
+                },
+                {
+                  "from": 88,
+                  "to": 96,
+                  "score": 0
+                },
+                {
+                  "from": 96,
+                  "to": 112,
+                  "score": 0.0749
+                },
+                {
+                  "from": 112,
+                  "to": 128,
+                  "score": 1
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.4469,
+              "agreement": 0.6572,
+              "kinds": {
+                "surface": 0,
+                "media": 0.8048,
+                "text": 0,
+                "heading": 0,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 900,
+                "candidate": 900
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 88,
+                  "score": 0.0253
+                },
+                {
+                  "from": 88,
+                  "to": 176,
+                  "score": 0.5954
+                },
+                {
+                  "from": 176,
+                  "to": 264,
+                  "score": 1
+                },
+                {
+                  "from": 264,
+                  "to": 360,
+                  "score": 1
+                },
+                {
+                  "from": 360,
+                  "to": 448,
+                  "score": 0.7975
+                },
+                {
+                  "from": 448,
+                  "to": 536,
+                  "score": 0.4169
+                },
+                {
+                  "from": 536,
+                  "to": 632,
+                  "score": 0.3859
+                },
+                {
+                  "from": 632,
+                  "to": 720,
+                  "score": 0.4081
+                },
+                {
+                  "from": 720,
+                  "to": 808,
+                  "score": 0.4194
+                },
+                {
+                  "from": 808,
+                  "to": 904,
+                  "score": 0.4792
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0,
+              "heights": {
+                "reference": 7833,
+                "candidate": 3850
+              },
+              "cell": 8,
+              "refTop": 121,
+              "candTop": 73,
+              "bands": [],
+              "reason": "height",
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0.7008,
+              "agreement": 0.8727,
+              "kinds": {
+                "surface": 0.9318,
+                "text": 0.2197,
+                "heading": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 200,
+                "candidate": 381
+              },
+              "cell": 8,
+              "refTop": 7954,
+              "candTop": 3923,
+              "bands": [
+                {
+                  "from": 7954,
+                  "to": 7970,
+                  "score": 1
+                },
+                {
+                  "from": 7970,
+                  "to": 7994,
+                  "score": 0.7009
+                },
+                {
+                  "from": 7994,
+                  "to": 8010,
+                  "score": 0.5819
+                },
+                {
+                  "from": 8010,
+                  "to": 8034,
+                  "score": 0.6305
+                },
+                {
+                  "from": 8034,
+                  "to": 8050,
+                  "score": 0.6417
+                },
+                {
+                  "from": 8050,
+                  "to": 8074,
+                  "score": 0.8492
+                },
+                {
+                  "from": 8074,
+                  "to": 8090,
+                  "score": 1
+                },
+                {
+                  "from": 8090,
+                  "to": 8114,
+                  "score": 1
+                },
+                {
+                  "from": 8114,
+                  "to": 8130,
+                  "score": 0.623
+                },
+                {
+                  "from": 8130,
+                  "to": 8154,
+                  "score": 1
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "/food-menu",
+      "passed": false,
+      "viewports": {
+        "phone": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0,
+              "heights": {
+                "reference": 1177,
+                "candidate": 3600
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [],
+              "reason": "height",
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.1567,
+              "agreement": 0.0687,
+              "kinds": {
+                "surface": 0,
+                "control": 0.3556,
+                "mark": 0.2435
+              },
+              "heights": {
+                "reference": 70,
+                "candidate": 69
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 0
+                },
+                {
+                  "from": 8,
+                  "to": 16,
+                  "score": 0.1487
+                },
+                {
+                  "from": 16,
+                  "to": 24,
+                  "score": 0.3279
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0.3279
+                },
+                {
+                  "from": 32,
+                  "to": 40,
+                  "score": 0.1487
+                },
+                {
+                  "from": 40,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 56,
+                  "score": 0
+                },
+                {
+                  "from": 56,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 1
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.0723,
+              "agreement": 0.0198,
+              "kinds": {
+                "surface": 0,
+                "text": 0.1685,
+                "heading": 0,
+                "control": 0.0546,
+                "mark": 0.3281
+              },
+              "heights": {
+                "reference": 844,
+                "candidate": 844
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 80,
+                  "score": 0.138
+                },
+                {
+                  "from": 80,
+                  "to": 168,
+                  "score": 0
+                },
+                {
+                  "from": 168,
+                  "to": 248,
+                  "score": 0.166
+                },
+                {
+                  "from": 248,
+                  "to": 336,
+                  "score": 0
+                },
+                {
+                  "from": 336,
+                  "to": 424,
+                  "score": 0.0273
+                },
+                {
+                  "from": 424,
+                  "to": 504,
+                  "score": 0.0776
+                },
+                {
+                  "from": 504,
+                  "to": 592,
+                  "score": 0.0514
+                },
+                {
+                  "from": 592,
+                  "to": 672,
+                  "score": 0
+                },
+                {
+                  "from": 672,
+                  "to": 760,
+                  "score": 0
+                },
+                {
+                  "from": 760,
+                  "to": 848,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0,
+              "heights": {
+                "reference": 1107,
+                "candidate": 2611
+              },
+              "cell": 8,
+              "refTop": 70,
+              "candTop": 69,
+              "bands": [],
+              "reason": "height",
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0,
+              "heights": {
+                "reference": 0,
+                "candidate": 920
+              },
+              "cell": 8,
+              "refTop": 1177,
+              "candTop": 2680,
+              "bands": [],
+              "reason": "extra",
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        },
+        "tablet": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0,
+              "heights": {
+                "reference": 1250,
+                "candidate": 2738
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [],
+              "reason": "height",
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.0378,
+              "agreement": 0.0171,
+              "kinds": {
+                "surface": 0,
+                "text": 0,
+                "control": 0.1624,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 121,
+                "candidate": 69
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 0
+                },
+                {
+                  "from": 8,
+                  "to": 24,
+                  "score": 0
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0
+                },
+                {
+                  "from": 32,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 0.0842
+                },
+                {
+                  "from": 72,
+                  "to": 88,
+                  "score": 0.0899
+                },
+                {
+                  "from": 88,
+                  "to": 96,
+                  "score": 0.1085
+                },
+                {
+                  "from": 96,
+                  "to": 112,
+                  "score": 0
+                },
+                {
+                  "from": 112,
+                  "to": 128,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.0009,
+              "agreement": 0.0003,
+              "kinds": {
+                "surface": 0,
+                "text": 0.0049,
+                "heading": 0,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 1024,
+                "candidate": 1024
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 96,
+                  "score": 0
+                },
+                {
+                  "from": 96,
+                  "to": 200,
+                  "score": 0
+                },
+                {
+                  "from": 200,
+                  "to": 304,
+                  "score": 0
+                },
+                {
+                  "from": 304,
+                  "to": 408,
+                  "score": 0
+                },
+                {
+                  "from": 408,
+                  "to": 512,
+                  "score": 0.0023
+                },
+                {
+                  "from": 512,
+                  "to": 608,
+                  "score": 0.0084
+                },
+                {
+                  "from": 608,
+                  "to": 712,
+                  "score": 0
+                },
+                {
+                  "from": 712,
+                  "to": 816,
+                  "score": 0
+                },
+                {
+                  "from": 816,
+                  "to": 920,
+                  "score": 0
+                },
+                {
+                  "from": 920,
+                  "to": 1024,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0.0228,
+              "agreement": 0.0198,
+              "kinds": {
+                "surface": 0.0389,
+                "media": 0,
+                "text": 0.0328,
+                "heading": 0,
+                "control": 0
+              },
+              "heights": {
+                "reference": 1129,
+                "candidate": 2259
+              },
+              "cell": 8,
+              "refTop": 121,
+              "candTop": 69,
+              "bands": [
+                {
+                  "from": 121,
+                  "to": 233,
+                  "score": 0
+                },
+                {
+                  "from": 233,
+                  "to": 345,
+                  "score": 0
+                },
+                {
+                  "from": 345,
+                  "to": 457,
+                  "score": 0
+                },
+                {
+                  "from": 457,
+                  "to": 569,
+                  "score": 0.0271
+                },
+                {
+                  "from": 569,
+                  "to": 689,
+                  "score": 0.0288
+                },
+                {
+                  "from": 689,
+                  "to": 801,
+                  "score": 0
+                },
+                {
+                  "from": 801,
+                  "to": 913,
+                  "score": 0
+                },
+                {
+                  "from": 913,
+                  "to": 1025,
+                  "score": 0
+                },
+                {
+                  "from": 1025,
+                  "to": 1137,
+                  "score": 0
+                },
+                {
+                  "from": 1137,
+                  "to": 1257,
+                  "score": 0.2746
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0,
+              "heights": {
+                "reference": 0,
+                "candidate": 410
+              },
+              "cell": 8,
+              "refTop": 1250,
+              "candTop": 2328,
+              "bands": [],
+              "reason": "extra",
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        },
+        "desktop": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0.1726,
+              "agreement": 0.1742,
+              "kinds": {
+                "surface": 0.3156,
+                "media": 0,
+                "text": 0.0386,
+                "heading": 0,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 1114,
+                "candidate": 1965
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 112,
+                  "score": 0
+                },
+                {
+                  "from": 112,
+                  "to": 224,
+                  "score": 0
+                },
+                {
+                  "from": 224,
+                  "to": 336,
+                  "score": 0
+                },
+                {
+                  "from": 336,
+                  "to": 448,
+                  "score": 0
+                },
+                {
+                  "from": 448,
+                  "to": 560,
+                  "score": 0.0189
+                },
+                {
+                  "from": 560,
+                  "to": 672,
+                  "score": 0
+                },
+                {
+                  "from": 672,
+                  "to": 784,
+                  "score": 0.0143
+                },
+                {
+                  "from": 784,
+                  "to": 896,
+                  "score": 0.0188
+                },
+                {
+                  "from": 896,
+                  "to": 1008,
+                  "score": 0.7183
+                },
+                {
+                  "from": 1008,
+                  "to": 1120,
+                  "score": 0.8079
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.0312,
+              "agreement": 0.008,
+              "kinds": {
+                "surface": 0,
+                "text": 0.0684,
+                "control": 0.1389,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 121,
+                "candidate": 73
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 0
+                },
+                {
+                  "from": 8,
+                  "to": 24,
+                  "score": 0
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0
+                },
+                {
+                  "from": 32,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 0.0761
+                },
+                {
+                  "from": 72,
+                  "to": 88,
+                  "score": 0.0401
+                },
+                {
+                  "from": 88,
+                  "to": 96,
+                  "score": 0.0514
+                },
+                {
+                  "from": 96,
+                  "to": 112,
+                  "score": 0
+                },
+                {
+                  "from": 112,
+                  "to": 128,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.0026,
+              "agreement": 0.0007,
+              "kinds": {
+                "surface": 0,
+                "media": 0,
+                "text": 0.0185,
+                "heading": 0,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 900,
+                "candidate": 900
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 88,
+                  "score": 0
+                },
+                {
+                  "from": 88,
+                  "to": 176,
+                  "score": 0
+                },
+                {
+                  "from": 176,
+                  "to": 264,
+                  "score": 0
+                },
+                {
+                  "from": 264,
+                  "to": 360,
+                  "score": 0
+                },
+                {
+                  "from": 360,
+                  "to": 448,
+                  "score": 0
+                },
+                {
+                  "from": 448,
+                  "to": 536,
+                  "score": 0
+                },
+                {
+                  "from": 536,
+                  "to": 632,
+                  "score": 0
+                },
+                {
+                  "from": 632,
+                  "to": 720,
+                  "score": 0.0161
+                },
+                {
+                  "from": 720,
+                  "to": 808,
+                  "score": 0.012
+                },
+                {
+                  "from": 808,
+                  "to": 904,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0.0067,
+              "agreement": 0.0017,
+              "kinds": {
+                "surface": 0,
+                "media": 0,
+                "text": 0.0456,
+                "heading": 0,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 993,
+                "candidate": 1511
+              },
+              "cell": 8,
+              "refTop": 121,
+              "candTop": 73,
+              "bands": [
+                {
+                  "from": 121,
+                  "to": 217,
+                  "score": 0
+                },
+                {
+                  "from": 217,
+                  "to": 321,
+                  "score": 0
+                },
+                {
+                  "from": 321,
+                  "to": 417,
+                  "score": 0
+                },
+                {
+                  "from": 417,
+                  "to": 521,
+                  "score": 0
+                },
+                {
+                  "from": 521,
+                  "to": 617,
+                  "score": 0.0281
+                },
+                {
+                  "from": 617,
+                  "to": 721,
+                  "score": 0.0123
+                },
+                {
+                  "from": 721,
+                  "to": 817,
+                  "score": 0
+                },
+                {
+                  "from": 817,
+                  "to": 921,
+                  "score": 0.0188
+                },
+                {
+                  "from": 921,
+                  "to": 1017,
+                  "score": 0
+                },
+                {
+                  "from": 1017,
+                  "to": 1121,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0,
+              "heights": {
+                "reference": 0,
+                "candidate": 381
+              },
+              "cell": 8,
+              "refTop": 1114,
+              "candTop": 1584,
+              "bands": [],
+              "reason": "extra",
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": "/cater",
+      "passed": false,
+      "viewports": {
+        "phone": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0.238,
+              "agreement": 0.2006,
+              "kinds": {
+                "surface": 0.304,
+                "media": 0.3964,
+                "text": 0.2915,
+                "heading": 0.0197,
+                "control": 0.0128,
+                "mark": 0.2435
+              },
+              "heights": {
+                "reference": 3090,
+                "candidate": 3444
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 304,
+                  "score": 0.0784
+                },
+                {
+                  "from": 304,
+                  "to": 616,
+                  "score": 0.0104
+                },
+                {
+                  "from": 616,
+                  "to": 928,
+                  "score": 0.1814
+                },
+                {
+                  "from": 928,
+                  "to": 1232,
+                  "score": 0.7132
+                },
+                {
+                  "from": 1232,
+                  "to": 1544,
+                  "score": 0
+                },
+                {
+                  "from": 1544,
+                  "to": 1856,
+                  "score": 0.0852
+                },
+                {
+                  "from": 1856,
+                  "to": 2160,
+                  "score": 0.1664
+                },
+                {
+                  "from": 2160,
+                  "to": 2472,
+                  "score": 0.0802
+                },
+                {
+                  "from": 2472,
+                  "to": 2784,
+                  "score": 0.2757
+                },
+                {
+                  "from": 2784,
+                  "to": 3096,
+                  "score": 0.3537
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.1567,
+              "agreement": 0.0687,
+              "kinds": {
+                "surface": 0,
+                "control": 0.3556,
+                "mark": 0.2435
+              },
+              "heights": {
+                "reference": 70,
+                "candidate": 69
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 0
+                },
+                {
+                  "from": 8,
+                  "to": 16,
+                  "score": 0.1487
+                },
+                {
+                  "from": 16,
+                  "to": 24,
+                  "score": 0.3279
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0.3279
+                },
+                {
+                  "from": 32,
+                  "to": 40,
+                  "score": 0.1487
+                },
+                {
+                  "from": 40,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 56,
+                  "score": 0
+                },
+                {
+                  "from": 56,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 1
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.0393,
+              "agreement": 0.0119,
+              "kinds": {
+                "surface": 0,
+                "text": 0.0653,
+                "heading": 0,
+                "control": 0.0513,
+                "mark": 0.2435
+              },
+              "heights": {
+                "reference": 844,
+                "candidate": 844
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 80,
+                  "score": 0.1401
+                },
+                {
+                  "from": 80,
+                  "to": 168,
+                  "score": 0.0617
+                },
+                {
+                  "from": 168,
+                  "to": 248,
+                  "score": 0.115
+                },
+                {
+                  "from": 248,
+                  "to": 336,
+                  "score": 0.0499
+                },
+                {
+                  "from": 336,
+                  "to": 424,
+                  "score": 0
+                },
+                {
+                  "from": 424,
+                  "to": 504,
+                  "score": 0
+                },
+                {
+                  "from": 504,
+                  "to": 592,
+                  "score": 0
+                },
+                {
+                  "from": 592,
+                  "to": 672,
+                  "score": 0
+                },
+                {
+                  "from": 672,
+                  "to": 760,
+                  "score": 0
+                },
+                {
+                  "from": 760,
+                  "to": 848,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0.193,
+              "agreement": 0.1617,
+              "kinds": {
+                "surface": 0,
+                "media": 0.5608,
+                "text": 0.1929,
+                "heading": 0.0731,
+                "control": 0
+              },
+              "heights": {
+                "reference": 3020,
+                "candidate": 2456
+              },
+              "cell": 8,
+              "refTop": 70,
+              "candTop": 69,
+              "bands": [
+                {
+                  "from": 70,
+                  "to": 366,
+                  "score": 0.0182
+                },
+                {
+                  "from": 366,
+                  "to": 670,
+                  "score": 0.004
+                },
+                {
+                  "from": 670,
+                  "to": 974,
+                  "score": 0.1741
+                },
+                {
+                  "from": 974,
+                  "to": 1278,
+                  "score": 0.7434
+                },
+                {
+                  "from": 1278,
+                  "to": 1582,
+                  "score": 0.4665
+                },
+                {
+                  "from": 1582,
+                  "to": 1878,
+                  "score": 0.1485
+                },
+                {
+                  "from": 1878,
+                  "to": 2182,
+                  "score": 0.0328
+                },
+                {
+                  "from": 2182,
+                  "to": 2486,
+                  "score": 0
+                },
+                {
+                  "from": 2486,
+                  "to": 2790,
+                  "score": 0
+                },
+                {
+                  "from": 2790,
+                  "to": 3094,
+                  "score": 0.0306
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0,
+              "heights": {
+                "reference": 0,
+                "candidate": 919
+              },
+              "cell": 8,
+              "refTop": 3090,
+              "candTop": 2525,
+              "bands": [],
+              "reason": "extra",
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        },
+        "tablet": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0.2451,
+              "agreement": 0.2664,
+              "kinds": {
+                "surface": 0.1803,
+                "media": 0.5534,
+                "text": 0.0829,
+                "heading": 0.0423,
+                "control": 0.003,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 2766,
+                "candidate": 2278
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 272,
+                  "score": 0.0059
+                },
+                {
+                  "from": 272,
+                  "to": 552,
+                  "score": 0
+                },
+                {
+                  "from": 552,
+                  "to": 824,
+                  "score": 0.3217
+                },
+                {
+                  "from": 824,
+                  "to": 1104,
+                  "score": 0.3168
+                },
+                {
+                  "from": 1104,
+                  "to": 1384,
+                  "score": 0.589
+                },
+                {
+                  "from": 1384,
+                  "to": 1656,
+                  "score": 0.5607
+                },
+                {
+                  "from": 1656,
+                  "to": 1936,
+                  "score": 0.073
+                },
+                {
+                  "from": 1936,
+                  "to": 2208,
+                  "score": 0.0278
+                },
+                {
+                  "from": 2208,
+                  "to": 2488,
+                  "score": 0.1528
+                },
+                {
+                  "from": 2488,
+                  "to": 2768,
+                  "score": 0.1533
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.0386,
+              "agreement": 0.0248,
+              "kinds": {
+                "surface": 0,
+                "media": 0,
+                "text": 0,
+                "control": 0.1624,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 121,
+                "candidate": 69
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 1
+                },
+                {
+                  "from": 8,
+                  "to": 24,
+                  "score": 0
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0
+                },
+                {
+                  "from": 32,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 0.0842
+                },
+                {
+                  "from": 72,
+                  "to": 88,
+                  "score": 0.0899
+                },
+                {
+                  "from": 88,
+                  "to": 96,
+                  "score": 0.1085
+                },
+                {
+                  "from": 96,
+                  "to": 112,
+                  "score": 0
+                },
+                {
+                  "from": 112,
+                  "to": 128,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.1861,
+              "agreement": 0.2347,
+              "kinds": {
+                "surface": 0,
+                "media": 0.4332,
+                "text": 0,
+                "heading": 0,
+                "control": 0.0526,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 1024,
+                "candidate": 1024
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 96,
+                  "score": 0.0132
+                },
+                {
+                  "from": 96,
+                  "to": 200,
+                  "score": 0
+                },
+                {
+                  "from": 200,
+                  "to": 304,
+                  "score": 0
+                },
+                {
+                  "from": 304,
+                  "to": 408,
+                  "score": 0
+                },
+                {
+                  "from": 408,
+                  "to": 512,
+                  "score": 0
+                },
+                {
+                  "from": 512,
+                  "to": 608,
+                  "score": 0.2533
+                },
+                {
+                  "from": 608,
+                  "to": 712,
+                  "score": 0.3648
+                },
+                {
+                  "from": 712,
+                  "to": 816,
+                  "score": 0.3591
+                },
+                {
+                  "from": 816,
+                  "to": 920,
+                  "score": 0.3597
+                },
+                {
+                  "from": 920,
+                  "to": 1024,
+                  "score": 0.3706
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0.2311,
+              "agreement": 0.2733,
+              "kinds": {
+                "surface": 0,
+                "media": 0.5708,
+                "text": 0.0911,
+                "heading": 0.0196,
+                "control": 0
+              },
+              "heights": {
+                "reference": 2645,
+                "candidate": 1798
+              },
+              "cell": 8,
+              "refTop": 121,
+              "candTop": 69,
+              "bands": [
+                {
+                  "from": 121,
+                  "to": 385,
+                  "score": 0
+                },
+                {
+                  "from": 385,
+                  "to": 649,
+                  "score": 0
+                },
+                {
+                  "from": 649,
+                  "to": 913,
+                  "score": 0.36
+                },
+                {
+                  "from": 913,
+                  "to": 1177,
+                  "score": 0.3164
+                },
+                {
+                  "from": 1177,
+                  "to": 1441,
+                  "score": 0.8198
+                },
+                {
+                  "from": 1441,
+                  "to": 1705,
+                  "score": 0.5334
+                },
+                {
+                  "from": 1705,
+                  "to": 1969,
+                  "score": 0.0787
+                },
+                {
+                  "from": 1969,
+                  "to": 2233,
+                  "score": 0.045
+                },
+                {
+                  "from": 2233,
+                  "to": 2497,
+                  "score": 0
+                },
+                {
+                  "from": 2497,
+                  "to": 2769,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0,
+              "heights": {
+                "reference": 0,
+                "candidate": 411
+              },
+              "cell": 8,
+              "refTop": 2766,
+              "candTop": 1867,
+              "bands": [],
+              "reason": "extra",
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        },
+        "desktop": {
+          "passed": false,
+          "regions": {
+            "full": {
+              "score": 0.1855,
+              "agreement": 0.1554,
+              "kinds": {
+                "surface": 0.232,
+                "media": 0.2884,
+                "text": 0.1785,
+                "heading": 0.0656,
+                "control": 0.0088,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 2651,
+                "candidate": 1900
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 264,
+                  "score": 0.0206
+                },
+                {
+                  "from": 264,
+                  "to": 528,
+                  "score": 0
+                },
+                {
+                  "from": 528,
+                  "to": 792,
+                  "score": 0.4158
+                },
+                {
+                  "from": 792,
+                  "to": 1056,
+                  "score": 0.3928
+                },
+                {
+                  "from": 1056,
+                  "to": 1328,
+                  "score": 0.0604
+                },
+                {
+                  "from": 1328,
+                  "to": 1592,
+                  "score": 0
+                },
+                {
+                  "from": 1592,
+                  "to": 1856,
+                  "score": 0.0636
+                },
+                {
+                  "from": 1856,
+                  "to": 2120,
+                  "score": 0.2079
+                },
+                {
+                  "from": 2120,
+                  "to": 2384,
+                  "score": 0.1591
+                },
+                {
+                  "from": 2384,
+                  "to": 2656,
+                  "score": 0.1947
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "header": {
+              "score": 0.0314,
+              "agreement": 0.0119,
+              "kinds": {
+                "surface": 0,
+                "media": 0,
+                "text": 0.0684,
+                "control": 0.1389,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 121,
+                "candidate": 73
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 8,
+                  "score": 0
+                },
+                {
+                  "from": 8,
+                  "to": 24,
+                  "score": 0
+                },
+                {
+                  "from": 24,
+                  "to": 32,
+                  "score": 0
+                },
+                {
+                  "from": 32,
+                  "to": 48,
+                  "score": 0
+                },
+                {
+                  "from": 48,
+                  "to": 64,
+                  "score": 0
+                },
+                {
+                  "from": 64,
+                  "to": 72,
+                  "score": 0.0761
+                },
+                {
+                  "from": 72,
+                  "to": 88,
+                  "score": 0.0401
+                },
+                {
+                  "from": 88,
+                  "to": 96,
+                  "score": 0.0514
+                },
+                {
+                  "from": 96,
+                  "to": 112,
+                  "score": 0
+                },
+                {
+                  "from": 112,
+                  "to": 128,
+                  "score": 0
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "menu": {
+              "score": 0.1155,
+              "agreement": 0.0978,
+              "kinds": {
+                "surface": 0,
+                "media": 0.2386,
+                "text": 0.0202,
+                "heading": 0.1091,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 900,
+                "candidate": 900
+              },
+              "cell": 8,
+              "refTop": 0,
+              "candTop": 0,
+              "bands": [
+                {
+                  "from": 0,
+                  "to": 88,
+                  "score": 0
+                },
+                {
+                  "from": 88,
+                  "to": 176,
+                  "score": 0
+                },
+                {
+                  "from": 176,
+                  "to": 264,
+                  "score": 0
+                },
+                {
+                  "from": 264,
+                  "to": 360,
+                  "score": 0.2986
+                },
+                {
+                  "from": 360,
+                  "to": 448,
+                  "score": 0.1874
+                },
+                {
+                  "from": 448,
+                  "to": 536,
+                  "score": 0
+                },
+                {
+                  "from": 536,
+                  "to": 632,
+                  "score": 0.3449
+                },
+                {
+                  "from": 632,
+                  "to": 720,
+                  "score": 0.0505
+                },
+                {
+                  "from": 720,
+                  "to": 808,
+                  "score": 0
+                },
+                {
+                  "from": 808,
+                  "to": 904,
+                  "score": 0.1678
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "body": {
+              "score": 0.1554,
+              "agreement": 0.1263,
+              "kinds": {
+                "surface": 0,
+                "media": 0.3149,
+                "text": 0.1015,
+                "heading": 0.1982,
+                "control": 0,
+                "mark": 0
+              },
+              "heights": {
+                "reference": 2530,
+                "candidate": 1445
+              },
+              "cell": 8,
+              "refTop": 121,
+              "candTop": 73,
+              "bands": [
+                {
+                  "from": 121,
+                  "to": 369,
+                  "score": 0
+                },
+                {
+                  "from": 369,
+                  "to": 625,
+                  "score": 0.1973
+                },
+                {
+                  "from": 625,
+                  "to": 881,
+                  "score": 0.4325
+                },
+                {
+                  "from": 881,
+                  "to": 1129,
+                  "score": 0.392
+                },
+                {
+                  "from": 1129,
+                  "to": 1385,
+                  "score": 0.203
+                },
+                {
+                  "from": 1385,
+                  "to": 1641,
+                  "score": 0.1248
+                },
+                {
+                  "from": 1641,
+                  "to": 1889,
+                  "score": 0.0976
+                },
+                {
+                  "from": 1889,
+                  "to": 2145,
+                  "score": 0
+                },
+                {
+                  "from": 2145,
+                  "to": 2401,
+                  "score": 0.003
+                },
+                {
+                  "from": 2401,
+                  "to": 2657,
+                  "score": 0.0077
+                }
+              ],
+              "threshold": 0.95,
+              "passed": false
+            },
+            "footer": {
+              "score": 0,
+              "heights": {
+                "reference": 0,
+                "candidate": 382
+              },
+              "cell": 8,
+              "refTop": 2651,
+              "candTop": 1518,
+              "bands": [],
+              "reason": "extra",
+              "threshold": 0.95,
+              "passed": false
+            }
+          }
+        }
+      }
+    }
+  ],
+  "fixes": [
+    "/ at phone (390px), full (36% against 95%): the reference's is 8660px tall, yours 5902px.",
+    "  Reference section 1 of 11: 60px–279px (219px tall); 2 image slots (full-bleed) covering 101%; 2 controls; 2 panels; dark ground; padding 0 0 0 0. Yours there: 56px–176px (120px tall); 1 image slot (full-bleed) covering 89%; 1 panel.",
+    "  Reference section 2 of 11: 279px–944px (665px tall); 4 items stacked; 1 image slot (full-bleed) covering 100%; 5 heading lines; 9 text lines; centred text in 16px–374px; 1 control; 1 panel; image ground; padding 0 0 0 0. Yours there: 168px–696px (528px tall); 3 items stacked; 1 image slot (full-bleed) covering 55%; 1 heading line; 4 text lines; left text in 40px–346px; 2 controls; 2 panels; dark ground; padding 0 0 0 0.",
+    "  Reference section 3 of 11: 944px–1334px (390px tall); 19 columns of 19 items; 2 image slots (full-bleed) covering 164%; 2 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: 696px–904px (208px tall); 4 text lines; left text in 40px–320px; 1 control; 2 panels.",
+    "  Reference section 4 of 11: 1334px–1783px (449px tall); 3 items stacked; 4 heading lines; 6 text lines; centred text in 35px–356px; 1 control; light ground; padding 0 0 0 0. Yours there: 896px–1128px (232px tall); 1 heading line; 3 text lines; left text in 20px–364px; 1 panel.",
+    "  Reference section 5 of 11: 1783px–3072px (1289px tall); 3 items stacked; 1 image slot (full-bleed) covering 23%; 9 heading lines; 15 text lines; centred text in 34px–357px; 2 controls; 2 panels; light ground; padding 0 0 0 0. Yours there: 1120px–1776px (656px tall); 5 items stacked, gap 2px; 1 image slot (centre) covering 36%; 2 heading lines; 12 text lines; left text in 20px–370px; light ground; padding 56 0 56 0.",
+    "  Reference section 6 of 11: 3072px–3722px (650px tall); 3 columns of 3 items; 1 image slot (full-bleed) covering 100%; 2 heading lines; centred text in 62px–327px; 5 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: 1768px–2104px (336px tall); 1 image slot (full-bleed) covering 2%; 7 text lines; left text in 20px–370px.",
+    "  Reference section 7 of 11: 3722px–4144px (422px tall); 3 items stacked; 1 image slot (full-bleed) covering 100%; 1 heading line; 3 text lines; centred text in 32px–358px; 1 control; image ground; padding 0 0 0 0. Yours there: 2096px–2312px (216px tall); 1 image slot (full-bleed) covering 99%.",
+    "  Reference section 8 of 11: 6094px–6632px (538px tall); 11 columns of 11 items; 3 heading lines; 5 text lines; centred text in 45px–346px; 8 controls; 1 panel; light ground; padding 0 0 0 0. Yours there: 3280px–3560px (280px tall); 1 control; 1 panel.",
+    "  Reference section 9 of 11: 6631px–7531px (900px tall); 2 columns of 4 items; 4 image slots (centre) covering 51%; 3 heading lines; 4 text lines; left text in 27px–385px; 4 controls; 4 panels; light ground; padding 0 0 0 0. Yours there: 3552px–4800px (1248px tall); 7 heading lines; 18 text lines; left text in 20px–370px (2 of your sections).",
+    "  Reference section 10 of 11: 7531px–8392px (861px tall); 3 items stacked; 1 image slot (centre) covering 9%; 4 heading lines; 11 text lines; centred text in 86px–304px; 2 panels; dark ground; padding 0 0 0 0. Yours there: 4792px–5600px (808px tall); 3 heading lines; 15 text lines; left text in 20px–337px; 1 panel.",
+    "  Reference section 11 of 11: 8392px–8584px (192px tall); 5 text lines; centred text in 10px–379px; 2 panels; dark ground; padding 0 0 0 0. Yours there: 5600px–5824px (224px tall); 1 heading line; 5 text lines; left text in 20px–346px; 1 panel.",
+    "/ at phone (390px), header (8% against 95%): the reference's is 70px tall, yours 69px. Reference header: 70px tall, laid over the opening, stays on screen, 2 visible links, a menu button at 335px,18px (50px×33px). Yours: 69px tall, laid over the opening, stays on screen, 2 visible links, a menu button at 326px,12px (44px×44px).",
+    "/ at phone (390px), menu (16% against 95%): reference opens a 390px×362px panel at 0px,70px with 8 links; yours opens a 350px×308px panel at 20px,72px with 5 links.",
+    "/ at phone (390px), body (29% against 95%): the reference's is 8322px tall, yours 4913px.",
+    "  Reference section 1 of 10: 60px–279px (219px tall); 2 image slots (full-bleed) covering 101%; 2 controls; 2 panels; dark ground; padding 0 0 0 0. Yours there: 69px–181px (112px tall); 1 image slot (full-bleed) covering 100%; 1 panel.",
+    "  Reference section 2 of 10: 279px–944px (665px tall); 4 items stacked; 1 image slot (full-bleed) covering 100%; 5 heading lines; 9 text lines; centred text in 16px–374px; 1 control; 1 panel; image ground; padding 0 0 0 0. Yours there: 173px–637px (464px tall); 3 items stacked; 1 image slot (full-bleed) covering 61%; 1 heading line; 4 text lines; left text in 40px–346px; 1 control; 2 panels; dark ground; padding 0 0 0 0.",
+    "  Reference section 3 of 10: 944px–1334px (390px tall); 19 columns of 19 items; 2 image slots (full-bleed) covering 164%; 2 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: 629px–909px (280px tall); 4 text lines; left text in 40px–320px; 2 controls; 2 panels.",
+    "  Reference section 4 of 10: 1334px–1783px (449px tall); 3 items stacked; 4 heading lines; 6 text lines; centred text in 35px–356px; 1 control; light ground; padding 0 0 0 0. Yours there: 909px–1141px (232px tall); 1 image slot (centre) covering 5%; 1 heading line; 3 text lines; left text in 20px–364px.",
+    "  Reference section 5 of 10: 1783px–3072px (1289px tall); 3 items stacked; 1 image slot (full-bleed) covering 23%; 9 heading lines; 15 text lines; centred text in 34px–357px; 2 controls; 2 panels; light ground; padding 0 0 0 0. Yours there: 1133px–1781px (648px tall); 5 items stacked, gap 2px; 1 image slot (centre) covering 35%; 2 heading lines; 12 text lines; left text in 20px–370px; light ground; padding 56 0 56 0.",
+    "  Reference section 6 of 10: 3072px–3722px (650px tall); 3 columns of 3 items; 1 image slot (full-bleed) covering 100%; 2 heading lines; centred text in 62px–327px; 5 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: 1773px–2109px (336px tall); 1 image slot (full-bleed) covering 3%; 7 text lines; left text in 20px–370px.",
+    "  Reference section 7 of 10: 3722px–4144px (422px tall); 3 items stacked; 1 image slot (full-bleed) covering 100%; 1 heading line; 3 text lines; centred text in 32px–358px; 1 control; image ground; padding 0 0 0 0. Yours there: 2101px–2317px (216px tall); 1 image slot (full-bleed) covering 100%.",
+    "  Reference section 8 of 10: 6094px–6632px (538px tall); 11 columns of 11 items; 3 heading lines; 5 text lines; centred text in 45px–346px; 8 controls; 1 panel; light ground; padding 0 0 0 0. Yours there: 3285px–3581px (296px tall); 1 control; 1 panel.",
+    "  Reference section 9 of 10: 6631px–7531px (900px tall); 2 columns of 4 items; 4 image slots (centre) covering 51%; 3 heading lines; 4 text lines; left text in 27px–385px; 4 controls; 4 panels; light ground; padding 0 0 0 0. Yours there: 3565px–4245px (680px tall); 3 items stacked, gap 2px; 3 heading lines; 13 text lines; left text in 20px–370px; light ground; padding 56 0 56 0.",
+    "  Reference section 10 of 10: 7531px–8392px (861px tall); 3 items stacked; 1 image slot (centre) covering 9%; 4 heading lines; 11 text lines; centred text in 86px–304px; 2 panels; dark ground; padding 0 0 0 0. Yours there: 4237px–4989px (752px tall); 3 items stacked; 4 heading lines; 6 text lines; left text in 20px–367px; 1 panel; light ground; padding 56 0 56 0.",
+    "/ at phone (390px), footer (0% against 95%): the reference's is 268px tall, yours 920px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference footer: 8392px–8660px (268px tall); 5 text lines; centred text in 10px–379px; 2 panels; dark ground; padding 30 10 80 10. Yours: 4982px–5902px (920px tall); 4 items stacked, gap 34px; 3 heading lines; 19 text lines; left text in 20px–346px; 1 panel; dark ground; padding 56 0 40 0.",
+    "/ at tablet (768px), full (40% against 95%): the reference's is 7423px tall, yours 4994px.",
+    "  Reference section 1 of 12: 0px–432px (432px tall); 3 items stacked; 2 image slots (full-bleed) covering 102%; 7 text lines; left text in 178px–551px; 3 controls; 2 panels; dark ground; padding 0 0 0 0. Yours there: 0px–232px (232px tall); 1 image slot (full-bleed) covering 70%; 2 controls; 1 panel; light ground; padding 12 16 12 16.",
+    "  Reference section 2 of 12: 432px–1023px (591px tall); 3 items stacked; 1 image slot (full-bleed) covering 100%; 3 heading lines; 3 text lines; centred text in 43px–724px; 1 control; image ground; padding 0 0 0 0. Yours there: 224px–544px (320px tall); 4 items stacked; 1 image slot (full-bleed) covering 89%; 1 heading line; left text in 48px–528px; 2 panels; dark ground; padding 0 0 0 0.",
+    "  Reference section 3 of 12: 1023px–1425px (402px tall); 19 columns of 19 items; 3 image slots (full-bleed) covering 159%; 3 controls; 2 panels; image ground; padding 0 0 0 0. Yours there: 536px–856px (320px tall); 1 heading line; 5 text lines; left text in 48px–594px; 2 controls; 2 panels.",
+    "  Reference section 4 of 12: 1425px–2121px (696px tall); 3 items stacked; 5 heading lines; 8 text lines; left text in 417px–673px; 1 control; light ground; padding 0 0 0 0. Yours there: 848px–1208px (360px tall); 1 image slot (centre) covering 38%; 1 heading line; 2 text lines; left text in 28px–706px; 1 panel.",
+    "  Reference section 5 of 12: 2121px–3446px (1325px tall); 3 items stacked; 1 image slot (right) covering 25%; 10 heading lines; 18 text lines; left text in 73px–555px; 2 controls; 2 panels; light ground; padding 0 0 0 0. Yours there: 1200px–1912px (712px tall); 5 items stacked, gap 2px; 1 image slot (centre) covering 51%; 2 heading lines; 8 text lines; left text in 28px–740px; light ground; padding 56 0 56 0.",
+    "  Reference section 6 of 12: 3446px–4096px (650px tall); 3 columns of 3 items; 1 image slot (full-bleed) covering 100%; 2 heading lines; centred text in 75px–692px; 5 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: 1904px–2256px (352px tall); 1 image slot (full-bleed) covering 1%; 9 text lines; left text in 28px–740px.",
+    "  Reference section 7 of 12: 4096px–4508px (412px tall); 3 items stacked; 5 image slots (full-bleed) covering 100%; 1 heading line; 2 text lines; centred text in 175px–592px; 1 control; 1 panel; image ground; padding 0 0 0 0. Yours there: 2256px–2464px (208px tall); 1 image slot (full-bleed) covering 100%.",
+    "  Reference section 8 of 12: 4507px–5121px (614px tall); 4 columns of 14 items; 15 image slots (full-bleed) covering 100%; 1 panel; dark ground; padding 0 0 0 0. Yours there: 2456px–2824px (368px tall); 2 items stacked; 1 image slot (full-bleed) covering 73%; 1 heading line; 1 text line; left text in 28px–617px; light ground; padding 56 0 56 0.",
+    "  Reference section 9 of 12: 5122px–5757px (635px tall); 11 columns of 11 items; 3 heading lines; 4 text lines; centred text in 169px–600px; 8 controls; 1 panel; light ground; padding 0 0 0 0. Yours there: 2816px–3432px (616px tall); 2 items stacked, gap 28px; 1 heading line; 9 text lines; left text in 28px–617px; 1 control; 1 panel; dark ground; padding 56 0 56 0.",
+    "  Reference section 10 of 12: 5757px–6677px (920px tall); 4 columns of 8 items; 8 image slots (spread) covering 50%; 2 heading lines; 4 text lines; left text in 175px–763px; 4 controls; 3 panels; light ground; padding 0 0 0 0. Yours there: 3424px–4576px (1152px tall); 7 heading lines; 16 text lines; left text in 28px–740px; 1 panel (2 of your sections).",
+    "  Reference section 11 of 12: 6677px–7182px (505px tall); 3 items stacked; 1 image slot (centre) covering 7%; 4 heading lines; 13 text lines; left text in 38px–730px; 2 panels; dark ground; padding 0 0 0 0. Yours there: 4568px–4840px (272px tall); 3 heading lines; 21 text lines; left text in 28px–733px; 1 panel.",
+    "  Reference section 12 of 12: 7182px–7360px (178px tall); 2 text lines; left text in 105px–663px; 1 panel; dark ground; padding 0 0 0 0. Yours there: 4832px–4928px (96px tall); 1 text line; left text in 241px–317px; 1 panel.",
+    "/ at tablet (768px), header (3% against 95%): the reference's is 121px tall, yours 69px. Reference header: 121px tall, laid over the opening, stays on screen, 8 visible links. Yours: 69px tall, laid over the opening, stays on screen, 2 visible links, a menu button at 696px,12px (44px×44px).",
+    "/ at tablet (768px), menu (41% against 95%): reference has nothing to open at this width; yours opens a 712px×308px panel at 28px,72px with 5 links.",
+    "/ at tablet (768px), body (35% against 95%): the reference's is 7061px tall, yours 4515px.",
+    "  Reference section 1 of 11: 0px–432px (432px tall); 3 items stacked; 2 image slots (full-bleed) covering 102%; 7 text lines; left text in 178px–551px; 3 controls; 2 panels; dark ground; padding 0 0 0 0. Yours there: 69px–229px (160px tall); 1 image slot (full-bleed) covering 100%; 1 panel.",
+    "  Reference section 2 of 11: 432px–1023px (591px tall); 3 items stacked; 1 image slot (full-bleed) covering 100%; 3 heading lines; 3 text lines; centred text in 43px–724px; 1 control; image ground; padding 0 0 0 0. Yours there: 221px–549px (328px tall); 4 items stacked; 1 image slot (full-bleed) covering 88%; 1 heading line; left text in 48px–528px; 2 panels; dark ground; padding 0 0 0 0.",
+    "  Reference section 3 of 11: 1023px–1425px (402px tall); 19 columns of 19 items; 3 image slots (full-bleed) covering 159%; 3 controls; 2 panels; image ground; padding 0 0 0 0. Yours there: 541px–845px (304px tall); 1 heading line; 5 text lines; left text in 48px–594px; 2 controls; 2 panels.",
+    "  Reference section 4 of 11: 1425px–2121px (696px tall); 3 items stacked; 5 heading lines; 8 text lines; left text in 417px–673px; 1 control; light ground; padding 0 0 0 0. Yours there: 845px–1197px (352px tall); 1 image slot (centre) covering 36%; 1 heading line; 2 text lines; left text in 28px–706px; 1 panel.",
+    "  Reference section 5 of 11: 2121px–3446px (1325px tall); 3 items stacked; 1 image slot (right) covering 25%; 10 heading lines; 18 text lines; left text in 73px–555px; 2 controls; 2 panels; light ground; padding 0 0 0 0. Yours there: 1197px–1917px (720px tall); 5 items stacked, gap 2px; 1 image slot (centre) covering 51%; 2 heading lines; 10 text lines; left text in 28px–740px; light ground; padding 56 0 56 0.",
+    "  Reference section 6 of 11: 3446px–4096px (650px tall); 3 columns of 3 items; 1 image slot (full-bleed) covering 100%; 2 heading lines; centred text in 75px–692px; 5 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: 1909px–2253px (344px tall); 9 text lines; left text in 28px–740px.",
+    "  Reference section 7 of 11: 4096px–4508px (412px tall); 3 items stacked; 5 image slots (full-bleed) covering 100%; 1 heading line; 2 text lines; centred text in 175px–592px; 1 control; 1 panel; image ground; padding 0 0 0 0. Yours there: 2245px–2461px (216px tall); 1 image slot (full-bleed) covering 96%.",
+    "  Reference section 8 of 11: 4507px–5121px (614px tall); 4 columns of 14 items; 15 image slots (full-bleed) covering 100%; 1 panel; dark ground; padding 0 0 0 0. Yours there: 2453px–2805px (352px tall); 2 items stacked; 1 image slot (full-bleed) covering 77%; 1 heading line; left text in 28px–487px; light ground; padding 56 0 56 0.",
+    "  Reference section 9 of 11: 5122px–5757px (635px tall); 11 columns of 11 items; 3 heading lines; 4 text lines; centred text in 169px–600px; 8 controls; 1 panel; light ground; padding 0 0 0 0. Yours there: 2805px–3437px (632px tall); 2 items stacked, gap 28px; 1 heading line; 9 text lines; left text in 28px–617px; 1 control; 1 panel; dark ground; padding 56 0 56 0.",
+    "  Reference section 10 of 11: 5757px–6677px (920px tall); 4 columns of 8 items; 8 image slots (spread) covering 50%; 2 heading lines; 4 text lines; left text in 175px–763px; 4 controls; 3 panels; light ground; padding 0 0 0 0. Yours there: 3429px–4165px (736px tall); 3 items stacked, gap 2px; 4 heading lines; 13 text lines; left text in 28px–740px; 1 panel; light ground; padding 56 0 56 0.",
+    "  Reference section 11 of 11: 6677px–7182px (505px tall); 3 items stacked; 1 image slot (centre) covering 7%; 4 heading lines; 13 text lines; left text in 38px–730px; 2 panels; dark ground; padding 0 0 0 0. Yours there: 4157px–4589px (432px tall); 3 items stacked; 3 heading lines; 3 text lines; left text in 28px–567px; 1 panel; light ground; padding 56 0 56 0.",
+    "/ at tablet (768px), footer (67% against 95%): the reference's is 241px tall, yours 410px.",
+    "  Reference footer: 7182px–7423px (241px tall); 4 text lines; left text in 105px–663px; 2 panels; dark ground; padding 30 10 80 10. Yours: 4584px–4994px (410px tall); 4 columns of 4 items, gap 40px; 3 heading lines; 24 text lines; left text in 28px–740px; 1 panel; dark ground; padding 56 0 40 0.",
+    "/ at desktop (1440px), full (29% against 95%): the reference's is 8154px tall, yours 4304px.",
+    "  Reference section 1 of 12: 0px–900px (900px tall); 3 items stacked; 3 image slots (full-bleed) covering 202%; 7 text lines; left text in 366px–1003px; 3 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: 0px–464px (464px tall); 1 image slot (full-bleed) covering 84%; 5 text lines; left text in 715px–1058px; 1 control; 2 panels; light ground; padding 12 16 12 16.",
+    "  Reference section 2 of 12: 900px–1560px (660px tall); 3 items stacked; 1 image slot (full-bleed) covering 100%; 3 heading lines; 3 text lines; centred text in 363px–1077px; 1 control; image ground; padding 0 0 0 0. Yours there: 456px–792px (336px tall); 4 items stacked; 1 image slot (full-bleed) covering 100%; 1 heading line; 5 text lines; left text in 264px–794px; 2 controls; 2 panels; dark ground; padding 0 0 40 0.",
+    "  Reference section 3 of 12: 1560px–2091px (531px tall); 19 columns of 19 items; 4 image slots (full-bleed) covering 160%; 3 controls; 3 panels; image ground; padding 0 0 0 0. Yours there: 792px–1208px (416px tall); 2 image slots (full-bleed) covering 32%; 2 heading lines; 6 text lines; left text in 220px–1220px; 2 panels.",
+    "  Reference section 4 of 12: 2091px–2868px (777px tall); 3 items stacked; 4 heading lines; 5 text lines; left text in 782px–1274px; 1 control; light ground; padding 0 0 0 0. Yours there: 1200px–1664px (464px tall); 5 items stacked, gap 2px; 1 image slot (left) covering 14%; 1 heading line; 17 text lines; left text in 677px–1220px; light ground; padding 80 0 80 0.",
+    "  Reference section 5 of 12: 2868px–4112px (1244px tall); 3 items stacked; 1 image slot (right) covering 22%; 6 heading lines; 11 text lines; left text in 137px–1039px; 2 controls; 2 panels; light ground; padding 0 0 0 0. Yours there: 1656px–2280px (624px tall); 3 items stacked; 1 image slot (full-bleed) covering 66%; 1 heading line; 1 text line; left text in 600px–1097px; light ground; padding 80 0 80 0.",
+    "  Reference section 6 of 12: 4112px–4762px (650px tall); 3 columns of 3 items; 1 image slot (full-bleed) covering 100%; 1 heading line; centred text in 214px–1227px; 5 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: 2280px–2608px (328px tall); 1 heading line; 5 text lines; left text in 600px–1189px; 1 panel.",
+    "  Reference section 7 of 12: 4762px–5183px (421px tall); 3 items stacked; 1 image slot (full-bleed) covering 100%; 1 heading line; 2 text lines; centred text in 494px–946px; 1 control; image ground; padding 0 0 0 0. Yours there: 2600px–2816px (216px tall); 2 columns of 2 items, gap 64px; 1 heading line; 4 text lines; left text in 220px–1020px; 1 control; 1 panel; dark ground; padding 80 0 80 0.",
+    "  Reference section 8 of 12: 5183px–6335px (1152px tall); 4 columns of 14 items; 14 image slots (spread) covering 100%; 1 panel; dark ground; padding 0 0 0 0. Yours there: 2808px–3392px (584px tall); 3 items stacked, gap 2px; 3 heading lines; 13 text lines; left text in 220px–1050px; 1 control; 1 panel; light ground; padding 80 0 80 0.",
+    "  Reference section 9 of 12: 6335px–6960px (625px tall); 11 columns of 11 items; 4 image slots (spread) covering 0%; 3 heading lines; 3 text lines; centred text in 427px–1013px; 8 controls; 2 panels; light ground; padding 0 0 0 0. Yours there: 3384px–3704px (320px tall); 3 items stacked; 3 heading lines; 2 text lines; left text in 220px–759px; light ground; padding 80 0 80 0.",
+    "  Reference section 10 of 12: 6959px–7479px (520px tall); 4 columns of 16 items; 16 image slots (spread) covering 50%; 2 heading lines; 4 text lines; left text in 174px–1435px; 4 controls; 4 panels; light ground; padding 0 0 0 0. Yours there: 3696px–3968px (272px tall); 1 heading line; 2 text lines; left text in 220px–678px; 1 panel.",
+    "  Reference section 11 of 12: 7479px–7953px (474px tall); 3 items stacked; 1 image slot (centre) covering 9%; 4 heading lines; 13 text lines; left text in 216px–1224px; 2 panels; dark ground; padding 0 0 0 0. Yours there: 3960px–4208px (248px tall); 3 heading lines; 19 text lines; left text in 220px–1186px; 1 panel.",
+    "  Reference section 12 of 12: 7954px–8091px (137px tall); 2 text lines; left text in 416px–1025px; 1 panel; dark ground; padding 0 0 0 0. Yours there: 4200px–4272px (72px tall); 2 text lines; left text in 220px–1220px; 1 panel.",
+    "/ at desktop (1440px), header (10% against 95%): the reference's is 121px tall, yours 73px. Reference header: 121px tall, laid over the opening, stays on screen, 9 visible links. Yours: 73px tall, laid over the opening, stays on screen, 7 visible links.",
+    "/ at desktop (1440px), menu (45% against 95%): reference has nothing to open at this width; yours has nothing to open at this width.",
+    "/ at desktop (1440px), body (0% against 95%): the reference's is 7833px tall, yours 3850px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference section 1 of 11: 0px–900px (900px tall); 3 items stacked; 3 image slots (full-bleed) covering 202%; 7 text lines; left text in 366px–1003px; 3 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 2 of 11: 900px–1560px (660px tall); 3 items stacked; 1 image slot (full-bleed) covering 100%; 3 heading lines; 3 text lines; centred text in 363px–1077px; 1 control; image ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 3 of 11: 1560px–2091px (531px tall); 19 columns of 19 items; 4 image slots (full-bleed) covering 160%; 3 controls; 3 panels; image ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 4 of 11: 2091px–2868px (777px tall); 3 items stacked; 4 heading lines; 5 text lines; left text in 782px–1274px; 1 control; light ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 5 of 11: 2868px–4112px (1244px tall); 3 items stacked; 1 image slot (right) covering 22%; 6 heading lines; 11 text lines; left text in 137px–1039px; 2 controls; 2 panels; light ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 6 of 11: 4112px–4762px (650px tall); 3 columns of 3 items; 1 image slot (full-bleed) covering 100%; 1 heading line; centred text in 214px–1227px; 5 controls; 1 panel; image ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 7 of 11: 4762px–5183px (421px tall); 3 items stacked; 1 image slot (full-bleed) covering 100%; 1 heading line; 2 text lines; centred text in 494px–946px; 1 control; image ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 8 of 11: 5183px–6335px (1152px tall); 4 columns of 14 items; 14 image slots (spread) covering 100%; 1 panel; dark ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 9 of 11: 6335px–6960px (625px tall); 11 columns of 11 items; 4 image slots (spread) covering 0%; 3 heading lines; 3 text lines; centred text in 427px–1013px; 8 controls; 2 panels; light ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 10 of 11: 6959px–7479px (520px tall); 4 columns of 16 items; 16 image slots (spread) covering 50%; 2 heading lines; 4 text lines; left text in 174px–1435px; 4 controls; 4 panels; light ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "  Reference section 11 of 11: 7479px–7953px (474px tall); 3 items stacked; 1 image slot (centre) covering 9%; 4 heading lines; 13 text lines; left text in 216px–1224px; 2 panels; dark ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "/ at desktop (1440px), footer (70% against 95%): the reference's is 200px tall, yours 381px.",
+    "  Reference footer: 7954px–8154px (200px tall); 4 text lines; left text in 416px–1025px; 2 panels; dark ground; padding 30 10 35 10. Yours: 3923px–4304px (381px tall); 4 columns of 4 items, gap 40px; 3 heading lines; 21 text lines; left text in 220px–1220px; 1 panel; dark ground; padding 56 0 40 0.",
+    "/food-menu at phone (390px), full (0% against 95%): the reference's is 1177px tall, yours 3600px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference section 1 of 1: 0px–1177px (1177px tall); 8 items stacked; 2 heading lines; 20 text lines; left text in 53px–343px; 4 controls; 4 panels; dark ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "/food-menu at phone (390px), header (16% against 95%): the reference's is 70px tall, yours 69px. Reference header: 70px tall, laid over the opening, stays on screen, 2 visible links, a menu button at 335px,18px (50px×33px). Yours: 69px tall, laid over the opening, stays on screen, 2 visible links, a menu button at 326px,12px (44px×44px).",
+    "/food-menu at phone (390px), menu (7% against 95%): reference opens a 390px×362px panel at 0px,70px with 8 links; yours opens a 350px×308px panel at 20px,72px with 5 links.",
+    "/food-menu at phone (390px), body (0% against 95%): the reference's is 1107px tall, yours 2611px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference section 1 of 1: 0px–1177px (1177px tall); 8 items stacked; 2 heading lines; 20 text lines; left text in 53px–343px; 4 controls; 4 panels; dark ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "/food-menu at phone (390px), footer (0% against 95%): the reference's is 0px tall, yours 920px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference footer: 1177px–1177px (0px tall). Yours: 2680px–3600px (920px tall); 4 items stacked, gap 34px; 3 heading lines; 19 text lines; left text in 20px–346px; 1 panel; dark ground; padding 56 0 40 0.",
+    "/food-menu at tablet (768px), full (0% against 95%): the reference's is 1250px tall, yours 2738px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference section 1 of 1: 0px–1250px (1250px tall); 8 items stacked; 2 heading lines; 23 text lines; left text in 178px–551px; 4 controls; 3 panels; dark ground; padding 0 0 0 0. Yours there: nothing lines up with it.",
+    "/food-menu at tablet (768px), header (4% against 95%): the reference's is 121px tall, yours 69px. Reference header: 121px tall, laid over the opening, stays on screen, 8 visible links. Yours: 69px tall, laid over the opening, stays on screen, 2 visible links, a menu button at 696px,12px (44px×44px).",
+    "/food-menu at tablet (768px), menu (0% against 95%): reference has nothing to open at this width; yours opens a 712px×308px panel at 28px,72px with 5 links.",
+    "/food-menu at tablet (768px), body (2% against 95%): the reference's is 1129px tall, yours 2259px.",
+    "  Reference section 1 of 1: 0px–1250px (1250px tall); 8 items stacked; 2 heading lines; 23 text lines; left text in 178px–551px; 4 controls; 3 panels; dark ground; padding 0 0 0 0. Yours there: 69px–2333px (2264px tall); 1 image slot (centre) covering 22%; 7 heading lines; 41 text lines; left text in 28px–740px; 2 panels (3 of your sections).",
+    "/food-menu at tablet (768px), footer (0% against 95%): the reference's is 0px tall, yours 410px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference footer: 1250px–1250px (0px tall). Yours: 2328px–2738px (410px tall); 4 columns of 4 items, gap 40px; 3 heading lines; 24 text lines; left text in 28px–740px; 1 panel; dark ground; padding 56 0 40 0.",
+    "/food-menu at desktop (1440px), full (17% against 95%): the reference's is 1114px tall, yours 1965px.",
+    "  Reference section 1 of 1: 0px–1114px (1114px tall); 8 items stacked; 2 heading lines; 23 text lines; left text in 366px–1003px; 4 controls; 3 panels; dark ground; padding 0 0 0 0. Yours there: 0px–1968px (1968px tall); 1 image slot (right) covering 3%; 10 heading lines; 66 text lines; left text in 220px–1220px; 2 controls; 1 panel (3 of your sections).",
+    "/food-menu at desktop (1440px), header (3% against 95%): the reference's is 121px tall, yours 73px. Reference header: 121px tall, laid over the opening, stays on screen, 9 visible links. Yours: 73px tall, laid over the opening, stays on screen, 7 visible links.",
+    "/food-menu at desktop (1440px), menu (0% against 95%): reference has nothing to open at this width; yours has nothing to open at this width.",
+    "/food-menu at desktop (1440px), body (1% against 95%): the reference's is 993px tall, yours 1511px.",
+    "  Reference section 1 of 1: 0px–1114px (1114px tall); 8 items stacked; 2 heading lines; 23 text lines; left text in 366px–1003px; 4 controls; 3 panels; dark ground; padding 0 0 0 0. Yours there: 73px–1585px (1512px tall); 1 image slot (right) covering 4%; 7 heading lines; 40 text lines; left text in 220px–1175px; 1 control; 1 panel (2 of your sections).",
+    "/food-menu at desktop (1440px), footer (0% against 95%): the reference's is 0px tall, yours 381px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference footer: 1114px–1114px (0px tall). Yours: 1584px–1965px (381px tall); 4 columns of 4 items, gap 40px; 3 heading lines; 21 text lines; left text in 220px–1220px; 1 panel; dark ground; padding 56 0 40 0.",
+    "/cater at phone (390px), full (24% against 95%): the reference's is 3090px tall, yours 3444px.",
+    "  Reference section 1 of 2: 70px–323px (253px tall); 1 image slot (full-bleed) covering 100%; image ground; padding 0 0 0 0. Yours there: 64px–336px (272px tall).",
+    "  Reference section 2 of 2: 894px–944px (50px tall); 3 columns of 3 items; 4 text lines; left text in 57px–334px; 1 control; 1 panel; dark ground; padding 0 0 0 0. Yours there: 1176px–1232px (56px tall); 3 items stacked; 4 text lines; left text in 20px–346px; light ground; padding 0 0 56 0.",
+    "/cater at phone (390px), header (16% against 95%): the reference's is 70px tall, yours 69px. Reference header: 70px tall, above the opening, stays on screen, 2 visible links, a menu button at 335px,18px (50px×33px). Yours: 69px tall, laid over the opening, stays on screen, 2 visible links, a menu button at 326px,12px (44px×44px).",
+    "/cater at phone (390px), menu (4% against 95%): reference opens a 390px×362px panel at 0px,70px with 8 links; yours opens a 350px×308px panel at 20px,72px with 5 links.",
+    "/cater at phone (390px), body (19% against 95%): the reference's is 3020px tall, yours 2456px.",
+    "  Reference section 1 of 2: 70px–323px (253px tall); 1 image slot (full-bleed) covering 100%; image ground; padding 0 0 0 0. Yours there: 69px–325px (256px tall).",
+    "  Reference section 2 of 2: 894px–944px (50px tall); 3 columns of 3 items; 4 text lines; left text in 57px–334px; 1 control; 1 panel; dark ground; padding 0 0 0 0. Yours there: 1125px–1197px (72px tall); 5 text lines; left text in 20px–369px.",
+    "/cater at phone (390px), footer (0% against 95%): the reference's is 0px tall, yours 919px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference footer: 3090px–3090px (0px tall). Yours: 2525px–3444px (919px tall); 4 items stacked, gap 34px; 3 heading lines; 19 text lines; left text in 20px–346px; 1 panel; dark ground; padding 56 0 40 0.",
+    "/cater at tablet (768px), full (25% against 95%): the reference's is 2766px tall, yours 2278px.",
+    "  Reference section 1 of 1: 120px–427px (307px tall); 1 image slot (full-bleed) covering 100%; 1 panel; image ground; padding 0 0 0 0. Yours there: 104px–424px (320px tall); 2 heading lines; 4 text lines; left text in 28px–740px; light ground; padding 56 0 56 0.",
+    "/cater at tablet (768px), header (4% against 95%): the reference's is 121px tall, yours 69px. Reference header: 121px tall, above the opening, stays on screen, 8 visible links. Yours: 69px tall, laid over the opening, stays on screen, 2 visible links, a menu button at 696px,12px (44px×44px).",
+    "/cater at tablet (768px), menu (19% against 95%): reference has nothing to open at this width; yours opens a 712px×308px panel at 28px,72px with 5 links.",
+    "/cater at tablet (768px), body (23% against 95%): the reference's is 2645px tall, yours 1798px.",
+    "  Reference section 1 of 1: 120px–427px (307px tall); 1 image slot (full-bleed) covering 100%; 1 panel; image ground; padding 0 0 0 0. Yours there: 69px–381px (312px tall); 2 heading lines; 2 text lines; left text in 28px–686px; light ground; padding 56 0 56 0.",
+    "/cater at tablet (768px), footer (0% against 95%): the reference's is 0px tall, yours 411px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference footer: 2766px–2766px (0px tall). Yours: 1867px–2278px (411px tall); 4 columns of 4 items, gap 40px; 3 heading lines; 24 text lines; left text in 28px–740px; 1 panel; dark ground; padding 56 0 40 0.",
+    "/cater at desktop (1440px), full (19% against 95%): the reference's is 2651px tall, yours 1900px.",
+    "  Reference section 1 of 1: 120px–390px (270px tall); 1 image slot (full-bleed) covering 100%; 1 panel; image ground; padding 0 0 0 0. Yours there: 56px–248px (192px tall); 1 heading line; 1 text line; left text in 220px–878px; 1 control; light ground; padding 80 0 80 0.",
+    "/cater at desktop (1440px), header (3% against 95%): the reference's is 121px tall, yours 73px. Reference header: 121px tall, above the opening, stays on screen, 9 visible links. Yours: 73px tall, laid over the opening, stays on screen, 7 visible links.",
+    "/cater at desktop (1440px), menu (12% against 95%): reference has nothing to open at this width; yours has nothing to open at this width.",
+    "/cater at desktop (1440px), body (16% against 95%): the reference's is 2530px tall, yours 1445px.",
+    "  Reference section 1 of 1: 120px–390px (270px tall); 1 image slot (full-bleed) covering 100%; 1 panel; image ground; padding 0 0 0 0. Yours there: 73px–209px (136px tall); 1 heading line; left text in 220px–401px; light ground; padding 80 0 80 0.",
+    "/cater at desktop (1440px), footer (0% against 95%): the reference's is 0px tall, yours 382px, too far apart to line up. Match the reference's sections and their heights.",
+    "  Reference footer: 2651px–2651px (0px tall). Yours: 1518px–1900px (382px tall); 4 columns of 4 items, gap 40px; 3 heading lines; 21 text lines; left text in 220px–1220px; 1 panel; dark ground; padding 56 0 40 0."
+  ]
+}
