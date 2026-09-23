@@ -13,6 +13,30 @@ export const DESIGN_PROMPT =
   "Measured design reference for this site. Match its routes, header, menu, sections and footer at phone, tablet and desktop widths. Write original copy and request original images through forge-image. Do not copy source text, images, logos or brand identity.";
 export const DESIGN_ROUTES = ["/"];
 
+// The routes the next research measures. One page is the default; a reference
+// with more is what a build written a page at a time is for (buildDraft.ts).
+let routes: string[] = DESIGN_ROUTES;
+
+export function setDesignRoutes(next: string[]) {
+  routes = next;
+}
+
+export function resetDesignRoutes() {
+  routes = DESIGN_ROUTES;
+}
+
+// The spec the worker writes: for one page the fixed prompt above, and for
+// more a section per route, the shape design-worker/spec.mjs writes them in.
+export function designPrompt(paths: readonly string[] = routes) {
+  if (paths.length <= 1) return DESIGN_PROMPT;
+  return [
+    DESIGN_PROMPT,
+    "",
+    `ROUTES: build exactly these pages and no others: ${paths.join(", ")}.`,
+    ...paths.flatMap((path) => ["", `ROUTE ${path}`, `- desktop 1440px: the ${path} page is 3200px tall.`]),
+  ].join("\n");
+}
+
 // "layout-fails" answers every layout check below the bar; "audit-error"
 // answers it with an error. Research answers normally under both.
 export type DesignWorkerScript = "ok" | "unauthorized" | "error" | "incomplete" | "layout-fails" | "audit-error";
@@ -58,10 +82,10 @@ type TestRunner = {
   run: (fn: (ctx: PackageCtx) => Promise<Id<"_storage">>) => Promise<Id<"_storage">>;
 };
 
-const REFERENCE_JSON = JSON.stringify({ format: "forge-measured-v1", routes: DESIGN_ROUTES.map((path) => ({ path })) });
+const referenceJson = () => JSON.stringify({ format: "forge-measured-v1", routes: routes.map((path) => ({ path })) });
 
 export function storeDesignPackage(t: TestRunner) {
-  return t.run(async (ctx) => ctx.storage.store(new Blob([REFERENCE_JSON], { type: "application/json" })));
+  return t.run(async (ctx) => ctx.storage.store(new Blob([referenceJson()], { type: "application/json" })));
 }
 
 export async function insertDesignPackage(
@@ -70,18 +94,18 @@ export async function insertDesignPackage(
   siteId: Id<"sites">,
   epoch = 0,
 ) {
-  const storageId = await ctx.storage.store(new Blob([REFERENCE_JSON], { type: "application/json" }));
+  const storageId = await ctx.storage.store(new Blob([referenceJson()], { type: "application/json" }));
   await ctx.db.insert("siteDesignPackages", {
     userId,
     siteId,
     storageId,
     referenceUrl: DESIGN_REFERENCE_URL,
-    prompt: DESIGN_PROMPT,
+    prompt: designPrompt(),
     inspectedPages: 2,
     buildEpoch: epoch,
     createdAt: Date.now(),
     format: "forge-measured-v1",
-    routes: DESIGN_ROUTES,
+    routes,
   });
   return storageId;
 }
@@ -159,9 +183,9 @@ export async function answerDesignResearch(
       type: "complete",
       storageId,
       referenceUrl: DESIGN_REFERENCE_URL,
-      prompt: DESIGN_PROMPT,
-      inspectedPages: 2,
-      routes: DESIGN_ROUTES,
+      prompt: designPrompt(),
+      inspectedPages: Math.max(2, routes.length),
+      routes,
     },
   ]);
 }

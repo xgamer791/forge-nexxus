@@ -87,6 +87,69 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]).index("by_message", ["assistantId"]),
+  // A first build written a page at a time. A measured site in pages is more
+  // than one reply can write inside an action's ten minutes, so each step is
+  // an action of its own: it writes pages while its clock allows, saves each
+  // one here the moment its block closes, and hands on to the next step. A
+  // reply the step's clock stops part way through a page is kept as far as it
+  // got, and the next step carries it on from that character. Once every
+  // measured page is here the site goes to the layout check (designGates)
+  // exactly as a one-reply build would, and the markup leaves this row.
+  buildDrafts: defineTable({
+    userId: v.id("users"),
+    siteId: v.id("sites"),
+    onboardingId: v.id("siteOnboarding"),
+    attempt: v.number(),
+    runId: v.id("buildRuns"),
+    // The build's own, for the hand-off to the layout check.
+    assistantId: v.id("messages"),
+    holdId: v.id("creditHolds"),
+    epoch: v.number(),
+    siteName: v.string(),
+    rebuild: v.boolean(),
+    // The measured reference the draft is written against. A step that finds
+    // the site holding any other reference writes nothing.
+    designId: v.id("siteDesignPackages"),
+    designStorageId: v.id("_storage"),
+    // What every step is told the same way: the model the draft began on,
+    // which alone may carry on a page it stopped, and the member's memory note.
+    model: v.string(),
+    memory: v.optional(v.string()),
+    // Every page the reference measured, home first, and what is written.
+    routes: v.array(v.string()),
+    shell: v.optional(v.string()),
+    pages: v.array(v.object({ path: v.string(), title: v.string(), body: v.string() })),
+    summary: v.optional(v.string()),
+    // A page the step's clock stopped while it was being written: its address,
+    // the reply as far as it got from the page's opening fence, and how many
+    // steps have carried it on.
+    partial: v.optional(v.object({ path: v.string(), text: v.string(), resumes: v.number() })),
+    // Steps claimed so far, and steps in a row that finished nothing.
+    step: v.number(),
+    tries: v.number(),
+    // Why the last reply could not be used, for the next step to put right.
+    problem: v.optional(v.string()),
+    // Where the last reply that stopped short had got to.
+    lastStop: v.optional(v.object({
+      reason: v.string(),
+      phase: v.string(),
+      reasoningChars: v.optional(v.number()),
+      replyChars: v.optional(v.number()),
+      at: v.number(),
+    })),
+    // The copy running the current step, and the draft's last sign of life.
+    lease: v.optional(v.string()),
+    beatAt: v.number(),
+    // How many times the rescue has started a quiet step again.
+    restarts: v.number(),
+    status: v.union(v.literal("writing"), v.literal("done"), v.literal("failed"), v.literal("cancelled")),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_onboarding_attempt", ["onboardingId", "attempt"])
+    .index("by_status_beat", ["status", "beatAt"]),
   siteOnboarding: defineTable({
     userId: v.id("users"),
     siteId: v.optional(v.id("sites")),
@@ -426,6 +489,10 @@ export default defineSchema({
       loopRepeats: v.optional(v.number()),
       // Which round of the design check an event belongs to.
       round: v.optional(v.number()),
+      // A build written a page at a time: the page an event is about, and the
+      // step that wrote it.
+      path: v.optional(v.string()),
+      step: v.optional(v.number()),
     })),
   })
     .index("by_run", ["runId"])

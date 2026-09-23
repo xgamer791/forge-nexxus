@@ -77,6 +77,8 @@ const detailValidator = v.object({
   screens: v.optional(v.number()),
   loopRepeats: v.optional(v.number()),
   round: v.optional(v.number()),
+  path: v.optional(v.string()),
+  step: v.optional(v.number()),
 });
 
 const eventValidator = v.object({
@@ -162,6 +164,10 @@ export type EventDetail = {
   screens?: number;
   // Which round of the design check an event belongs to.
   round?: number;
+  // A build written a page at a time: the page an event is about, and the
+  // step that wrote it.
+  path?: string;
+  step?: number;
 };
 
 export type ProviderTrace = {
@@ -726,7 +732,12 @@ export const inspectRecent = internalQuery({
 // or silent death, newest first, each with where the reply had got to -- the
 // phase, what it had produced, what the provider said last. Never an email, a
 // prompt or a page.
-const STOP_PHASES = new Set(["provider_stop", "provider_error", "provider_retry", "provider_resume", "provider_room", "watchdog"]);
+const STOP_PHASES = new Set([
+  "provider_stop", "provider_error", "provider_retry", "provider_resume", "provider_room", "watchdog",
+  // A build written a page at a time: a page kept part way, a reply that
+  // could not be used, a page written again, a quiet step restarted, a stop.
+  "draft_partial", "draft_unusable", "draft_retry", "draft_rescued", "draft_failed",
+]);
 export const inspectStalls = internalQuery({
   args: {},
   returns: v.array(
