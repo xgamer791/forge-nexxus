@@ -69,6 +69,12 @@ export function isDesignResearchRequest(url: string) {
   return workerPath(url) === "/research";
 }
 
+function messageText(content: unknown) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text?: unknown }).text ?? "") : "")).join("\n");
+}
+
 // `store` is how convex-test saves a file from a mutation. The generated
 // mutation storage type only lists the upload URL, which this runtime does
 // not serve.
@@ -135,7 +141,7 @@ const AUDITS: [PartName, RegExp][] = [
 export function crewCall(body: unknown): CrewCall | null {
   const messages = (body as { messages?: { role: string; content: string }[] })?.messages;
   if (!Array.isArray(messages) || !messages.length) return null;
-  const text = (role: string) => messages.filter((m) => m.role === role).map((m) => String(m.content)).join("\n");
+  const text = (role: string) => messages.filter((m) => m.role === role).map((m) => messageText(m.content)).join("\n");
   if (messages[0].role === "system" && messages[0].content === AUDITOR) {
     const user = text("user");
     const part = AUDITS.find(([, pattern]) => pattern.test(user))?.[0];
@@ -147,7 +153,7 @@ export function crewCall(body: unknown): CrewCall | null {
   const system = text("system");
   const crew = system.match(/This turn is page \d+ of \d+: (\S+)\./);
   if (!crew || !/written one page at a time by a crew/.test(system)) return null;
-  const ask = messages.filter((m) => m.role === "user").map((m) => String(m.content)).find((content) => /You are the /.test(content)) ?? "";
+  const ask = messages.filter((m) => m.role === "user").map((m) => messageText(m.content)).find((content) => /You are the /.test(content)) ?? "";
   const part = ask.match(/part="(header|body1|body2|footer)"/)?.[1] as PartName | undefined;
   if (!part) return null;
   const round = messages.filter((m) => m.role === "assistant").length;
@@ -157,7 +163,7 @@ export function crewCall(body: unknown): CrewCall | null {
 // Whether a builder is being asked for this page's own CSS for the shared
 // header or footer.
 export function adjusting(call: CrewCall) {
-  return call.role === "builder" && /as CSS for this page alone/.test(call.messages.filter((m) => m.role === "user").map((m) => m.content).join("\n"));
+  return call.role === "builder" && /as CSS for this page alone/.test(call.messages.filter((m) => m.role === "user").map((m) => messageText(m.content)).join("\n"));
 }
 
 export const PART_PICTURE =
@@ -222,11 +228,29 @@ const said = (content: string) =>
 // Returns a response when `url` is the worker or the request is an auditor's,
 // otherwise null so the caller's provider stub can answer chat, builder and
 // image requests.
+function visualGateResponse(url: string, init: RequestInit | undefined): Response | null {
+  const path = workerPath(url);
+  if (path !== "/shots" && path !== "/visual") return null;
+  const authorization = new Headers(init?.headers).get("authorization");
+  if (authorization !== `Bearer ${process.env.DESIGN_WORKER_TOKEN ?? ""}`) return new Response("", { status: 401 });
+  if (path === "/shots") {
+    return new Response(JSON.stringify({
+      shots: [{ label: "screens/scroll/scroll-000.png", mediaType: "image/png", base64: "AAAA" }],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  return new Response(JSON.stringify({
+    pass: true, compared: true, ratio: 0, differing: 0, total: 1000, width: 1440,
+    shot: "screens/scroll/scroll-000.png", fixes: [],
+  }), { status: 200, headers: { "content-type": "application/json" } });
+}
+
 export async function answerDesignResearch(
   url: string,
   init: RequestInit | undefined,
   store: () => Promise<Id<"_storage">>,
 ): Promise<Response | null> {
+  const visual = visualGateResponse(url, init);
+  if (visual) return visual;
   if (/\/chat\/completions$/.test(url)) {
     let body: unknown;
     try {

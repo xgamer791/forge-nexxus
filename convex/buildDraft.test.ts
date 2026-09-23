@@ -5,7 +5,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { joinCarry, MOST_RESUMES, nextPage, STEP_TRIES } from "./buildDraft";
 import {
-  AUDITOR, auditorTurn, builderTurn, newCrew, nextFor, pageFrom, PART_REWORKS, readAudit, readPart, shellFrom, type CrewPart,
+  AUDITOR, auditorTurn, builderTurn, newCrew, nextFor, pageFrom, PART_REWORKS, readAudit, readPart, shellFrom, VISUAL_INSPECT, type CrewPart,
 } from "./crew";
 import {
   answerDesignResearch, auditCalls, crewCall, DESIGN_FOUNDATION, DESIGN_PROMPT, designPrompt, partReply, resetAuditScript, resetDesignRoutes,
@@ -30,6 +30,12 @@ function makeTest() {
 type T = ReturnType<typeof makeTest>;
 let active: T;
 const fresh = () => (active = makeTest());
+
+const text = (content: unknown) => {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text?: unknown }).text ?? "") : "")).join("\n");
+};
 
 const SEVEN = ["/", "/food-menu", "/drink-menu", "/specials", "/events", "/party", "/cater"];
 const FIVE = SEVEN.slice(0, MAX_PAGES);
@@ -248,11 +254,22 @@ describe("the crew's pieces", () => {
     const header = builderTurn({ ...common, path: "/", part: part({ name: "header" }) });
     expect(header[0].content).toBe("RULES");
     expect(header.some((m) => m.role === "system" && m.content === DESIGN_PROMPT)).toBe(true);
-    expect(header.some((m) => m.role === "system" && /This turn is page 1 of 5: \/\./.test(m.content) && /written one page at a time by a crew/.test(m.content))).toBe(true);
-    expect(header.some((m) => m.role === "system" && m.content.includes(DESIGN_FOUNDATION))).toBe(true);
+    expect(header.some((m) => m.role === "system" && /This turn is page 1 of 5: \/\./.test(text(m.content)) && /written one page at a time by a crew/.test(text(m.content)))).toBe(true);
+    expect(header.some((m) => m.role === "system" && text(m.content).includes(DESIGN_FOUNDATION))).toBe(true);
     expect(header.some((m) => m.content === "File: website-build-brief.md\n\nBRIEF")).toBe(true);
     expect(header.at(-1)!.content).toMatch(/^You are the header builder\./);
     expect(header.at(-1)!.content).toContain(`every page of this site by its path: ${FIVE.join(", ")}`);
+    expect(header.some((m) => m.role === "system" && m.content === VISUAL_INSPECT)).toBe(true);
+    expect(header.at(-1)!.content).toContain("match the attached SkillUI screenshots to the pixel");
+    const shown = builderTurn({
+      ...common, path: "/", part: part({ name: "header" }),
+      shots: [{ label: "screens/scroll/scroll-000.png", mediaType: "image/png", base64: "AAAA" }],
+    });
+    const images = shown.find((m) => Array.isArray(m.content));
+    expect(images?.content).toEqual([
+      { type: "text", text: "SkillUI Ultra reference screenshot(s) for this part. Match these to the pixel.\n- screens/scroll/scroll-000.png" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+    ]);
 
     const rest = builderTurn({ ...common, path: "/", part: part({ name: "body2" }), top: "<section><h1>Tacos</h1></section>" });
     expect(rest.at(-1)!.content).toContain("The top of this page, as written:\n```html\n<section><h1>Tacos</h1></section>\n```");
@@ -320,7 +337,7 @@ describe("the crew's pieces", () => {
     expect(ask).toContain("- Put the hours in three columns.");
     expect(ask).toContain("<section>b</section>");
     expect(ask).toContain("The top half, for context. It is not yours to judge.");
-    expect(turn.some((m) => /You are the (header builder|builder for)/.test(m.content))).toBe(false);
+    expect(turn.some((m) => /You are the (header builder|builder for)/.test(text(m.content)))).toBe(false);
   });
 
   test("the shell is Forge's head, the foundation and the parts' own styles, and a page is its two halves in its <main>", () => {

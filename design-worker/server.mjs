@@ -18,6 +18,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { chromium } from 'playwright';
 import { discoverPages, publicUrl } from './discover.mjs';
 import { extractPrompt, foundationCss, runSkillUI } from './skillui.mjs';
+import { imagesFromZip, loadPackage, renderCompare, shotsForModel } from './visual.mjs';
 
 const CITIES = ['Los Angeles', 'New York', 'San Diego', 'Miami'];
 const DIRECTORY = /(?:google|yelp|facebook|instagram|linkedin|tripadvisor|pinterest|tiktok|yellowpages|mapquest|thumbtack|angi)\./i;
@@ -149,30 +150,69 @@ async function research(input, emit, signal) {
   } finally { await fs.rm(out, { recursive: true, force: true }); }
 }
 
-const LIMIT = 16000;
+const LIMITS = { '/research': 16000, '/shots': 16000, '/visual': 1500000 };
+const PARTS = new Set(['header', 'body1', 'body2', 'footer']);
 
 function valid(input) {
   return input.uploadUrl?.startsWith('https://') && (Boolean(input.offer) || typeof input.referenceUrl === 'string');
 }
 
-const server = http.createServer(async (req, res) => {
-  if (req.url === '/health') { res.writeHead(200); res.end('ok'); return; }
-  if (req.method !== 'POST' || req.url !== '/research') { res.writeHead(404); res.end(); return; }
+function authorized(req) {
   const expected = Buffer.from(process.env.DESIGN_WORKER_TOKEN || '');
   const actual = Buffer.from(req.headers.authorization?.replace(/^Bearer /, '') || '');
-  if (!expected.length || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-    res.writeHead(401); res.end(); return;
-  }
+  return expected.length > 0 && actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function httpsUrl(value) {
+  try {
+    const url = new URL(String(value));
+    return url.protocol === 'https:' ? url.toString() : null;
+  } catch { return null; }
+}
+
+async function readBody(req, limit) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > LIMIT) { res.writeHead(413); res.end(); return; }
+    if (size > limit) return null;
     chunks.push(chunk);
   }
+  return Buffer.concat(chunks);
+}
+
+const server = http.createServer(async (req, res) => {
+  const pathname = (req.url || '').split('?')[0];
+  if (pathname === '/health') { res.writeHead(200); res.end('ok'); return; }
+  if (req.method !== 'POST' || !LIMITS[pathname]) { res.writeHead(404); res.end(); return; }
+  if (!authorized(req)) { res.writeHead(401); res.end(); return; }
+  const raw = await readBody(req, LIMITS[pathname]);
+  if (!raw) { res.writeHead(413); res.end(); return; }
   let input;
+  try { input = JSON.parse(raw.toString('utf8')); } catch { res.writeHead(400); res.end(); return; }
+  if (pathname === '/shots' || pathname === '/visual') {
+    const packageUrl = httpsUrl(input.packageUrl);
+    const part = PARTS.has(input.part) ? input.part : null;
+    const pagePath = typeof input.path === 'string' && input.path.startsWith('/') ? input.path.slice(0, 80) : null;
+    if (!packageUrl || !part || !pagePath) { res.writeHead(400); res.end(); return; }
+    if (pathname === '/visual' && (typeof input.html !== 'string' || !input.html.trim())) { res.writeHead(400); res.end(); return; }
+    const job = new AbortController();
+    req.on('close', () => { if (!res.writableFinished) job.abort(); });
+    try {
+      const decoded = imagesFromZip(await loadPackage(packageUrl), part, pagePath);
+      const body = pathname === '/shots'
+        ? { shots: shotsForModel(decoded) }
+        : await renderCompare(input.html, decoded, part, Number(input.maxRatio), job.signal);
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(body));
+    } catch (error) {
+      if (res.headersSent) { res.end(); return; }
+      res.writeHead(502, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ pass: false, compared: false, ratio: 1, fixes: [String(error.message || error).slice(0, 180)] }));
+    }
+    return;
+  }
   try {
-    input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if (!valid(input)) throw new Error('Invalid request');
   } catch { res.writeHead(400); res.end(); return; }
   res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' });

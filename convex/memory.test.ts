@@ -324,7 +324,7 @@ describe("a turn", () => {
     });
     const job = await t.mutation(internal.generate.beginOnboarding, { id, attempt: 1 });
     expect(job.result.siteId).toBe(siteId);
-    const note = job.messages.find((m) => m.role === "system" && m.content.startsWith("MEMORY —"));
+    const note = job.messages.find((m) => m.role === "system" && typeof m.content === "string" && m.content.startsWith("MEMORY —"));
     expect(note?.content).toContain("- Runs a bakery in Leeds");
     expect(job.messages[0].content).toBe(FORGE_MD);
     expect(job.messages[1].content).toBe(DESIGN_GOD);

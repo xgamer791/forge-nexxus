@@ -43,7 +43,17 @@ const REASON_LIMIT = 300;
 // the one-line summary that rides along with a build.
 const TALK_LIMIT = 4000;
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+// A builder turn may attach SkillUI reference screenshots. Every other turn
+// is still a string. DeepSeek reads the image parts as vision input.
+export type ChatContent =
+  | string
+  | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: ChatContent };
+
+export function textContent(content: ChatContent) {
+  if (typeof content === "string") return content;
+  return content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+}
 
 // Where conversation goes when the deployment says nothing. Chat reads
 // `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY`. Planning and site building read
@@ -271,8 +281,8 @@ export const promptCheck = internalQuery({
     return turn
       .filter((message) => message.role === "system")
       .map((message) => ({
-        chars: message.content.length,
-        opens: message.content.split("\n").find((line) => line.trim())?.slice(0, 64) ?? "",
+        chars: textContent(message.content).length,
+        opens: textContent(message.content).split("\n").find((line) => line.trim())?.slice(0, 64) ?? "",
       }));
   },
 });
