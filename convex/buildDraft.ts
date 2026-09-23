@@ -15,16 +15,14 @@
 //   (PAGE_STEP_MS), starts another page only while enough of it is left
 //   (PAGE_FLOOR_MS), and queues the next step the moment it ends. Nobody
 //   presses anything.
-// - The step's clock is the platform's ten minutes, never a judgement that a
-//   reply is slow. A builder it stops while writing is saved as far as it got
-//   and carried on from that character; a reply it stops before then is asked
-//   for again, with a whole clock, in the next step. Neither counts as a miss.
+// - A reply the step's clock stops while it is writing is kept as far as it
+//   got, and the next step carries it on from that character.
 // - The rest of the page is written once the top of it is, and carries on
 //   from where the top ends.
-// - A part its auditor still does not agree to after PART_REWORKS rounds stops
-//   the build, and so does a part whose replies keep stalling or coming back
-//   unusable, or a run of steps that moved nothing for any reason but the
-//   clock. Nothing is saved and the credits go back.
+// - A step that finishes nothing goes again, a few times, and then the build
+//   stops with what stopped it. So does a part its auditor still does not
+//   agree to after PART_REWORKS rounds, and a part whose replies keep coming
+//   back unusable. Nothing is saved and the credits go back.
 // - A step whose action the platform lost stops beating, and the rescue starts
 //   it again from the last saved part.
 // - Once every page is kept the site lands (designGate.ts, `audited`) in the
@@ -38,12 +36,10 @@ import {
   builderTurn,
   crewWork,
   isChrome,
-  joinCarry,
   newCrew,
   nextFor,
   pageFrom,
   PART_AGENTS,
-  PART_CEILING,
   PART_NAMES,
   PART_REWORKS,
   partBlock,
@@ -66,21 +62,19 @@ import { designSource, pagePlan, siteParts } from "./pages";
 import { assertDesignRules, isSkillUI } from "./siteDesign";
 import type { StreamStats } from "./stream";
 
-// Replies in a row for one part that may stall or come back with nothing to
-// use, and steps in a row that may move nothing at all, before the build stops
-// with what stopped the last of them. The step's clock is never one of them.
+// Steps in a row that may finish nothing -- no part, and nothing more of one --
+// before the build stops with what stopped the last of them. A part's replies
+// in a row that come back with nothing to use are held to the same number.
 export const STEP_TRIES = 3;
+// Steps that may carry one part on before it is a part that never ends.
+export const MOST_RESUMES = 4;
 // Steps a draft may take in all, per page: a ceiling no build that is getting
-// anywhere comes near -- a page's crew needs a step or two, and a few more for
-// each round of changes -- so that none can go round forever. It counts steps,
-// never time: it is what ends a build whose model outlives every step it is
-// given without writing a character, since the clock itself never does.
-const STEPS_PER_PAGE = 10;
+// anywhere comes near, so that none can go round forever.
+const STEPS_PER_PAGE = 4;
 const KEEP_DRAFTS = 20;
 // A builder is only started with this much of the step's clock left, and an
-// auditor with this much -- never more than half of the step's whole clock.
-// Less, and the part waits for the next step, which starts it with a whole
-// clock. This only decides when a reply starts; nothing stops one early.
+// auditor with this much. Less, and the part waits for the next step, which
+// starts it with a whole clock.
 const BUILD_FLOOR_MS = 120000;
 const AUDIT_FLOOR_MS = 60000;
 
@@ -111,6 +105,21 @@ function pageName(path: string) {
   return path === "/" ? "home" : path;
 }
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+// A reply that carries a block on, joined to where the block stopped. A fence
+// the model opened anyway loses its line. One that started the block over from
+// its first line replaces what was there rather than doubling it.
+export function joinCarry(carried: string, more: string) {
+  const rest = more.replace(/^\s*```html\b[^\n]*\r?\n/i, "");
+  const opened = carried.lastIndexOf("```");
+  const lineEnd = opened === -1 ? -1 : carried.indexOf("\n", opened);
+  if (lineEnd !== -1) {
+    const lead = (text: string) => text.replace(/\s+/g, "").slice(0, 60);
+    const before = lead(carried.slice(lineEnd + 1));
+    if (before.length === 60 && lead(rest) === before) return carried.slice(0, lineEnd + 1) + rest;
+  }
+  return carried + rest;
+}
 const firstSentence = (text: string | undefined) => text?.split(/(?<=\.)\s/)[0] ?? "";
 
 // A page as the member knows it.
@@ -386,25 +395,54 @@ export const partBuilt = internalMutation({
       tries: 0,
       problem: undefined,
       partial: undefined,
+      resumes: undefined,
     };
     await savePart(ctx, draft, part, true);
     return stored(part);
   },
 });
 
-// A builder's reply stopped part way -- by its step's clock, or by a stream
-// that stalled once the part had begun -- saved as far as it got. It is
-// progress: the builder's next go carries it on from that character.
+// A builder's reply the step's clock stopped while it was writing -- or one a
+// stream stopped once the part had begun -- saved as far as it got, from the
+// part's opening fence: the next step carries it on from that character. A
+// part saved part way more than MOST_RESUMES times is one that never ends,
+// and the build stops.
 export const partCarried = internalMutation({
-  args: { id: v.id("buildDrafts"), lease: v.string(), part: partValidator, text: v.string() },
-  handler: async (ctx, args): Promise<CrewPart | null> => {
+  args: { id: v.id("buildDrafts"), lease: v.string(), part: partValidator, text: v.string(), stop: v.optional(stopValidator) },
+  handler: async (ctx, args): Promise<{ state: "saved" | "failed" | "gone"; part?: CrewPart }> => {
     const draft = await live(ctx, args.id, args.lease);
-    if (!draft?.crew) return null;
+    if (!draft?.crew) return { state: "gone" };
     const before = partOf(draft.crew, args.part);
-    if (before.agreed) return null;
-    const part: CrewPart = { ...before, partial: args.text, tries: 0 };
-    await savePart(ctx, draft, part, true);
-    return stored(part);
+    if (before.agreed) return { state: "gone" };
+    const path = draft.crew.path;
+    const detail = { path, page: draft.routes.indexOf(path) + 1, total: draft.routes.length, step: draft.step, part: args.part };
+    const resumes = before.partial !== undefined ? (before.resumes ?? 0) + 1 : 1;
+    const now = Date.now();
+    const lastStop = args.stop ? { ...args.stop, at: now } : draft.lastStop;
+    if (resumes > MOST_RESUMES) {
+      await ctx.db.patch(draft._id, { lastStop, updatedAt: now });
+      await recordEvent(ctx, {
+        runId: draft.runId, userId: draft.userId, phase: "draft_failed", level: "error",
+        label: `Stopped at ${place(draft, path)}: the ${PART_NAMES[args.part]} kept stopping part way`,
+        detail: { ...detail, continuation: resumes },
+      });
+      await failDraft(ctx, { ...draft, lastStop });
+      return { state: "failed" };
+    }
+    const part: CrewPart = { ...before, partial: args.text, resumes, tries: 0, problem: undefined };
+    const crew = { ...draft.crew, parts: draft.crew.parts.map((each) => (each.name === part.name ? stored(part) : each)) };
+    await ctx.db.patch(draft._id, { crew, tries: 0, lastStop, beatAt: now, updatedAt: now });
+    await recordEvent(ctx, {
+      runId: draft.runId, userId: draft.userId, phase: "draft_partial",
+      label: `Saved the ${PART_NAMES[args.part]} of ${place(draft, path)} as far as it got: ${pageName(path)}`,
+      status: "calling",
+      detail: {
+        ...detail, continuation: resumes, replyChars: args.text.length, stopReason: args.stop?.reason, streamPhase: args.stop?.phase,
+        reasoningChars: args.stop?.reasoningChars,
+      },
+    });
+    await touch(ctx, draft.onboardingId);
+    return { state: "saved", part: stored(part) };
   },
 });
 
@@ -412,7 +450,7 @@ export const partCarried = internalMutation({
 // wrong with it for its next go, or the auditor's. A few in a row, or one
 // that nothing will change, and the build stops. A builder's reply that could
 // not be used takes any reply it was carrying on with it, and the next go
-// starts the part afresh; one that stalled leaves it to carry on.
+// starts the part afresh; one that failed leaves it to carry on.
 export const partMissed = internalMutation({
   args: {
     id: v.id("buildDrafts"),
@@ -442,7 +480,7 @@ export const partMissed = internalMutation({
       ...before,
       tries,
       problem: args.problem ?? before.problem,
-      ...(args.problem ? { partial: undefined } : {}),
+      ...(args.problem ? { partial: undefined, resumes: undefined } : {}),
     };
     await savePart(ctx, draft, part, false);
     return { state: "again", part: stored(part) };
@@ -514,18 +552,17 @@ export const pageDone = internalMutation({
   },
 });
 
-// The end of a step, and the next one queued. A step that moved something
-// ends with the rest to do; one that moved nothing goes again, until the
-// misses run out and the build stops with what stopped the last of them. One
-// that moved nothing only because its clock ran out before a reply could be
-// saved is no one's miss: the next step asks again with a whole clock, and
-// nothing is counted.
+// The end of a step, and the next one queued. A step ends at a page boundary
+// once its clock is short, with what its crew saved -- a part cut part way
+// among it, to carry on -- or with nothing to show, which the next step tries
+// again, until the misses run out and the build stops with what stopped the
+// last of them.
 export const stepped = internalMutation({
   args: {
     id: v.id("buildDrafts"),
     lease: v.string(),
-    outcome: v.union(v.literal("boundary"), v.literal("clock"), v.literal("nothing")),
-    // What stopped a step that moved nothing, in the member's words.
+    outcome: v.union(v.literal("boundary"), v.literal("nothing")),
+    // What stopped a step that finished nothing, in the member's words.
     reason: v.optional(v.string()),
     stop: v.optional(stopValidator),
     // Nothing another step could change: the build stops now.
@@ -533,29 +570,28 @@ export const stepped = internalMutation({
   },
   returns: v.union(v.literal("next"), v.literal("failed"), v.literal("gone")),
   handler: async (ctx, args) => {
-    const draft = await live(ctx, args.id, args.lease);
-    if (!draft) return "gone";
+    const draft = await ctx.db.get(args.id);
+    if (!draft || draft.status !== "writing" || draft.lease !== args.lease) return "gone";
+    if (await settle(ctx, draft)) return "gone";
     const now = Date.now();
     const lastStop = args.stop ? { ...args.stop, at: now } : draft.lastStop;
     const patch: Partial<Draft> = { lease: undefined, beatAt: now, updatedAt: now, lastStop };
+    const target = nextPage(draft) ?? "/";
+    const detail = { path: target, page: draft.routes.indexOf(target) + 1, total: draft.routes.length, step: draft.step };
     if (args.outcome === "nothing") {
       const tries = draft.tries + 1;
       if (args.fatal || tries >= STEP_TRIES) {
-        const target = nextPage(draft) ?? "/";
         await ctx.db.patch(args.id, { ...patch, tries });
         await recordEvent(ctx, {
           runId: draft.runId, userId: draft.userId, phase: "draft_failed", level: "error",
           label: `Stopped at ${place(draft, target)}: ${pageName(target)}`,
-          detail: {
-            path: target, page: draft.routes.indexOf(target) + 1, total: draft.routes.length, step: draft.step,
-            errorClass: classifyError(args.reason ?? ""), stopReason: args.stop?.reason, streamPhase: args.stop?.phase,
-          },
+          detail: { ...detail, errorClass: classifyError(args.reason ?? ""), stopReason: args.stop?.reason, streamPhase: args.stop?.phase },
         });
         await failDraft(ctx, { ...draft, ...patch, tries }, args.reason ?? "The agent did not return a website");
         return "failed";
       }
       Object.assign(patch, { tries });
-    } else if (args.outcome === "boundary") {
+    } else {
       Object.assign(patch, { tries: 0 });
     }
     await ctx.db.patch(args.id, patch);
@@ -574,8 +610,9 @@ export const handOff = internalMutation({
   args: { id: v.id("buildDrafts"), lease: v.string() },
   returns: v.union(v.literal("gate"), v.literal("failed"), v.literal("gone")),
   handler: async (ctx, { id, lease }) => {
-    const draft = await live(ctx, id, lease);
-    if (!draft) return "gone";
+    const draft = await ctx.db.get(id);
+    if (!draft || draft.status !== "writing" || draft.lease !== lease) return "gone";
+    if (await settle(ctx, draft)) return "gone";
     const pages = draft.routes.flatMap((path) => draft.pages.filter((page) => page.path === path));
     if (!draft.shell || pages.length !== draft.routes.length) return "gone";
     const site = { shell: draft.shell, pages };
@@ -623,33 +660,16 @@ export const handOff = internalMutation({
   },
 });
 
-// Where a reply had got to when its step ended, in the build's log. The member
-// reads it, and a step is the crew's turn to them.
-function stepEnded(phase: string | undefined) {
-  return phase === "writing"
-    ? "still writing when its turn ended, so Forge asks again"
-    : phase === "thinking"
-      ? "still thinking when its turn ended, so Forge asks again"
-      : "hadn't started when its turn ended, so Forge asks again";
-}
-
 // A trace for one member of the crew: every line it writes, the model's own
-// included, says who wrote it and which part of which page it is about. The
-// step's clock running out on a reply is a checkpoint here, not a stop, and
-// is logged as one (`crew_clock`).
+// included, says who wrote it and which part of which page it is about.
 function agentTrace(trace: ProviderTrace, who: string, detail: EventDetail, auditor: boolean): ProviderTrace {
   return {
-    note: (input) => {
-      const clock = input.phase === "provider_stop" && input.detail?.stopReason === "out_of_time";
-      return trace.note({
-        ...input,
-        ...(clock
-          ? { phase: "crew_clock", level: "warn" as const, label: `${who}: ${stepEnded(input.detail?.streamPhase)}` }
-          : { label: `${who}: ${input.label.charAt(0).toLowerCase()}${input.label.slice(1)}` }),
-        ...(auditor && input.status === "calling" ? { status: "reviewing" as const } : {}),
-        detail: { ...detail, ...input.detail },
-      });
-    },
+    note: (input) => trace.note({
+      ...input,
+      label: `${who}: ${input.label.charAt(0).toLowerCase()}${input.label.slice(1)}`,
+      ...(auditor && input.status === "calling" ? { status: "reviewing" as const } : {}),
+      detail: { ...detail, ...input.detail },
+    }),
   };
 }
 
@@ -659,27 +679,24 @@ const asksForPicture = (markup: string) =>
 type Setting = { extract: string; foundation?: string; referenceUrl: string; rebuild?: string };
 type Worked =
   | { state: "page"; draft: Draft }
-  | { state: "short"; progressed: boolean; clocked: boolean; missed: boolean; reason?: string; stop?: Stop }
+  | { state: "short"; progressed: boolean; reason?: string; stop?: Stop }
   | { state: "halted" };
 
-const grouped = (count: number) => String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-
-// Where a reply that stopped part way had got to, for the draft's log.
-function cutStop(reply: { outOfTime?: boolean; stats?: StreamStats }, chars: number): Stop {
+function cutStop(reply: { outOfTime?: boolean; stats?: StreamStats; content: string }) {
   return {
     reason: reply.outOfTime ? "out_of_time" : reply.stats?.finishReason === "length" ? "length" : "dropped",
     phase: reply.stats?.phase ?? "writing",
     reasoningChars: reply.stats?.reasoningChars || undefined,
-    replyChars: chars || undefined,
+    replyChars: reply.content.length || undefined,
   };
 }
 
 // The crew at work on one page, inside this step's clock. The builders go side
 // by side -- the rest of the page once the top of it is written -- and each
 // auditor starts on its part the moment its builder saves it. Every answer is
-// saved as it comes, and so is a builder's reply the clock stops part way.
-// Once all four auditors agree the page is kept; if the clock runs out first,
-// what is saved is where the next step carries on.
+// saved as it comes, and so is a builder's reply the clock stopped part way.
+// Once all four auditors agree the page is kept; if the clock runs short
+// first, what is saved is where the next step carries on.
 async function workCrew(
   ctx: ActionCtx,
   input: {
@@ -687,8 +704,6 @@ async function workCrew(
     lease: string;
     draft: Draft;
     deadline: number;
-    // The step's whole clock, which no floor may take more than half of.
-    budget: number;
     // The model this step's builders are asked on.
     model: string;
     setting: Setting;
@@ -704,16 +719,11 @@ async function workCrew(
   const where = place(draft, path);
   const detail = { path, page: draft.routes.indexOf(path) + 1, total: draft.routes.length, step: draft.step };
   const written = draft.shell ? { shell: draft.shell, home: draft.pages.find((page) => page.path === "/") } : undefined;
-  const floors = { build: Math.min(BUILD_FLOOR_MS, input.budget / 2), audit: Math.min(AUDIT_FLOOR_MS, input.budget / 2) };
   // Each part's own latest state, from its own saves: parts never write each
   // other's, so none can be overwritten by an older copy of another's.
   const latest = Object.fromEntries(crew.parts.map((part) => [part.name, part])) as Record<PartName, CrewPart>;
   let halted = false;
   let progressed = false;
-  // Whether the step's clock stopped a reply before any of it could be kept,
-  // and whether a reply was counted as a miss.
-  let clocked = false;
-  let counted = false;
   let reason: string | undefined;
   let stop: Stop | undefined;
   let topWritten = () => {};
@@ -721,24 +731,21 @@ async function workCrew(
     topWritten = resolve;
   });
 
-  // A reply that stalled or could not be used: counted against its part, and a
-  // few in a row, or one that nothing will change, stop the build.
+  // A reply that could not be used, or a call that failed: counted against its
+  // part, and a few in a row, or one that nothing will change, stop the build.
   async function miss(name: PartName, args: { reason: string; problem?: string; fatal?: boolean }) {
-    counted = true;
     const result = await ctx.runMutation(internal.buildDraft.partMissed, { id, lease, part: name, ...args });
     if (result.state !== "again") halted = true;
     else latest[name] = result.part!;
   }
 
-  // A call that failed. The step's clock running out is no one's miss: the
-  // next step asks again with a whole clock, and nothing is counted.
+  // A call that failed. The clock running out is no part's miss: the part
+  // waits for the next step, which starts it with a whole clock, and a step
+  // that finishes nothing at all is counted as one (`stepped`).
   async function missed(name: PartName, error: unknown) {
     stop = stopOf(error);
     reason = describe(error);
-    if (error instanceof ReplyStopped && error.stop.reason === "out_of_time") {
-      clocked = true;
-      return;
-    }
+    if (error instanceof ReplyStopped && error.stop.reason === "out_of_time") return;
     await miss(name, { reason, fatal: !retryable(error) });
   }
 
@@ -748,18 +755,23 @@ async function workCrew(
     const partDetail = { ...detail, part: name };
     // A reply another model began is written again rather than carried on.
     const carry = part.partial !== undefined && draft.model === input.model ? part.partial : undefined;
-    await trace.note({
-      phase: "crew_build",
-      label: carry !== undefined
-        ? `${capital(where)}: carrying on the ${PART_NAMES[name]} from where it stopped`
-        : adjusting
-          ? `${capital(where)}: fitting the shared ${PART_NAMES[name]} to this page`
-          : part.fixes.length
-            ? `${capital(where)}: making the auditor's ${part.fixes.length === 1 ? "change" : `${part.fixes.length} changes`} to the ${PART_NAMES[name]}`
-            : `${capital(where)}: writing the ${PART_NAMES[name]}`,
-      status: "calling",
-      detail: { ...partDetail, round: part.round, ...(carry !== undefined ? { replyChars: carry.length } : {}) },
-    });
+    await trace.note(carry !== undefined
+      ? {
+          phase: "draft_resume",
+          label: `Carrying on the ${PART_NAMES[name]} of ${where} from where it stopped: ${pageName(path)}`,
+          status: "calling",
+          detail: { ...partDetail, continuation: part.resumes, replyChars: carry.length },
+        }
+      : {
+          phase: "crew_build",
+          label: adjusting
+            ? `${capital(where)}: fitting the shared ${PART_NAMES[name]} to this page`
+            : part.fixes.length
+              ? `${capital(where)}: making the auditor's ${part.fixes.length === 1 ? "change" : `${part.fixes.length} changes`} to the ${PART_NAMES[name]}`
+              : `${capital(where)}: writing the ${PART_NAMES[name]}`,
+          status: "calling",
+          detail: { ...partDetail, round: part.round },
+        });
     const messages = builderTurn({
       base: input.base,
       extract: setting.extract,
@@ -783,42 +795,19 @@ async function workCrew(
       return;
     }
     const reply = carry !== undefined ? joinCarry(carry, answer.content) : answer.content;
-    // Stopped part way -- by the step's clock, the length limit, or a stream
-    // that stalled once the part had begun -- with its block still open: kept
-    // as far as it got, and carried on from that character.
-    if (answer.cut && !partBlock(reply, name)?.closed) {
-      if (reply.length > PART_CEILING) {
-        const problem = `the ${PART_NAMES[name]} ran past ${grouped(PART_CEILING)} characters without its block closing. Write it again, whole and far shorter.`;
-        await trace.note({
-          phase: "crew_unusable",
-          label: `${capital(where)}: the ${PART_NAMES[name]} came back unusable: ${firstSentence(problem)}`,
-          level: "warn",
-          status: "calling",
-          detail: { ...partDetail, replyChars: reply.length },
-        });
-        await miss(name, { reason: "The agent did not return a website", problem });
-        return;
-      }
-      // Nothing added to what it was carrying on is a reply that stalled.
-      if (reply.trim().length <= (carry?.trim().length ?? 0)) {
-        stop = cutStop(answer, 0);
-        await miss(name, { reason: "The agent did not return a website" });
-        return;
-      }
-      const saved = await ctx.runMutation(internal.buildDraft.partCarried, { id, lease, part: name, text: reply });
-      if (!saved) {
+    // Stopped inside its part: kept as far as it got from the part's opening
+    // fence, and the next step carries it on from that character.
+    const block = partBlock(reply, name);
+    if (answer.cut && block && !block.closed) {
+      const result = await ctx.runMutation(internal.buildDraft.partCarried, {
+        id, lease, part: name, text: reply.slice(block.index), stop: cutStop(answer),
+      });
+      if (result.state !== "saved") {
         halted = true;
         return;
       }
-      latest[name] = saved;
+      latest[name] = result.part!;
       progressed = true;
-      const cut = cutStop(answer, reply.length);
-      await trace.note({
-        phase: "crew_carried",
-        label: `${capital(where)}: saved the ${PART_NAMES[name]} as far as it got, to carry on from there`,
-        status: "calling",
-        detail: { ...partDetail, replyChars: reply.length, stopReason: cut.reason, streamPhase: cut.phase, reasoningChars: cut.reasoningChars },
-      });
       return;
     }
     const read = readPart(reply, { part: name, adjusting, path });
@@ -933,12 +922,13 @@ async function workCrew(
         if (latest.body1.markup === undefined) return;
         continue;
       }
-      if (deadline - Date.now() < (next === "build" ? floors.build : floors.audit)) return;
+      if (deadline - Date.now() < (next === "build" ? BUILD_FLOOR_MS : AUDIT_FLOOR_MS)) return;
       if (next === "build") await build(name);
       else await audit(name);
-      // Nothing saved -- the clock ran out before any of the reply could be
-      // kept -- leaves the part for the next step.
-      if (latest[name] === part) return;
+      // Nothing saved -- the clock ran out mid-reply -- leaves the part for the
+      // next step, and so does a part saved part way, which the next step
+      // carries on.
+      if (latest[name] === part || latest[name].partial !== undefined) return;
     }
   }
 
@@ -955,7 +945,7 @@ async function workCrew(
     const kept = await ctx.runMutation(internal.buildDraft.pageDone, { id, lease });
     return kept ? { state: "page", draft: kept } : { state: "halted" };
   }
-  return { state: "short", progressed, clocked, missed: counted, reason, stop };
+  return { state: "short", progressed, reason, stop };
 }
 
 // One step: the crews at work while the clock allows, each part saved as it
@@ -969,8 +959,7 @@ export const write = internalAction({
     if (!claimed) return null;
     const { lease } = claimed;
     let draft = claimed.draft;
-    const budget = Math.min(Math.max(budgetMs ?? PAGE_STEP_MS, 1000), PAGE_STEP_MS);
-    const deadline = Date.now() + budget;
+    const deadline = Date.now() + Math.min(Math.max(budgetMs ?? PAGE_STEP_MS, 1000), PAGE_STEP_MS);
     const model = chatRoute("build").model;
     const stopBeating = heartbeat(() => ctx.runMutation(internal.buildDraft.beat, { id, lease }));
     const trace = providerTrace(ctx, draft.runId, draft.userId);
@@ -1010,7 +999,7 @@ export const write = internalAction({
             detail: { path: target, page: draft.routes.indexOf(target) + 1, total: draft.routes.length, step: draft.step },
           });
         }
-        const worked = await workCrew(ctx, { id, lease, draft, deadline, budget, model, setting, brief, base, trace, imagery });
+        const worked = await workCrew(ctx, { id, lease, draft, deadline, model, setting, brief, base, trace, imagery });
         if (worked.state === "halted") return null;
         if (worked.state === "page") {
           draft = worked.draft;
@@ -1018,15 +1007,11 @@ export const write = internalAction({
           progressed = true;
           continue;
         }
-        // A step that moved nothing only because its clock ran out before a
-        // reply could be kept counts for nothing; any other that moved nothing
-        // is a miss.
         const moved = progressed || worked.progressed;
-        const outcome = moved ? "boundary" : worked.clocked && !worked.missed ? "clock" : "nothing";
         await ctx.runMutation(internal.buildDraft.stepped, {
           id,
           lease,
-          outcome,
+          outcome: moved ? "boundary" : "nothing",
           ...(moved ? {} : { reason: worked.reason ?? "The agent did not return a website", stop: worked.stop }),
         });
         return null;
@@ -1108,6 +1093,7 @@ export const inspect = internalQuery({
         shell: row.status === "done" || Boolean(row.shell),
         written,
         remaining: row.routes.filter((path) => !written.includes(path)),
+        partial: row.partial ? { path: row.partial.path, chars: row.partial.text.length, resumes: row.partial.resumes } : null,
         crew: row.crew
           ? {
               path: row.crew.path,
@@ -1117,7 +1103,7 @@ export const inspect = internalQuery({
                 round: part.round,
                 tries: part.tries,
                 chars: part.markup?.length ?? null,
-                carried: part.partial?.length ?? null,
+                carried: part.partial !== undefined ? { chars: part.partial.length, resumes: part.resumes ?? 1 } : null,
                 fixes: part.fixes.length,
               })),
             }

@@ -1011,9 +1011,8 @@ async function complete(
   maxTokens: number,
   deadline: number,
   trace?: ProviderTrace,
-  // `keepPartial`: a build written a part at a time wants a part its step's
-  // clock stopped part way back as far as it got, not a failure
-  // (callProviderPart).
+  // `keepPartial`: a build written a page at a time wants a page its clock
+  // stopped part way back as far as it got, not a failure (callProviderPart).
   meta?: { continuation?: number; keepPartial?: boolean },
 ): Promise<{ content: string; truncated: boolean; outOfTime?: boolean; stats?: StreamStats }> {
   let limit = maxTokens;
@@ -1106,8 +1105,8 @@ async function complete(
     }
     if (stopped) {
       const { reason, stats } = stopped;
-      // The step's clock ran out while the part was being written. Kept, this
-      // is a checkpoint rather than a stop: the next step carries the part on
+      // The step's clock ran out while the page was being written. Kept, this
+      // is a checkpoint rather than a stop: the next step carries the page on
       // from this character, and says so in the build's log.
       if (reason === "out_of_time" && meta?.keepPartial && stats.phase === "writing" && stopped.content) {
         return { content: stopped.content, truncated: true, outOfTime: true, stats };
@@ -1306,22 +1305,11 @@ export async function callProvider(
   return (await provide(messages, { tokenLimit, budgetMs, trace, purpose })).content;
 }
 
-// What a reply the length limit cut off is told as it goes on: a whole site
-// closes its document, and one part of a page closes only its block.
-const CUT_OFF_DOCUMENT =
-  "Your reply was cut off by the length limit. Continue from the exact character where it stopped. " +
-  "Do not repeat anything already written, do not restart the document, and do not add commentary or open a new code fence. " +
-  "Output only the remaining text, and finish by closing the HTML document and then the code fence.";
-const CUT_OFF_PART =
-  "Your reply was cut off by the length limit. Continue from the exact character where it stopped. " +
-  "Do not repeat anything already written, do not start the part again, and do not add commentary or open a new code fence. " +
-  "Output only the remaining text, and finish by closing the code fence.";
-
-// A reply for one part of a page, written by the crew (buildDraft.ts): the same
-// call on the build route, except that a reply its step's clock stops while it
-// is writing comes back as far as it got, marked cut, instead of failing -- the
+// A reply for a build written a page at a time (buildDraft.ts): the same call
+// on the build route, except that a reply the step's clock stops while it is
+// writing comes back as far as it got, marked cut, instead of failing -- the
 // next step carries it on from that character. `resuming` is a reply that is
-// itself carrying a part on, so it starts mid-part rather than at a fence.
+// itself carrying a page on, so it starts mid-page rather than at a fence.
 export async function callProviderPart(
   messages: ChatMessage[],
   budgetMs: number,
@@ -1359,7 +1347,17 @@ async function provide(
     try {
       reply = await complete(
         route,
-        [...messages, { role: "assistant", content }, { role: "user", content: keepPartial ? CUT_OFF_PART : CUT_OFF_DOCUMENT }],
+        [
+          ...messages,
+          { role: "assistant", content },
+          {
+            role: "user",
+            content:
+              "Your reply was cut off by the length limit. Continue from the exact character where it stopped. " +
+              "Do not repeat anything already written, do not restart the document, and do not add commentary or open a new code fence. " +
+              "Output only the remaining text, and finish by closing the HTML document and then the code fence.",
+          },
+        ],
         maxTokens,
         deadline,
         trace,
@@ -1367,17 +1365,15 @@ async function provide(
       );
     } catch (error) {
       // What the reply had written stays written: a build that keeps its
-      // parts carries it on in its next step rather than losing it here.
+      // pages carries it on in its next step rather than losing it here.
       if (keepPartial) {
         const outOfTime = error instanceof ReplyStopped && error.stop.reason === "out_of_time";
         return { content, cut: true, outOfTime, stats: outOfTime ? error.stop.stats : reply.stats };
       }
       throw error;
     }
-    // A continuation that opens its own fence anyway would split the page in
-    // two. A part's opening fence carries its name; a bare fence there is the
-    // part's own closing one, and stays.
-    content += reply.content.replace(keepPartial ? /^\s*```[ \t]*html\b[^\n]*\r?\n/i : /^\s*```(?:html)?[ \t]*\r?\n/i, "");
+    // A continuation that opens its own fence anyway would split the page in two.
+    content += reply.content.replace(/^\s*```(?:html)?[ \t]*\r?\n/i, "");
   }
   return { content, cut: reply.truncated, outOfTime: reply.outOfTime, stats: reply.stats };
 }

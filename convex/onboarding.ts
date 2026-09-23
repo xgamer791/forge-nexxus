@@ -22,16 +22,16 @@ import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
 // The watchdog sits just inside an action's ten minutes, so it only ever
 // speaks for a build that died without saying so.
 const WATCHDOG_MS = 570000;
-// Every build is written a page at a time by a crew (buildDraft.ts), each step
-// an action of its own. A step works the crew until this much of its clock has
-// gone; the rest of the action's ten minutes is headroom for saving what the
-// crew wrote and handing on to the next step -- never more words. A reply
-// still going then is saved as far as it got, or asked for again in the next
-// step, and never counted as a miss.
+// A site in pages is more than one reply can write inside an action's ten
+// minutes, so it is written a page at a time (buildDraft.ts), each step an
+// action of its own. A step asks for pages until this much of its clock has
+// gone; a reply still streaming then is cut and saved where it got to, and
+// the rest of the action's ten minutes is headroom for that save and for
+// handing on to the next step -- never more words.
 export const PAGE_STEP_MS = 400000;
-// Another page's crew is started inside the same step only while this much of
-// the step is left. Otherwise the step stops at the page boundary, and the
-// next step starts that page with a whole clock of its own.
+// Another page is started inside the same step only while this much of the
+// step is left. Otherwise the step stops at the page boundary, and the next
+// step starts that page with a whole clock of its own.
 export const PAGE_FLOOR_MS = 180000;
 // While a queued attempt's step runs, its action beats at least this often.
 // An attempt quiet for longer has lost its step: the platform can drop a
@@ -768,6 +768,12 @@ export const NEW_IMAGERY = "Include at least one new subject-relevant photograph
 export function rebuildNote(id: Id<"siteOnboarding">, attempt: number, revision: number) {
   return `This turn is a rebuild: the previous page, its versions, thread and assets are already deleted, so build from the saved answers alone rather than trying to recover any of it. Do not print this line or the identifier on the website.\nRebuild identifier: ${id}/${attempt}/${revision}`;
 }
+
+// What a turn is told when it carries on a reply a step's clock stopped.
+export const CARRY_ON =
+  "Your reply stopped part way through. Continue from the exact character where it stopped. " +
+  "Do not repeat anything already written, do not start the block again, and do not add commentary or open a new code fence. " +
+  "Output only the rest, and close each block's code fence where it ends.";
 
 // sample-business block: a rebuild's invented answers replace the old ones,
 // and the site and its thread take the new name. A stale attempt writes nothing.

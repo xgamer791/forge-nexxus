@@ -3,16 +3,16 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { nextPage, STEP_TRIES } from "./buildDraft";
+import { joinCarry, MOST_RESUMES, nextPage, STEP_TRIES } from "./buildDraft";
 import {
-  AUDITOR, auditorTurn, builderTurn, CARRY_ON, joinCarry, newCrew, nextFor, pageFrom, PART_REWORKS, readAudit, readPart, shellFrom, type CrewPart,
+  AUDITOR, auditorTurn, builderTurn, newCrew, nextFor, pageFrom, PART_REWORKS, readAudit, readPart, shellFrom, type CrewPart,
 } from "./crew";
 import {
   answerDesignResearch, auditCalls, crewCall, DESIGN_FOUNDATION, DESIGN_PROMPT, designPrompt, partReply, resetAuditScript, resetDesignRoutes,
   setAuditScript, setDesignRoutes, storeDesignPackage, verdict, type CrewCall,
 } from "./designWorkerMock";
 import { DESIGN_GOD } from "./designgod";
-import { MOST_RESTARTS, NEW_IMAGERY, PAGE_STEP_MS } from "./onboarding";
+import { CARRY_ON, MOST_RESTARTS, NEW_IMAGERY, PAGE_STEP_MS } from "./onboarding";
 import { QUESTIONS } from "./onboardingQuestions";
 import { MAX_PAGES, pagePlan } from "./pages";
 import { REQUEST_COSTS } from "./plans";
@@ -293,22 +293,15 @@ describe("the crew's pieces", () => {
     expect(reworked.at(-2)).toEqual({ role: "assistant", content: "```html part=\"footer\"\n<footer" });
   });
 
-  test("carrying a part on joins it where it stopped, and never doubles it", () => {
-    const carried = 'Built the opening.\n\n```html part="body1" title="Home"\n<section class="a-open"><h1>Al pastor, carved to order on the trompo';
-    const rest = " every night.</h1></section>\n```";
+  test("carrying a page on joins it where it stopped, and never doubles it", () => {
+    const carried = '```html path="/events" title="Events"\n<section class="events"><h1>Events at El Farolito</h1><p>Every Friday night';
+    const rest = ": live mariachi.</p></section>\n```";
     expect(joinCarry(carried, rest)).toBe(carried + rest);
-    // A fence the model opened again loses its line.
-    expect(joinCarry(carried, `\`\`\`html part="body1" title="Home"\n${rest}`)).toBe(carried + rest);
-    // The part started over from its first line replaces what was there.
-    const over = '<section class="a-open"><h1>Al pastor, carved to order on the trompo every night.</h1></section>\n```';
-    expect(joinCarry(carried, over)).toBe(`Built the opening.\n\n\`\`\`html part="body1" title="Home"\n${over}`);
-    // So does a whole reply started over: its sentence, then the part's fence.
-    const again = `Built the opening again.\n\n\`\`\`html part="body1" title="Home"\n${over}`;
-    expect(joinCarry(carried, again)).toBe(again);
-    // CSS carried on is carried on, not taken for a new reply.
-    const style = '```html part="header"\n<style>.site-header{display:flex;';
-    expect(joinCarry(style, "padding:var(--space-2)}</style><header class=\"site-header\">H</header>\n```"))
-      .toBe(`${style}padding:var(--space-2)}</style><header class="site-header">H</header>\n\`\`\``);
+    // A continuation that opens its fence again loses that line.
+    expect(joinCarry(carried, `\`\`\`html path="/events" title="Events"\n${rest}`)).toBe(carried + rest);
+    // One that starts the block over replaces what was there.
+    const over = '<section class="events"><h1>Events at El Farolito</h1><p>Every Friday night: live mariachi.</p></section>\n```';
+    expect(joinCarry(carried, over)).toBe(`\`\`\`html path="/events" title="Events"\n${over}`);
   });
 
   test("an auditor gets its own instructions, the builders' rules, the reference and the work, never a builder's instructions", () => {
@@ -636,7 +629,7 @@ describe("when a crew cannot go on", () => {
     expect(await brief(t, id)).toMatchObject({ status: "complete" });
   });
 
-  test("a part the step's clock stops while it is being written is kept as far as it got, and carried on from that character", async () => {
+  test("a part the step's clock stopped part way is carried on from that character, not started again", async () => {
     setDesignRoutes(["/"]);
     hold();
     const t = fresh();
@@ -644,6 +637,8 @@ describe("when a crew cannot go on", () => {
     const whole = partReply({ role: "builder", part: "body1", path: "/", round: 0, messages: [] });
     const cut = whole.indexOf("<h1>");
     const opening = whole.slice(0, cut);
+    // What is kept is the part from its opening fence, as a page is.
+    const kept = opening.slice(opening.indexOf("```"));
     const builders = stubProviders((call, init) => {
       if (call.part !== "body1") return said(partReply(call));
       if (call.messages.at(-1)!.content === CARRY_ON) return said(whole.slice(cut));
@@ -652,18 +647,19 @@ describe("when a crew cannot go on", () => {
     const { id, draft } = await toDraft(t, member);
     clockTimers();
 
+    // The step's clock runs out while the top half is being written.
     await t.action(internal.buildDraft.write, { id: draft._id });
     const row = await load(t, draft._id);
     const top = row.crew!.parts.find((each) => each.name === "body1")!;
-    expect(top).toMatchObject({ partial: opening, tries: 0 });
+    expect(top).toMatchObject({ partial: kept, resumes: 1, tries: 0 });
     expect(top.markup).toBeUndefined();
-    expect(row).toMatchObject({ status: "writing", tries: 0 });
+    expect(row).toMatchObject({ status: "writing", tries: 0, lastStop: expect.objectContaining({ reason: "out_of_time", phase: "writing" }) });
     expect(row.lease).toBeUndefined();
     expect(await pending(t)).toContain("buildDraft:write");
     const log = await events(t);
-    expect(log.find((event) => event.phase === "crew_carried")).toMatchObject({
-      label: "Page 1 of 1: saved the top half as far as it got, to carry on from there",
-      detail: expect.objectContaining({ part: "body1", stopReason: "out_of_time", streamPhase: "writing", replyChars: opening.length }),
+    expect(log.find((event) => event.phase === "draft_partial")).toMatchObject({
+      label: "Saved the top half of page 1 of 1 as far as it got: home",
+      detail: expect.objectContaining({ part: "body1", continuation: 1, stopReason: "out_of_time", streamPhase: "writing", replyChars: kept.length }),
     });
     // A kept part is a checkpoint, never a stop.
     expect(log.filter((event) => event.phase === "provider_stop")).toEqual([]);
@@ -674,16 +670,16 @@ describe("when a crew cannot go on", () => {
     await drain(t);
     const tops = builders.filter((call) => call.part === "body1");
     expect(tops).toHaveLength(2);
-    expect(tops[1].messages.slice(-2)).toEqual([{ role: "assistant", content: opening }, { role: "user", content: CARRY_ON }]);
+    expect(tops[1].messages.slice(-2)).toEqual([{ role: "assistant", content: kept }, { role: "user", content: CARRY_ON }]);
     // What the first reply wrote, then the rest: one part, whole.
     const [version] = await versions(t);
     expect(version.pages![0].body.match(/<h1>/g)).toHaveLength(1);
     expect(version.pages![0].body).toContain('<section class="a-open"><h1>first home</h1>');
     expect(await brief(t, id)).toMatchObject({ status: "complete" });
-    expect((await events(t)).map((event) => event.label)).toContain("Page 1 of 1: carrying on the top half from where it stopped");
+    expect((await events(t)).map((event) => event.label)).toContain("Carrying on the top half of page 1 of 1 from where it stopped: home");
   });
 
-  test("a step whose clock runs out before any reply could be kept counts for nothing, however often, and the build lands", async () => {
+  test("a step whose clock runs out while the builders are still thinking is tried again, and the build lands", async () => {
     setDesignRoutes(["/"]);
     hold();
     const t = fresh();
@@ -694,30 +690,46 @@ describe("when a crew cannot go on", () => {
     const { id, draft } = await toDraft(t, member);
     clockTimers();
 
-    // More steps than a build may miss in a row, every one of them ended by
-    // the clock while the builders were still thinking.
-    for (let step = 1; step <= STEP_TRIES + 1; step += 1) {
-      await t.action(internal.buildDraft.write, { id: draft._id });
-      await dropScheduled(t);
-      const row = await load(t, draft._id);
-      expect(row).toMatchObject({ status: "writing", step, tries: 0, lastStop: expect.objectContaining({ reason: "out_of_time", phase: "thinking" }) });
-      expect(row.crew!.parts.every((each) => each.tries === 0 && each.markup === undefined)).toBe(true);
-    }
-    expect(await brief(t, id)).toMatchObject({ status: "building" });
-    const log = await events(t);
-    expect(log.find((event) => event.phase === "crew_clock")).toMatchObject({
-      level: "warn",
-      label: expect.stringMatching(/^(Header|Top-half|Footer) builder: still thinking when its turn ended, so Forge asks again$/),
-    });
-    expect(log.filter((event) => event.phase === "provider_stop" || event.phase === "draft_failed")).toEqual([]);
+    await t.action(internal.buildDraft.write, { id: draft._id });
+    await dropScheduled(t);
+    // A step that finished nothing is a miss, whatever stopped it.
+    expect(await load(t, draft._id)).toMatchObject({ status: "writing", tries: 1, lastStop: expect.objectContaining({ reason: "out_of_time", phase: "thinking" }) });
+    expect((await events(t)).map((event) => event.label))
+      .toContainEqual(expect.stringMatching(/^(Header|Top-half|Footer) builder: the build ran out of time while the model was thinking$/));
 
     slow = false;
     vi.useRealTimers();
     await t.action(internal.buildDraft.write, { id: draft._id });
     await drain(t);
-    expect(await brief(t, id)).toMatchObject({ status: "complete" });
     expect(await load(t, draft._id)).toMatchObject({ status: "done", tries: 0 });
+    expect(await brief(t, id)).toMatchObject({ status: "complete" });
     expect(builders.filter((call) => call.part === "body2")).toHaveLength(1);
+  });
+
+  test("once its tries are spent, a draft whose clock kept running out while the builders thought says so, in the words any build uses", async () => {
+    setDesignRoutes(["/"]);
+    hold();
+    const t = fresh();
+    const member = await createBuilder(t);
+    stubProviders((call, init) => outlivesStep(init, delta({ reasoning_content: `Weigh the ${call.part} against the reference.` })));
+    const { id, draft } = await toDraft(t, member);
+    clockTimers();
+
+    for (let step = 1; step < STEP_TRIES; step += 1) {
+      await t.action(internal.buildDraft.write, { id: draft._id });
+      await dropScheduled(t);
+      expect(await load(t, draft._id)).toMatchObject({ status: "writing", tries: step });
+    }
+    await t.action(internal.buildDraft.write, { id: draft._id });
+    expect(await brief(t, id)).toMatchObject({
+      status: "failed",
+      error: "The model was still thinking your website through when the build ran out of time. Try again. Your answers are saved.",
+    });
+    expect(await holds(t)).toEqual([["generate", "released"]]);
+    expect(await load(t, draft._id)).toMatchObject({ status: "failed", lastStop: expect.objectContaining({ reason: "out_of_time", phase: "thinking" }) });
+    const [run] = await t.run((ctx) => ctx.db.query("buildRuns").collect());
+    expect(run).toMatchObject({ status: "failed", errorClass: "out_of_time" });
+    expect(await versions(t)).toEqual([]);
   });
 
   test("a step the platform lost is started again from the last saved part, and a draft that keeps going quiet stops", async () => {
@@ -768,16 +780,31 @@ describe("when a crew cannot go on", () => {
     expect(await load(t, draft._id)).toMatchObject({ status: "failed", pages: [] });
   });
 
-  test("a draft that has taken its most steps stops rather than going round", async () => {
+  test("a part that keeps stopping part way, or a draft that takes too many steps, stops rather than going round", async () => {
     hold();
     const t = fresh();
     const member = await createBuilder(t);
     const builders = stubProviders();
     const { id, draft } = await toDraft(t, member);
-    await t.run((ctx) => ctx.db.patch(draft._id, { step: FIVE.length * 10 + 2 }));
-    await t.action(internal.buildDraft.write, { id: draft._id });
+    const { lease } = (await t.mutation(internal.buildDraft.claim, { id: draft._id }))!;
+    await t.mutation(internal.buildDraft.muster, { id: draft._id, lease, path: "/" });
+    const opening = '```html part="body1" title="Home"\n<section class="a-open">';
+    for (let resume = 1; resume <= MOST_RESUMES; resume += 1) {
+      expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease, part: "body1", text: `${opening}${"<p>More</p>".repeat(resume)}` }))
+        .toMatchObject({ state: "saved", part: { resumes: resume } });
+    }
+    expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease, part: "body1", text: `${opening}<p>Still going</p>` }))
+      .toEqual({ state: "failed" });
+    expect(await brief(t, id)).toMatchObject({ status: "failed", error: "Your website couldn’t be completed. Your answers are saved. Try building again." });
+    expect((await events(t)).map((event) => event.label)).toContain("Stopped at page 1 of 5: the top half kept stopping part way");
+
+    // A second member's draft that has already taken its most steps.
+    const other = await createBuilder(t);
+    const second = await toDraft(t, other);
+    await t.run((ctx) => ctx.db.patch(second.draft._id, { step: FIVE.length * 4 + 2 }));
+    await t.action(internal.buildDraft.write, { id: second.draft._id });
     expect(builders).toEqual([]);
-    expect(await brief(t, id)).toMatchObject({ status: "failed" });
+    expect(await brief(t, second.id)).toMatchObject({ status: "failed" });
     expect((await events(t)).map((event) => event.label)).toContain("Stopped before every page was written");
   });
 
@@ -814,15 +841,15 @@ describe("when a crew cannot go on", () => {
     expect(await t.mutation(internal.buildDraft.partAudited, { id: draft._id, lease: claimed.lease, part: "header", agree: false, fixes: ["Taller."] }))
       .toMatchObject({ state: "rework", part: { round: 1, fixes: ["Taller."] } });
     const opening = 'Built the opening.\n```html part="body1" title="Home"\n<section class="a-hero"><h1>Al pastor';
-    expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease: "not-mine", part: "body1", text: opening })).toBeNull();
+    expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease: "not-mine", part: "body1", text: opening })).toEqual({ state: "gone" });
     expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease: claimed.lease, part: "body1", text: opening }))
-      .toMatchObject({ name: "body1", partial: opening, tries: 0 });
+      .toMatchObject({ state: "saved", part: { name: "body1", partial: opening, resumes: 1, tries: 0 } });
     const saved = await load(t, draft._id);
     expect(nextPage(saved)).toBe("/");
     const inspected = (await t.query(internal.buildDraft.inspect, {}))[0];
-    expect(inspected).toMatchObject({ status: "writing", routes: FIVE, written: [], crew: { path: "/" } });
+    expect(inspected).toMatchObject({ status: "writing", routes: FIVE, written: [], partial: null, crew: { path: "/" } });
     expect(inspected.crew!.parts[0]).toEqual({ part: "header", agreed: false, round: 1, tries: 0, chars: 18, carried: null, fixes: 1 });
-    expect(inspected.crew!.parts[1]).toEqual({ part: "body1", agreed: false, round: 0, tries: 0, chars: null, carried: opening.length, fixes: 0 });
+    expect(inspected.crew!.parts[1]).toEqual({ part: "body1", agreed: false, round: 0, tries: 0, chars: null, carried: { chars: opening.length, resumes: 1 }, fixes: 0 });
     expect(JSON.stringify(inspected)).not.toContain("<header");
     expect(JSON.stringify(inspected)).not.toContain("Al pastor");
   });

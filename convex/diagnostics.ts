@@ -740,12 +740,12 @@ export const inspectRecent = internalQuery({
 // prompt or a page.
 const STOP_PHASES = new Set([
   "provider_stop", "provider_error", "provider_retry", "provider_resume", "provider_room", "watchdog",
-  // A build written a page at a time: a part kept part way, a reply its step
-  // ended before any of it could be kept, a part whose reply could not be
-  // used, an auditor that sent a part back or ran out of rounds, a quiet step
-  // restarted, a stop. The first two are checkpoints, never stops, and are
-  // here for whoever is asking why a build took the steps it did.
-  "draft_unusable", "draft_rescued", "draft_failed", "crew_carried", "crew_clock", "crew_unusable", "crew_sent_back", "crew_exhausted",
+  // A build written a page at a time: a page kept part way, a reply that
+  // could not be used, a page written again, a quiet step restarted, a stop.
+  "draft_partial", "draft_unusable", "draft_retry", "draft_rescued", "draft_failed",
+  // Its crews: a part that came back unusable, and an auditor that sent a part
+  // back or ran out of rounds.
+  "crew_unusable", "crew_sent_back", "crew_exhausted",
 ]);
 export const inspectStalls = internalQuery({
   args: {},

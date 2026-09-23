@@ -103,7 +103,9 @@ export default defineSchema({
   // builder writes it and again when its auditor answers, and the page is
   // kept only once every auditor agrees it matches the SkillUI Ultra
   // reference. Each step is an action of its own, and the next is queued the
-  // moment one ends. Once every page is here the site lands (designGates,
+  // moment one ends. A reply the step's clock stops part way through a part
+  // is kept as far as it got, and the next step carries it on from that
+  // character. Once every page is here the site lands (designGates,
   // `audited`), and the markup leaves this row.
   buildDrafts: defineTable({
     userId: v.id("users"),
@@ -121,8 +123,8 @@ export default defineSchema({
     // step that finds the site holding any other package writes nothing.
     designId: v.id("siteDesignPackages"),
     designStorageId: v.id("_storage"),
-    // What every step is told the same way: the model the draft began on, and
-    // the member's memory note.
+    // What every step is told the same way: the model the draft began on,
+    // which alone may carry on a page it stopped, and the member's memory note.
     model: v.string(),
     memory: v.optional(v.string()),
     // Every page the discovery agent chose (five at most), home first, and
@@ -155,15 +157,16 @@ export default defineSchema({
         // Why the last reply for this part could not be used.
         problem: v.optional(v.string()),
         // The builder's reply as far as it got when its step's clock stopped
-        // it part way, for the next step to carry on from that character.
+        // it part way, for the next step to carry on from that character, and
+        // the steps that have saved it part way so far.
         partial: v.optional(v.string()),
+        resumes: v.optional(v.number()),
       })),
     })),
     // Retired: a page the old page-at-a-time writer's clock stopped part way.
     // Only drafts from before the crews carry it.
     partial: v.optional(v.object({ path: v.string(), text: v.string(), resumes: v.number() })),
-    // Steps claimed so far, and steps in a row that moved nothing for any
-    // reason but the step's own clock.
+    // Steps claimed so far, and steps in a row that finished nothing.
     step: v.number(),
     tries: v.number(),
     // Why the last reply could not be used, for the next step to put right.

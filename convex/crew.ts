@@ -22,6 +22,7 @@
 import { elided, firstObject, lines, truth } from "./designCheck";
 import { DESIGN_GOD } from "./designgod";
 import { fenceAttr, fencedBlocks } from "./generate";
+import { CARRY_ON } from "./onboarding";
 import { BODY_MARKER, TITLE_MARKER, type SitePage } from "./pages";
 
 type Message = { role: "system" | "user" | "assistant"; content: string };
@@ -46,8 +47,10 @@ export type CrewPart = {
   asked?: string[];
   problem?: string;
   // The builder's reply as far as it got when its step's clock stopped it
-  // part way, which the next step carries on from that character.
+  // part way, which the next step carries on from that character, and how
+  // many steps have saved it part way (MOST_RESUMES, buildDraft.ts).
   partial?: string;
+  resumes?: number;
 };
 export type Crew = { path: string; parts: CrewPart[] };
 
@@ -103,10 +106,6 @@ export function partOf(crew: Crew, name: PartName) {
 const EXTRACT_LIMIT = 90000;
 const PART_LIMIT = 60000;
 const SITE_LIMIT = 80000;
-// The most a builder's reply for one part may run to, carried on or not. A
-// part that is still open past it is not converging on one, and the draft that
-// holds every part, carried or written, has a document size to keep inside.
-export const PART_CEILING = 90000;
 const clip = (text: string, limit: number) =>
   text.length > limit ? `${text.slice(0, limit)}\n<!-- the rest is cut from this view -->` : text;
 const quoteless = (text: string) => text.replace(/"/g, "'");
@@ -310,29 +309,6 @@ export function builderTurn(input: BuilderInput): Message[] {
     messages.push({ role: "user", content: CARRY_ON });
   }
   return messages;
-}
-
-// What a builder is told when it carries on a reply its step's clock stopped.
-export const CARRY_ON =
-  "Your reply stopped part way through. Continue from the exact character where it stopped. " +
-  "Do not repeat anything already written, do not start the part again, and do not add commentary or open a new code fence. " +
-  "Output only the rest, and close the part's code fence where it ends.";
-
-// A reply that carries a part on, joined to where the part stopped. A fence
-// the model opened anyway loses its line. One that started the part over from
-// its first line replaces what was there rather than doubling it, and so does
-// one that started its whole reply over: its sentence, then the part's fence.
-export function joinCarry(carried: string, more: string) {
-  if (/^[^\s<`][^<`]{0,399}```[ \t]*html\b/i.test(more.trimStart())) return more;
-  const rest = more.replace(/^\s*```[ \t]*html\b[^\n]*\r?\n/i, "");
-  const opened = carried.lastIndexOf("```");
-  const lineEnd = opened === -1 ? -1 : carried.indexOf("\n", opened);
-  if (lineEnd !== -1) {
-    const lead = (text: string) => text.replace(/\s+/g, "").slice(0, 60);
-    const before = lead(carried.slice(lineEnd + 1));
-    if (before.length === 60 && lead(rest) === before) return carried.slice(0, lineEnd + 1) + rest;
-  }
-  return carried + rest;
 }
 
 // ---------------------------------------------------------------------------
