@@ -9,7 +9,6 @@ import { designSource, siteParts, withParts, type BuiltSite } from "./pages";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import type { RequestKind } from "./plans";
 import { failOpenRun, openRun, providerTrace, recordLastSign, type ProviderTrace } from "./diagnostics";
-import { needsReview, reviewInFlight } from "./designCheck";
 import { builtSite, callProvider, chatRoute, describe, parseReply } from "./generate";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
@@ -17,6 +16,7 @@ import { inventSample, sampleRebuilds } from "./sampleBusiness";
 import { isAdminEmail } from "./admins";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
+import { assertDesignRules, researchDesign } from "./siteDesign";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
 
 // The words and the pictures share an action's ten minutes. The text gets the
@@ -71,6 +71,11 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
   if (!siteId) return { hashes: [] };
   const site = await ctx.db.get(siteId);
   if (!site || site.userId !== userId) return { hashes: [] };
+  const designPackages = await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
+  for (const design of designPackages) {
+    await ctx.storage.delete(design.storageId);
+    await ctx.db.delete(design._id);
+  }
   const images = await ctx.db.query("siteImages").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
   for (const image of images) {
     await ctx.storage.delete(image.storageId);
@@ -134,9 +139,52 @@ async function queueOnboardingBuild(
     attempt,
     requestKind: "generate",
   });
-  await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
+  await ctx.scheduler.runAfter(0, internal.onboarding.research, { id, attempt });
   await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id, attempt });
 }
+
+// Research has its own action clock. A large reference crawl must not spend
+// the writing action's 480-second budget before the model has even started.
+export const research = internalAction({
+  args: { id: v.id("siteOnboarding"), attempt: v.number() },
+  handler: async (ctx, { id, attempt }): Promise<void> => {
+    const row = await ctx.runQuery(internal.onboarding.load, { id });
+    if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
+    try {
+      const runId = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
+      if (!runId) throw new Error("The build activity log is missing");
+      const trace = providerTrace(ctx, runId, row.userId);
+      let answers = row.answers;
+      if (row.discardedDesignHashes !== undefined && sampleRebuilds()) {
+        await trace.note({ phase: "sample", label: "Inventing a San Antonio business for this rebuild" });
+        const sample = await inventSample(row.answers[0] ?? "");
+        answers = sample.answers;
+        if (!await ctx.runMutation(internal.onboarding.adoptSample, {
+          id, attempt, answers, label: `Answers replaced with ${answers[0]} in ${sample.draw.neighbourhood}`,
+        })) return;
+      }
+      const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
+      const saved = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
+      if (saved && saved.buildEpoch === epoch) {
+        await trace.note({ phase: "research_reused", label: "Using the saved SkillUI design package" });
+      } else {
+        await researchDesign(ctx, {
+          siteId: row.siteId, onboardingId: id, attempt, epoch,
+          offer: answers[1] ?? "", audience: answers[2] ?? "", feel: answers[6] ?? "",
+          references: answers[8] ?? "",
+        }, trace);
+      }
+      const current = await ctx.runQuery(internal.onboarding.load, { id });
+      if (current?.status === "queued" && current.attempt === attempt) {
+        await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
+      }
+    } catch (error) {
+      const reason = describe(error);
+      console.error("Forge design research failed:", reason);
+      await ctx.runMutation(internal.onboarding.expire, { id, attempt, failed: true, reason });
+    }
+  },
+});
 
 // sample-business block: while rebuilds invent their own business, the
 // deployment's admins test without the questions. They stay on the dashboard,
@@ -554,7 +602,7 @@ export const milestone = internalMutation({
 });
 
 const BUILD_ORDER = "This is an onboarding BUILD. Read the attached website-build-brief.md, work privately, and return the finished site now. Do not ask questions, discuss your plan, or reply with planning prose.";
-const BUILD_AGAIN = "Your last reply did not contain a complete website. Return the whole website now: one sentence, then the clones block, then the shell in a ```html shell block that ends with </html>, then each page in its own ```html path=\"/about\" title=\"About\" block, every block closed with its fence. No planning prose, and keep the CSS lean enough to finish.";
+const BUILD_AGAIN = "Your last reply did not contain a complete website. Return the whole website now: one sentence, then the shell in a ```html shell block that ends with </html>, then each page in its own ```html path=\"/about\" title=\"About\" block, every block closed with its fence. No planning prose, and keep the CSS lean enough to finish.";
 const DIFFERENT_BUILD = "The page you returned matched a discarded design and was rejected. Create a genuinely different page composition from the business answers. Start the HTML and CSS again; changing pictures or whitespace is not a new design. Return a complete website now.";
 
 // The page, asked for until it is whole. A reply that talked instead of
@@ -723,19 +771,7 @@ export const build = internalAction({
           status: "started",
       });
       const trace = providerTrace(ctx, runId, row.userId);
-      // sample-business block: a rebuild is built from a new San Antonio
-      // business, invented now and saved over the old answers.
-      let answers = row.answers;
-      if (row.discardedDesignHashes !== undefined && sampleRebuilds()) {
-        await trace.note({ phase: "sample", label: "Inventing a San Antonio business for this rebuild" });
-        const sample = await inventSample(row.answers[0] ?? "");
-        answers = sample.answers;
-        await trace.note({ phase: "sample", label: `Rebuilding as ${answers[0]}: ${sample.draw.trade} in ${sample.draw.neighbourhood}, ${sample.draw.feel.toLowerCase()}` });
-        if (!await ctx.runMutation(internal.onboarding.adoptSample, { id, attempt, answers, label: `Answers replaced with ${answers[0]} in ${sample.draw.neighbourhood}` })) {
-          await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
-          return;
-        }
-      }
+      const answers = row.answers;
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
         url: await ctx.storage.getUrl(asset.storageId), text: asset.type.startsWith("text/") ? (await (await ctx.storage.get(asset.storageId))?.text())?.slice(0, 12000) : undefined })));
       const contents = briefFile(answers, answers === row.answers ? row.strategy ?? "" : "", assets);
@@ -749,6 +785,11 @@ export const build = internalAction({
         await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
         return;
       }
+      const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
+      const savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
+      if (!savedDesign || savedDesign.buildEpoch !== epoch) throw new Error("This site has no current SkillUI design package");
+      const designPrompt = savedDesign.prompt;
+      await trace.note({ phase: "design_loaded", label: "Loaded the saved SkillUI design package" });
       const job = await ctx.runMutation(internal.generate.beginOnboarding, { id, attempt });
       await ctx.runMutation(internal.diagnostics.attach, {
         runId,
@@ -763,6 +804,7 @@ export const build = internalAction({
         detail: { requestKind: job.result.requestKind, host: providerHost, model: route.model, keySet: Boolean(route.apiKey) },
       });
       const page = await writePage([...job.messages,
+        { role: "system", content: designPrompt },
         { role: "system", content: BUILD_ORDER },
         // The identifier only keeps one rebuild's prompt from being byte-identical
         // to the last. What a rebuild owes the member is FORGE_MD's rule, not this.
@@ -771,6 +813,9 @@ export const build = internalAction({
         { role: "user", content: `File: website-build-brief.md\n\n${brief}` },
       ], deadline, trace, row.discardedDesignHashes,
       row.discardedDesignHashes !== undefined ? { requireImages: Boolean(imageRoute().apiKey) } : undefined);
+      const design = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
+      if (!design || design.buildEpoch !== epoch) throw new Error("The saved design package disappeared during the build");
+      assertDesignRules(page.site, design.referenceUrl);
       const build = {
         id,
         attempt,
@@ -781,30 +826,6 @@ export const build = internalAction({
         summary: page.summary,
         clones: page.clones,
       };
-      // The header, the menu and the footer go to the design reviewer before
-      // anything is saved. This action ends here and the check carries the
-      // site on; `finishOnboardingBuild` is where it lands once the reviewer
-      // agrees.
-      if (await needsReview("generate", null, page.site)) {
-        await ctx.runMutation(internal.designReview.open, {
-          source: "onboarding",
-          userId: row.userId,
-          siteId: row.siteId,
-          runId,
-          assistantId: job.result.assistantId,
-          holdId: job.result.holdId,
-          requestKind: job.result.requestKind,
-          epoch: job.result.epoch,
-          onboardingId: id,
-          attempt,
-          rebuild: build.rebuild,
-          siteName: answers[0] || "This website",
-          ...page.site,
-          summary: page.summary,
-          clones: page.clones,
-        });
-        return;
-      }
       await finishOnboardingBuild(ctx, trace, { ...build, site: page.site });
     } catch (error) {
       // What stopped the build is what the member reads, in the same words the
@@ -820,22 +841,12 @@ export const build = internalAction({
 export const expire = internalMutation({
   args: { id: v.id("siteOnboarding"), attempt: v.number(), failed: v.optional(v.boolean()), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    // No reason and no failure is the watchdog. A build the design reviewer is
-    // checking outlives it, because each step of the check is an action of its
-    // own: while the check is moving the watchdog waits for it, and once it
-    // has gone quiet for longer than a step can run, the watchdog speaks.
     if (!args.reason && !args.failed) {
-      const review = await ctx.db
-        .query("designReviews")
-        .withIndex("by_onboarding_attempt", (q) => q.eq("onboardingId", args.id).eq("attempt", args.attempt))
-        .order("desc")
-        .first();
-      if (reviewInFlight(review)) {
-        await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id: args.id, attempt: args.attempt });
+      const row = await ctx.db.get(args.id);
+      if (row?.attempt === args.attempt && isActiveBuild(row.status) && Date.now() - row.updatedAt < WATCHDOG_MS) {
+        await ctx.scheduler.runAfter(Math.max(1000, WATCHDOG_MS - (Date.now() - row.updatedAt)),
+          internal.onboarding.expire, { id: args.id, attempt: args.attempt });
         return;
-      }
-      if (review?.status === "checking" || review?.status === "revising") {
-        await ctx.db.patch(review._id, { status: "failed", error: "The build stopped responding.", html: undefined, shell: undefined, pages: undefined, updatedAt: Date.now() });
       }
     }
     await stopAttempt(ctx, args);

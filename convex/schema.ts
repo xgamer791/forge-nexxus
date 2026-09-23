@@ -20,6 +20,18 @@ export default defineSchema({
     prompt: v.string(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
+  // One retained SkillUI ultra reference per site. New pages read prompt from
+  // this row; the complete visual package lives in Convex file storage.
+  siteDesignPackages: defineTable({
+    userId: v.id("users"),
+    siteId: v.id("sites"),
+    storageId: v.id("_storage"),
+    referenceUrl: v.string(),
+    prompt: v.string(),
+    inspectedPages: v.number(),
+    buildEpoch: v.number(),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
   siteOnboarding: defineTable({
     userId: v.id("users"),
     siteId: v.optional(v.id("sites")),
@@ -259,6 +271,7 @@ export default defineSchema({
     status: v.union(
       v.literal("queued"),
       v.literal("started"),
+      v.literal("researching"),
       v.literal("calling"),
       v.literal("reviewing"),
       v.literal("images"),
@@ -335,6 +348,11 @@ export default defineSchema({
       completionTokens: v.optional(v.number()),
       reasoningTokens: v.optional(v.number()),
       providerError: v.optional(v.string()),
+      city: v.optional(v.string()),
+      page: v.optional(v.number()),
+      total: v.optional(v.number()),
+      mode: v.optional(v.string()),
+      screens: v.optional(v.number()),
       loopRepeats: v.optional(v.number()),
       // Which round of the design check an event belongs to.
       round: v.optional(v.number()),

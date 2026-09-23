@@ -1134,6 +1134,8 @@ function saveSiteCode(site, files) {
 if (forge?.sites && siteList && thread) {
   let activeId = null;
   let stopMessages = null;
+  let visibleMessages = [];
+  let buildTrace = null;
   try { activeId = localStorage.getItem('forge-conversation'); } catch { /* Private mode starts on a fresh thread. */ }
 
   function rememberActive(id) {
@@ -1245,6 +1247,7 @@ if (forge?.sites && siteList && thread) {
     }));
   }
   function renderThread(messages) {
+    visibleMessages = messages;
     thread.replaceChildren(...messages.flatMap(message => {
       const row = document.createElement('div');
       row.className = `message message-${message.role}`;
@@ -1262,11 +1265,37 @@ if (forge?.sites && siteList && thread) {
       if (!said) return [];
       body.textContent = said;
       row.append(body);
+      const latest = buildTrace?.latest;
+      if (message.status === 'pending' && latest?.messageId === message._id &&
+          latest.conversationId === activeId && buildTrace.events?.length) {
+        const activity = document.createElement('details');
+        activity.className = 'build-activity';
+        activity.open = true;
+        const heading = document.createElement('summary');
+        heading.textContent = 'Build activity';
+        const list = document.createElement('ol');
+        for (const event of buildTrace.events.slice(-12)) {
+          const item = document.createElement('li');
+          const time = document.createElement('time');
+          time.dateTime = new Date(event.at).toISOString();
+          time.textContent = new Date(event.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+          const label = document.createElement('span');
+          label.textContent = event.label;
+          item.append(time, label);
+          list.append(item);
+        }
+        activity.append(heading, list);
+        row.append(activity);
+      }
       return [row];
     }));
     app.classList.toggle('has-thread', messages.length > 0);
     thread.scrollTop = thread.scrollHeight;
   }
+  forge.diagnostics?.subscribe(next => {
+    buildTrace = next;
+    if (visibleMessages.some(message => message.status === 'pending')) renderThread(visibleMessages);
+  });
   // The composer builds into the open site. Its name still fills the preview
   // header; the bar that used to sit above the prompt is gone.
   function renderSiteBar() {

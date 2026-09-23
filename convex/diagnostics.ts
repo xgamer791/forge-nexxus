@@ -23,6 +23,7 @@ const sourceValidator = v.union(
 const statusValidator = v.union(
   v.literal("queued"),
   v.literal("started"),
+  v.literal("researching"),
   v.literal("calling"),
   v.literal("reviewing"),
   v.literal("images"),
@@ -69,6 +70,11 @@ const detailValidator = v.object({
   completionTokens: v.optional(v.number()),
   reasoningTokens: v.optional(v.number()),
   providerError: v.optional(v.string()),
+  city: v.optional(v.string()),
+  page: v.optional(v.number()),
+  total: v.optional(v.number()),
+  mode: v.optional(v.string()),
+  screens: v.optional(v.number()),
   loopRepeats: v.optional(v.number()),
   round: v.optional(v.number()),
 });
@@ -149,6 +155,11 @@ export type EventDetail = {
   reasoningTokens?: number;
   providerError?: string;
   loopRepeats?: number;
+  city?: string;
+  page?: number;
+  total?: number;
+  mode?: string;
+  screens?: number;
   // Which round of the design check an event belongs to.
   round?: number;
 };
@@ -162,6 +173,7 @@ export type ProviderTrace = {
     status?:
       | "queued"
       | "started"
+      | "researching"
       | "calling"
       | "reviewing"
       | "images"
@@ -198,7 +210,7 @@ export function classifyError(reason: string) {
 type OpenArgs = {
   userId: Id<"users">;
   source: "generate" | "onboarding" | "rebuild";
-  status?: "queued" | "started" | "calling" | "reviewing" | "images" | "saving" | "complete" | "failed";
+  status?: "queued" | "started" | "researching" | "calling" | "reviewing" | "images" | "saving" | "complete" | "failed";
   siteId?: Id<"sites">;
   conversationId?: Id<"conversations">;
   onboardingId?: Id<"siteOnboarding">;
@@ -561,6 +573,7 @@ function publicRun(row: {
   status:
     | "queued"
     | "started"
+    | "researching"
     | "calling"
     | "reviewing"
     | "images"

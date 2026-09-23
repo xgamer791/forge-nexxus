@@ -521,6 +521,12 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .build-page.is-failed .build-part.is-drawing::after{animation:none;clip-path:inset(0 50% 0 0)}
 .build-page.is-arriving .build-part::after{animation:build-ink .7s cubic-bezier(.22,1,.36,1) calc(var(--order) * 70ms) both}
 .build-status{margin:14px auto 0;font-size:17px;line-height:24px;font-weight:500;color:var(--text)}
+.build-activity{max-width:34rem;margin:24px auto;text-align:left;border-top:1px solid var(--border);padding-top:12px;color:var(--text)}
+.build-activity summary{cursor:pointer;font-size:14px;font-weight:600;list-style-position:inside}
+.build-activity ol{list-style:none;margin:12px 0 0;padding:0;max-height:13rem;overflow-y:auto}
+.build-activity li{display:flex;gap:12px;align-items:baseline;padding:6px 0;font-size:15px;line-height:1.45;border-bottom:1px solid var(--border)}
+.build-activity time{flex:0 0 5.3rem;color:var(--muted)}
+.build-activity li span{min-width:0;overflow-wrap:anywhere}
 .onboarding-hint.build-note{margin:6px auto 20px;font-size:15px;line-height:22px;text-wrap:balance}
 .onboarding-connection{color:var(--danger);font-size:14px;line-height:22px}
 /* The hand-off: the address Forge gave the finished site is the one loud thing

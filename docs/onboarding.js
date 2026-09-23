@@ -71,6 +71,10 @@ const ENABLED = true;
   // is not finished until the header, menu and footer pass it.
   function buildStage(draft, events) {
     const phase = belongsToDraft(draft) ? trace?.latest?.status : null;
+    if (phase === 'researching') {
+      const latestResearch = [...events].reverse().find(event => event.phase?.startsWith('research_'));
+      return { step: 1, label: latestResearch?.label || 'Researching design references…' };
+    }
     if (draft.status === 'queued' || phase === 'queued') return { step: 1, label: 'Waiting for the build to start…' };
     if (draft.status === 'saving' || phase === 'saving') return { step: 4, label: 'Saving your website…' };
     if (phase === 'images') return { step: 3, label: 'Making the pictures…' };
@@ -99,7 +103,13 @@ const ENABLED = true;
   }
   // A new stage repaints the drawing where it stands rather than replacing the
   // screen, so the part being drawn carries on instead of starting over.
-  function updateBuild(stage) {
+  function buildActivity(events) {
+    const recent = events.filter(event => event.label && event.phase !== 'queued').slice(-12);
+    return `<details class="build-activity" open><summary>Build activity</summary><ol>${recent.map(event =>
+      `<li><time datetime="${new Date(event.at).toISOString()}">${new Date(event.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time><span>${escape(event.label)}</span></li>`
+    ).join('')}</ol></details>`;
+  }
+  function updateBuild(stage, events) {
     const page = screen.querySelector('.build-page');
     const status = screen.querySelector('.build-status');
     if (!page || !status) return false;
@@ -111,6 +121,13 @@ const ENABLED = true;
     page.setAttribute('aria-valuenow', String(Math.min(stage.step - 1, 4)));
     page.setAttribute('aria-valuetext', stage.label);
     if (status.textContent !== stage.label) status.textContent = stage.label;
+    const activity = screen.querySelector('.build-activity');
+    if (activity) {
+      const replacement = document.createElement('div');
+      replacement.innerHTML = buildActivity(events);
+      const next = replacement.firstElementChild;
+      if (next) activity.querySelector('ol').replaceWith(next.querySelector('ol'));
+    }
     return true;
   }
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -261,7 +278,7 @@ const ENABLED = true;
     const building = !done && !failed;
     const stage = buildStage(draft, events);
     // Still building, and this build is already on screen: move the drawing on.
-    if (building && screen.querySelector(`.onboarding-loading[data-build-live="${draft.id}"]`) && updateBuild(stage)) {
+    if (building && screen.querySelector(`.onboarding-loading[data-build-live="${draft.id}"]`) && updateBuild(stage, events)) {
       rendered = key;
       return;
     }
@@ -284,6 +301,7 @@ const ENABLED = true;
       ${page}<h1 tabindex="-1">${title}</h1>
       ${building ? `<p class="build-status" role="status">${escape(stage.label)}</p>` : ''}
       <p class="onboarding-hint${building ? ' build-note' : ''}">${escape(detail)}</p>
+      ${building || failed ? buildActivity(events) : ''}
       ${building ? '<button type="button" class="onboarding-exit onboarding-quiet onboarding-cancel" data-onboarding-action="cancel">Cancel</button>' : ''}
       <p class="onboarding-connection" role="status" ${offline ? '' : 'hidden'}>Connection lost. Reconnecting to live progress…</p>
       ${done ? handoff(site) : failed ? `<button type="button" class="onboarding-primary" data-onboarding-action="retry">Try building again</button>
