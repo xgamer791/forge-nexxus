@@ -99,13 +99,11 @@ pages moves between them.
 
 What those pages are is decided by the brief, not by a fixed running order.
 Every job the member picks in *What does your website need to do?* gets a real
-home on the site: someone who sells products gets a products page or section,
-one who takes bookings gets a booking one. The surface is built even though no
-payment, calendar or form delivery sits behind it yet — a shop with no checkout
-is still a shop — and its actions lead somewhere true: the contact page, an
-anchor on the page, or a store link the brief supplies. What is not wired up is never drawn
-as though it worked: no cart, no checkout, no confirmed order or signed-in
-account, and no invented price, stock count or review.
+home on the site: someone who sells products gets a storefront with its cart
+and checkout, someone who takes bookings gets a booking flow, and forms,
+payments, member accounts and third-party integrations can be built whenever
+the brief calls for them. Published sites and previews both run their scripts
+and can connect to external services.
 
 The instructions that produce all this are split so nothing contradicts: the
 build contract in `convex/generate.ts` owns output format and page structure,

@@ -137,21 +137,22 @@ export function wantsImages(html: string) {
 // It takes the site as the flat strings `siteParts` gives out -- the one
 // document of an older build, or a shell and each page's markup -- and looks
 // at them together: a picture asked for in the shell is one picture however
-// many pages show it, the limit is one limit for the site, and the same tag
-// on two pages costs one call. Each string comes back changed in place.
+// many pages show it, and the same tag on two pages costs one call. Every
+// distinct requested picture is attempted. Each string comes back changed in
+// place.
 export async function fulfilImages(
   ctx: ActionCtx,
-  { parts, userId, siteId, epoch, limit }: { parts: string[]; userId: Id<"users">; siteId: Id<"sites">; epoch: number; limit: number },
+  { parts, userId, siteId, epoch }: { parts: string[]; userId: Id<"users">; siteId: Id<"sites">; epoch: number },
 ) {
   const html = parts.join("\n");
   if (!wantsImages(html)) return { parts, wanted: 0, made: 0 };
   const tags = [...new Set(html.match(IMG_TAG) ?? [])].filter(
     (tag) => attribute(tag, "data-forge-image") !== null || /^forge-image:/i.test(attribute(tag, "src") ?? ""),
   );
-  const jobs = tags.map((tag, index) => {
+  const jobs = tags.map((tag) => {
     const prompt = decode(attribute(tag, "data-forge-image") || attribute(tag, "alt") || "").slice(0, PROMPT_LIMIT);
     const asked = attribute(tag, "data-forge-aspect") ?? "";
-    return { tag, prompt, aspect: ASPECTS.has(asked) ? asked : DEFAULT_ASPECT, run: index < limit && Boolean(prompt) };
+    return { tag, prompt, aspect: ASPECTS.has(asked) ? asked : DEFAULT_ASPECT, run: Boolean(prompt) };
   });
   const sources = await Promise.all(
     jobs.map(async (job) => {

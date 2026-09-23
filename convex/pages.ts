@@ -125,8 +125,8 @@ export function hasPages(site: BuiltSite): site is BuiltSite & { shell: string; 
 
 // The markup a build is made of, as flat strings. Pictures are asked for in
 // markup, and a picture asked for in the shell belongs to every page, so the
-// whole site is fulfilled in one pass rather than page by page: one image
-// limit for the site, and a repeated tag costs one picture, not one per page.
+// whole site is fulfilled in one pass rather than page by page: a repeated
+// tag costs one picture, not one per page.
 export function siteParts(site: BuiltSite): string[] {
   if (hasPages(site)) return [site.shell, ...site.pages.map((page) => page.body)];
   return site.html === undefined ? [] : [site.html];

@@ -192,7 +192,8 @@ describe("publishing", () => {
     const served = await t.fetch("/sites/bakery-on-main");
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toContain("text/html");
-    expect(served.headers.get("content-security-policy")).toContain("default-src 'none'");
+    // No policy is sent: a published page runs its scripts and submits its forms.
+    expect(served.headers.get("content-security-policy")).toBe(null);
     // Every plan that has an address also takes the badge off, so what is
     // served is the build itself.
     expect(await served.text()).toBe(PAGE);

@@ -19,7 +19,7 @@ const modules = readdirSync(new URL(".", here))
 // `forgeMd.ts` is not here: it writes nothing, it supplies the text these
 // three wrap, which is what makes it the single place design lives.
 const WRITERS = {
-  "generate.ts": "the platform contract: reply format, one document, no JavaScript, image markers",
+  "generate.ts": "the platform contract: reply format, shell and pages, what a published page can run, image markers",
   "onboarding.ts": "build/retry mechanics and the saved brief",
   "memory.ts": "what Forge remembers, carried as untrusted content",
 };
@@ -75,8 +75,8 @@ describe("only the sanctioned files steer the agent", () => {
       generate.indexOf("// What the thread shows while the request runs"),
     );
     // Room for the format, the platform constraints, the image markers and the
-    // two guardrails that are not design (addresses/plans, safety); not for a
-    // second opinion on how a page should look.
+    // address/plan behaviour; not for a second opinion on how a page should
+    // look.
     expect(contract.length).toBeLessThan(6000);
     // Words that decide appearance rather than describe the platform. Each one
     // was in this function before the design files took the job back.

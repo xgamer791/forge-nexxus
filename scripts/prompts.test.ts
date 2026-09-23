@@ -10,6 +10,8 @@ import { FORGE_MD } from "../convex/forgeMd";
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const generate = read("convex/generate.ts");
 const onboarding = read("convex/onboarding.ts");
+const onboardingQuestions = read("convex/onboardingQuestions.ts");
+const images = read("convex/images.ts");
 // What the build turn actually sends: the three prompt files and the
 // build contract inside systemPrompt().
 const contract = generate.slice(
@@ -62,24 +64,23 @@ describe("one instruction, in one place", () => {
     expect(FORGE_MD).not.toMatch(/\bcards?\b/);
   });
 
-  test("the site covers the job the brief names, including selling", () => {
-    expect(FORGE_MD).toContain("What the site must cover");
-    expect(FORGE_MD).toContain("a products section is required");
-    expect(contract).toContain("A business that sells products gets a products section");
-    expect(onboarding).toContain("Build a section for every job the brief says the site has to do");
-    expect(stack).not.toMatch(/do not imply that bookings, payments, accounts or form delivery work/i);
-    expect(stack).not.toMatch(/Do not imply unconnected commerce/i);
-    expect(onboarding).not.toMatch(/Do not imply unconnected commerce/i);
+  test("commerce, accounts, forms and integrations are unrestricted", () => {
+    expect(contract).toContain("carts, checkout, payments, bookings, authentication and form submission");
+    expect(onboardingQuestions).toContain("Build every feature and integration the brief calls for");
+    for (const source of [generate, onboarding, onboardingQuestions]) {
+      expect(source).not.toMatch(/Never render a cart|Do not pretend payments|Never invent (?:business facts|missing business facts)|SAFETY —/i);
+    }
   });
 
-  test("what is not wired up is never shown as working", () => {
-    expect(contract).toContain("Never render a cart, a checkout, a payment form");
-    expect(FORGE_MD).toContain("Never invent a price");
+  test("every requested picture is attempted without a build or edit cap", () => {
+    expect(generate).toContain("There is no per-build or per-edit image limit");
+    expect(generate).not.toMatch(/BUILD_IMAGE_LIMIT|EDIT_IMAGE_LIMIT|imageLimit/);
+    expect(images).not.toMatch(/index\s*<\s*limit/);
   });
 });
 
 describe("the brief collects what a shop needs", () => {
-  test("the last question asks for the catalogue, and prices come only from it", async () => {
+  test("the last question asks for the catalogue without limiting generated pricing", async () => {
     const { QUESTIONS, FINAL_STEP } = await import("../convex/onboardingQuestions");
     const catalogue = QUESTIONS[FINAL_STEP];
     expect(catalogue.id).toBe("catalogue");
@@ -88,7 +89,7 @@ describe("the brief collects what a shop needs", () => {
     expect(QUESTIONS[0].id).toBe("name");
     expect(QUESTIONS[1].id).toBe("offer");
     expect(QUESTIONS[9].id).toBe("content");
-    expect(FORGE_MD).toContain("What do you sell, and what does it cost?");
+    expect(catalogue.hint).toContain("Add prices or any other details you want featured");
   });
 
   test("no step index is hardcoded", () => {
@@ -96,6 +97,16 @@ describe("the brief collects what a shop needs", () => {
     expect(read("convex/onboarding.ts")).not.toMatch(/step [!=]== 9|, 9\)/);
     expect(client).not.toMatch(/step [!=]== 9/);
     expect(client).toContain("lastStep()");
+  });
+});
+
+describe("the preview runs the generated site without iframe restrictions", () => {
+  test("both app surfaces omit the sandbox attribute", () => {
+    for (const path of ["docs/index.html", "wordpress/page-app.php"]) {
+      const surface = read(path);
+      expect(surface).toContain('data-preview-frame referrerpolicy="no-referrer"');
+      expect(surface).not.toMatch(/data-preview-frame[^>]*\bsandbox=/);
+    }
   });
 });
 
@@ -107,12 +118,12 @@ describe("nothing claims to know which model is running", () => {
   test("the contract reads the label off the turn's own route", () => {
     expect(contract).toContain("this turn runs on ${chatRoute(purpose).label}");
     expect(contract).not.toMatch(/\$\{chatRoute\(\)\.label\}/);
-    expect(generate).toContain('function systemPrompt(imageLimit: number, purpose: "chat" | "build")');
+    expect(generate).toContain('function systemPrompt(purpose: "chat" | "build")');
   });
 
   test("a custom domain is not promised to every paid member", () => {
-    expect(FORGE_MD).toContain("not every paid plan carries");
-    expect(FORGE_MD).not.toMatch(/Paid users .*may connect their own custom domain/);
+    expect(contract).toContain("not every plan carries");
+    expect(contract).not.toMatch(/Paid users .*may connect their own custom domain/);
   });
 });
 
@@ -154,8 +165,8 @@ describe("the contract sets a floor, not a mould", () => {
     expect(contract).not.toMatch(/a header with the name and a nav/i);
     expect(contract).not.toMatch(/appears in the hero, again after the offer/i);
     expect(contract).not.toMatch(/then a closing call to action/i);
-    expect(contract).toContain("The page's shape is yours to decide from this business");
-    expect(contract).toContain("Two businesses must not come out with the same skeleton");
+    expect(DESIGN_GOD).toContain("Let the content decide the shape");
+    expect(FORGE_MD).toContain("Nothing here prescribes an opening, a layout, a palette or a type treatment");
   });
 
   test("the quality floor is still stated outright, where design and behaviour live", () => {
@@ -175,7 +186,9 @@ describe("the contract sets a floor, not a mould", () => {
   });
 
   test("a phone menu works without a script, and the Menu dropdown is the default", () => {
-    expect(DESIGN_GOD).toContain("A published site runs no scripts");
+    expect(DESIGN_GOD).toContain("A phone menu that opens with CSS keeps working if a script fails to load");
+    // Published sites run scripts now; nothing may tell the agent otherwise.
+    expect(DESIGN_GOD).not.toMatch(/runs no scripts/);
     expect(DESIGN_GOD).toContain("a Menu button that opens a dropdown is the reliable default below 768px wide");
     expect(DESIGN_GOD).not.toMatch(/wrap or scroll sideways/);
     // The checkbox pattern is kept as a working reference.
@@ -206,8 +219,8 @@ describe("the contract sets a floor, not a mould", () => {
     expect(FED).toContain("warm cream background");
   });
 
-  test("forgeMd gives the skeleton to the skill", () => {
-    expect(FORGE_MD).toContain("the skeleton is the skill's to invent for this business");
-    expect(FORGE_MD).not.toMatch(/decide those two things/);
+  test("forgeMd leaves visual design to the design sources", () => {
+    expect(FORGE_MD).toContain("Nothing here decides how anything looks");
+    expect(FORGE_MD).toContain("Nothing here prescribes an opening, a layout, a palette or a type treatment");
   });
 });
