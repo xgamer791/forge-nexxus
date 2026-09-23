@@ -1,57 +1,67 @@
-// The layout check, run as a chain of its own actions. A build parks its site
-// here instead of saving it. The design worker renders every page at phone,
-// tablet and desktop widths, measures it the way it measured the site's design
-// reference, and compares the two region by region: the whole page, the
-// header, the opened menu, the body and the footer (design-worker/layout.mjs,
-// THRESHOLDS). No model judges anything here.
+// The design audit, run as a chain of its own actions. A build parks its site
+// here instead of saving it, and it is saved only once the design auditors
+// (crew.ts) agree it matches the site's SkillUI Ultra design reference.
 //
-// A site that passes is saved exactly as it would have been without the check,
-// pictures and all. One that does not goes back to the builder with the
-// measured differences, and the rework is checked again from the start. After
-// three reworks, or when the check cannot run at all, nothing is saved and the
-// credits go back.
+// - A first build or a rebuild arrives `audited`: every part of every page
+//   already has its own auditor's agreement from the crew that wrote it
+//   (buildDraft.ts), so it goes straight to being saved.
+// - An edit made in the thread is audited here. Every part it changed gets its
+//   auditor -- the header and footer when the shell changed, the top and
+//   bottom halves of each page whose markup changed -- and a site any of them
+//   does not agree to goes back to the builder with their fixes, and the
+//   rework is audited again from the start. After three reworks, or when the
+//   auditors cannot run at all, nothing is saved and the credits go back.
 //
-// The check runs before the pictures are made: the worker stands in a box of
-// the requested shape for every picture, and a mask never reads a picture's
-// content, so the pictures are paid for once and only for a site that passed.
-// Each step is its own action, so a build and several rounds of checking are
-// never inside one ten-minute clock. The thread's and onboarding's watchdogs
-// wait while a check is moving and speak for it once it has gone quiet.
+// The audit runs before the pictures are made: an auditor judges a picture's
+// slot, never what it shows, so the pictures are paid for once and only for a
+// site that passed. Each step is its own action, so a build and several
+// rounds of auditing are never inside one ten-minute clock. The thread's and
+// onboarding's watchdogs wait while an audit is moving and speak for it once
+// it has gone quiet.
 import { v, type ObjectType } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { releaseHold } from "./billing";
+import { auditorTurn, isChrome, PART_AGENTS, PART_NAMES, PARTS, readAudit, type AuditInput, type PartName } from "./crew";
 import { elided, lostPageStyles } from "./designCheck";
 import { closeRun, providerTrace, type ProviderTrace } from "./diagnostics";
 import { builtSite, callProvider, describe, designAgentTurn, finishThreadBuild, parseReply, parseShellReply } from "./generate";
 import { finishOnboardingBuild, stopAttempt } from "./onboarding";
-import { BODY_MARKER, composePage, hasPages, normalizePath, type BuiltSite } from "./pages";
+import { BODY_MARKER, hasPages, normalizePath, pagePlan, type BuiltSite } from "./pages";
 import { requestKind } from "./plans";
-import { assertDesignRules, auditDesign, isMeasured, NOT_MEASURED, type AuditOutcome } from "./siteDesign";
+import { assertDesignRules, isSkillUI, NOT_EXTRACTED } from "./siteDesign";
 
-// Reworks a build gets before it stops: round 1 is the first check, so the
-// fourth check is the last.
+// Reworks a build gets before it stops: round 1 is the first audit, so the
+// fourth audit is the last.
 const REWORKS = 3;
-// Steps in a row that may come back with nothing to use -- a check that could
+// Steps in a row that may come back with nothing to use -- an audit that could
 // not run, or a rework that could not be used -- before the build stops.
 const MOST_TROUBLE = 2;
-// A worker that could not answer gets a moment before it is asked again.
+// Auditors that could not answer get a moment before they are asked again.
 const RETRY_CHECK_MS = 15000;
 const KEEP_GATES = 20;
-// The measured differences a rework is given, at most.
+// The auditors' fixes a rework is given, at most.
 const FIXES_CHARS = 40000;
+// Auditors at work at once -- every part of a five-page edit in one wave --
+// and the times one is asked for a verdict it can read before the audit
+// counts as one that could not run. Nothing here is timed: an auditor is
+// stopped only by what its stream shows (generate.ts, `complete`).
+const AUDITORS_AT_ONCE = 12;
+const VERDICT_TRIES = 2;
+// The shell an auditor of a page's body is shown beside it, at most.
+const SHELL_CONTEXT = 40000;
 
-// What the member reads while the check runs, in the thread and in the
+// What the member reads while the audit runs, in the thread and in the
 // progress screen's log.
-const CHECKING = "Checking the layout against the design reference…";
-const REWORKING = "Reworking the layout to match the design reference…";
-const CHECKING_EVENT = "Checking the layout against the design reference";
-const SENT_BACK = "Layout sent back for changes";
-const PASSED = "Layout passed the design check";
-const COULD_NOT_CHECK = "The layout check couldn't run, so this build wasn't saved and your credits were returned. Try again.";
-const COULD_NOT_REWORK = "The builder couldn't rework the layout, so this build wasn't saved and your credits were returned. Try again.";
-const OUT_OF_ROUNDS = "The layout still didn't match the design reference after three rounds of changes, so this build wasn't saved and your credits were returned. Try again.";
+const CHECKING = "Checking the change against the design reference…";
+const REWORKING = "Making the auditors' changes…";
+const CHECKING_EVENT = "Checking the design against the reference";
+const SENT_BACK = "Design sent back for changes";
+const PASSED = "Every page matched the design reference";
+const COULD_NOT_CHECK = "The design auditors couldn't check this change, so it wasn't saved and your credits were returned. Try again.";
+const COULD_NOT_REWORK = "The builder couldn't make the auditors' changes, so this change wasn't saved and your credits were returned. Try again.";
+const OUT_OF_ROUNDS = "Your site still didn't match the design reference after three rounds of changes, so this change wasn't saved and your credits were returned. Try again.";
 
 const pageValidator = v.object({ path: v.string(), title: v.string(), body: v.string() });
 const siteFields = {
@@ -65,15 +75,6 @@ type Gate = Doc<"designGates">;
 
 function siteOf(gate: Gate): BuiltSite {
   return hasPages(gate) ? { shell: gate.shell, pages: gate.pages } : { html: gate.html };
-}
-
-// Every page as it would be served, for the worker to render.
-function auditPages(site: BuiltSite) {
-  if (!hasPages(site)) return [{ path: "/", html: site.html ?? "" }];
-  return site.pages.map((page) => {
-    const path = normalizePath(page.path) ?? page.path;
-    return { path, html: composePage(site, path) ?? "" };
-  });
 }
 
 // Whether the build is still waiting on this check: its credits still held,
@@ -146,9 +147,11 @@ const openArgs = {
   blockedNote: v.optional(v.string()),
   ...siteFields,
   summary: v.string(),
+  // Every page already has its auditors' agreement (buildDraft.ts).
+  audited: v.optional(v.boolean()),
 };
 
-// Parks a build's site for the check and starts the first round. A build
+// Parks a build's site for the audit and starts the first round. A build
 // written a page at a time (buildDraft.ts) comes here from inside the same
 // transaction that closes its draft, so a site can never be handed on twice.
 export async function openGate(ctx: MutationCtx, args: ObjectType<typeof openArgs>) {
@@ -164,7 +167,7 @@ export async function openGate(ctx: MutationCtx, args: ObjectType<typeof openArg
     createdAt: now,
     updatedAt: now,
   });
-  await tell(ctx, (await ctx.db.get(gateId))!, "checking");
+  if (!args.audited) await tell(ctx, (await ctx.db.get(gateId))!, "checking");
   await ctx.scheduler.runAfter(0, internal.designGate.check, { id: gateId });
   return gateId;
 }
@@ -194,11 +197,11 @@ export const claim = internalMutation({
   },
 });
 
-// A round's scores, and what follows from them: through to the save, back to
+// A round's verdicts, and what follows from them: through to the save, back to
 // the builder, or out of reworks.
 export const judged = internalMutation({
-  args: { id: v.id("designGates"), passed: v.boolean(), fixes: v.array(v.string()), lowest: v.number(), failing: v.array(v.string()) },
-  handler: async (ctx, { id, passed, fixes, lowest, failing }): Promise<"passed" | "reworking" | "exhausted" | "gone"> => {
+  args: { id: v.id("designGates"), passed: v.boolean(), fixes: v.array(v.string()), failing: v.array(v.string()) },
+  handler: async (ctx, { id, passed, fixes, failing }): Promise<"passed" | "reworking" | "exhausted" | "gone"> => {
     const gate = await ctx.db.get(id);
     if (!gate || gate.status !== "checking") return "gone";
     if (!(await stillWaiting(ctx, gate))) {
@@ -206,7 +209,7 @@ export const judged = internalMutation({
       return "gone";
     }
     const now = Date.now();
-    const results = [...gate.results, { round: gate.round, passed, lowest, failing: failing.slice(0, 60), at: now }];
+    const results = [...gate.results, { round: gate.round, passed, failing: failing.slice(0, 60), at: now }];
     if (passed) {
       await ctx.db.patch(id, { status: "passed", results, fixes: [], trouble: 0, updatedAt: now });
       await tell(ctx, gate, "passed");
@@ -307,16 +310,128 @@ async function stop(ctx: ActionCtx, id: Id<"designGates">, reason: string) {
   await ctx.runMutation(internal.designGate.fail, { id, reason });
 }
 
-// The site's measured reference, for the build it was measured for. Anything
-// else -- none, an older kind, or one from before a rebuild -- is not one.
+// The site's SkillUI Ultra reference, for the build it was extracted for.
+// Anything else -- none, an older kind, or one from before a rebuild -- is not
+// one.
 async function referenceFor(ctx: ActionCtx, gate: Gate) {
   const reference = await ctx.runQuery(internal.siteDesign.forSite, { siteId: gate.siteId });
-  return reference && reference.buildEpoch === gate.epoch && isMeasured(reference) ? reference : null;
+  return reference && reference.buildEpoch === gate.epoch && isSkillUI(reference) ? reference : null;
 }
 
-const percent = (score: number) => `${Math.round(score * 1000) / 10}%`;
+// The site as it was saved before this change, for what the change touched.
+export const current = internalQuery({
+  args: { siteId: v.id("sites") },
+  handler: async (ctx, { siteId }): Promise<BuiltSite | null> => {
+    const site = await ctx.db.get(siteId);
+    const version = site?.currentVersionId ? await ctx.db.get(site.currentVersionId) : null;
+    if (!version) return null;
+    return hasPages(version) ? { shell: version.shell, pages: version.pages } : { html: version.html };
+  },
+});
 
-// The check itself: the worker's scores for the site as it stands.
+type Job = { path: string; part: PartName } & Pick<AuditInput, "work" | "context">;
+
+const flat = (text: string | undefined) => (text ?? "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim();
+const clip = (text: string, limit: number) => (text.length > limit ? `${text.slice(0, limit)}\n<!-- the rest is cut from this view -->` : text);
+
+// The auditors an edit needs: the header's and the footer's when the shell
+// changed, and both halves' for every page whose markup changed. A site from
+// before pages is one document, and every part of it is audited there.
+export function auditJobs(before: BuiltSite | null, after: BuiltSite): Job[] {
+  if (!hasPages(after)) {
+    const markup = after.html ?? "";
+    return PARTS.map((part) => ({ path: "/", part, work: { label: "The site's one page, as the builder wrote it:", markup } }));
+  }
+  const jobs: Job[] = [];
+  const earlier = before && hasPages(before) ? before : null;
+  if (!earlier || flat(earlier.shell) !== flat(after.shell)) {
+    for (const part of PARTS.filter(isChrome)) {
+      jobs.push({ path: "/", part, work: { label: `The site's shell, which every page is served inside. Audit the ${part} in it.`, markup: after.shell } });
+    }
+  }
+  for (const page of after.pages) {
+    const path = normalizePath(page.path) ?? page.path;
+    const old = earlier?.pages.find((each) => normalizePath(each.path) === path);
+    if (old && flat(old.body) === flat(page.body)) continue;
+    for (const part of PARTS.filter((name) => !isChrome(name))) {
+      jobs.push({
+        path,
+        part,
+        work: { label: `The page's markup, which is served inside the shell. Audit only its ${PART_NAMES[part]}.`, markup: page.body },
+        context: [{ label: "The shell the page is served inside.", markup: clip(after.shell, SHELL_CONTEXT) }],
+      });
+    }
+  }
+  return jobs;
+}
+
+async function inPool<T, R>(items: T[], size: number, work: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await work(items[index]);
+    }
+  }));
+  return results;
+}
+
+type Outcome = { passed: boolean; fixes: string[]; failing: string[] };
+
+// Every auditor the change needs, side by side, each held to the SkillUI Ultra
+// reference. A verdict that cannot be read is asked for again; an auditor that
+// still gives none means the audit could not run, never that it passed.
+async function auditChange(
+  ctx: ActionCtx,
+  gate: Gate,
+  reference: { prompt: string; foundation?: string; routes?: string[] },
+  trace: ProviderTrace,
+): Promise<Outcome> {
+  const site = siteOf(gate);
+  const before = await ctx.runQuery(internal.designGate.current, { siteId: gate.siteId });
+  const jobs = auditJobs(before, site);
+  const routes = pagePlan(reference.routes);
+  const lastFixes = gate.fixes;
+  const verdicts = await inPool(jobs, AUDITORS_AT_ONCE, async (job) => {
+    const who = `${PART_AGENTS[job.part]} auditor`;
+    const note: ProviderTrace = {
+      note: (input) => trace.note({
+        ...input,
+        label: `${who}, ${job.path}: ${input.label.charAt(0).toLowerCase()}${input.label.slice(1)}`,
+        ...(input.status === "calling" ? { status: "reviewing" as const } : {}),
+        detail: { round: gate.round, path: job.path, part: job.part, ...input.detail },
+      }),
+    };
+    for (let tries = 0; tries < VERDICT_TRIES; tries += 1) {
+      const reply = await callProvider(auditorTurn({
+        extract: reference.prompt,
+        foundation: reference.foundation,
+        siteName: gate.siteName,
+        routes,
+        path: job.path,
+        part: job.part,
+        work: job.work,
+        context: job.context,
+        round: gate.round,
+        lastFixes,
+      }), undefined, undefined, note, "review");
+      const verdict = readAudit(reply);
+      if (verdict) return { job, verdict };
+    }
+    throw new Error(`The ${PART_NAMES[job.part]} auditor for ${job.path} gave no verdict that could be read`);
+  });
+  const failing = verdicts.filter(({ verdict }) => !verdict.agree);
+  return {
+    passed: failing.length === 0,
+    failing: failing.map(({ job }) => `${job.path} ${job.part}`),
+    fixes: failing.flatMap(({ job, verdict }) =>
+      verdict.fixes.map((fix) => `${job.path === "/" && isChrome(job.part) ? `The ${PART_NAMES[job.part]}` : `On ${job.path}, the ${PART_NAMES[job.part]}`}: ${fix}`)),
+  };
+}
+
+// The audit itself: the auditors' verdicts on the site as it stands. A build
+// whose pages were each audited by their crews needs none, and lands.
 export const check = internalAction({
   args: { id: v.id("designGates") },
   handler: async (ctx, { id }): Promise<null> => {
@@ -326,38 +441,40 @@ export const check = internalAction({
     const round = gate.round;
     const reference = await referenceFor(ctx, gate);
     if (!reference) {
-      await stop(ctx, id, NOT_MEASURED);
+      await stop(ctx, id, NOT_EXTRACTED);
       return null;
     }
     const site = siteOf(gate);
-    await trace.note({
-      phase: "layout_check",
-      label: `Layout check, round ${round}: measuring every page at phone, tablet and desktop widths`,
-      status: "reviewing",
-      detail: { round },
-    });
-    let outcome: AuditOutcome;
-    try {
-      outcome = await auditDesign(ctx, { storageId: reference.storageId, pages: auditPages(site) }, trace, round);
-    } catch (error) {
-      await trace.note({ phase: "layout_check_error", label: `The layout check could not run: ${describe(error)}`, level: "warn", detail: { round } });
-      const next = await ctx.runMutation(internal.designGate.stumbled, { id, step: "checking" });
-      if (next === "stop") await stop(ctx, id, COULD_NOT_CHECK);
-      return null;
+    let outcome: Outcome = { passed: true, fixes: [], failing: [] };
+    if (!gate.audited) {
+      await trace.note({
+        phase: "design_audit",
+        label: `Design audit, round ${round}: the auditors are checking every changed part against the reference`,
+        status: "reviewing",
+        detail: { round },
+      });
+      try {
+        outcome = await auditChange(ctx, gate, reference, trace);
+      } catch (error) {
+        await trace.note({ phase: "design_audit_error", label: `The design audit could not run: ${describe(error)}`, level: "warn", detail: { round } });
+        const next = await ctx.runMutation(internal.designGate.stumbled, { id, step: "checking" });
+        if (next === "stop") await stop(ctx, id, COULD_NOT_CHECK);
+        return null;
+      }
+      await trace.note({
+        phase: "design_verdict",
+        label: outcome.passed
+          ? `Design audit, round ${round}: every auditor agreed the change matches the reference`
+          : `Design audit, round ${round}: ${outcome.failing.length} ${outcome.failing.length === 1 ? "part was" : "parts were"} sent back`,
+        level: outcome.passed ? "info" : "warn",
+        status: "reviewing",
+        detail: { round, agree: outcome.passed },
+      });
     }
-    await trace.note({
-      phase: "layout_verdict",
-      label: outcome.passed
-        ? `Layout check, round ${round}: every page matches the design reference at every width`
-        : `Layout check, round ${round}: ${outcome.failing.length} ${outcome.failing.length === 1 ? "region is" : "regions are"} below the bar, the lowest at ${percent(outcome.lowest)}`,
-      level: outcome.passed ? "info" : "warn",
-      detail: { round },
-    });
     const next = await ctx.runMutation(internal.designGate.judged, {
       id,
       passed: outcome.passed,
       fixes: outcome.fixes,
-      lowest: outcome.lowest,
       failing: outcome.failing,
     });
     if (next === "exhausted") {
@@ -409,8 +526,8 @@ async function land(ctx: ActionCtx, trace: ProviderTrace, gate: Gate, site: Buil
   });
 }
 
-// What the builder is asked on a rework: the measured differences, and the
-// shape of the reply.
+// What the builder is asked on a rework: the auditors' fixes, and the shape
+// of the reply.
 function reworkRequest(input: { fixes: string[]; inPages: boolean; problem?: string }) {
   const listed: string[] = [];
   let size = 0;
@@ -423,10 +540,10 @@ function reworkRequest(input: { fixes: string[]; inPages: boolean; problem?: str
     ? "Reply with one sentence saying what you changed, then the whole shell in a ```html shell block, then each page you changed in its own ```html path=\"/about\" title=\"About\" block, and nothing after. Every page you do not return stays exactly as it is. Write the shell out in full: the head, every style the pages use, every script and the <!--forge-page--> marker."
     : "Reply with one sentence saying what you changed, then the whole page in a ```html block, and nothing after. Write it all out.";
   return [
-    "Forge's layout check rendered every page of your site at phone, tablet and desktop widths and measured it against the measured design reference in your instructions. It does not match yet. Make every one of these changes:",
+    "Forge's design auditors compared the parts of your site this change touched with the SkillUI Ultra design reference in your instructions, and did not agree they match yet. Make every one of these changes:",
     listed.join("\n"),
     ...(input.problem ? [`Your last rework could not be used: ${input.problem}`] : []),
-    "Change the layout only: the header, the menu, the sections, their order, heights, columns and spacing, and the footer. Keep your words and pictures original, and keep one page for every route the reference lists and no others.",
+    "Change only what the fixes name, and keep the change the member asked for. Keep your words and pictures original.",
     reply,
   ].join("\n\n");
 }
@@ -475,8 +592,8 @@ function reworkOf(reply: string, before: BuiltSite): BuiltSite {
   return site;
 }
 
-// The builder, given its work back with the measured differences and the
-// measured reference it was built from.
+// The builder, given its work back with the auditors' fixes and the SkillUI
+// Ultra reference it was built from.
 export const rework = internalAction({
   args: { id: v.id("designGates") },
   handler: async (ctx, { id }): Promise<null> => {
@@ -485,13 +602,13 @@ export const rework = internalAction({
     const trace = providerTrace(ctx, gate.runId, gate.userId);
     const reference = await referenceFor(ctx, gate);
     if (!reference) {
-      await stop(ctx, id, NOT_MEASURED);
+      await stop(ctx, id, NOT_EXTRACTED);
       return null;
     }
     const before = siteOf(gate);
     await trace.note({
-      phase: "layout_rework",
-      label: `Sent back to the builder after round ${gate.round} of the layout check`,
+      phase: "design_rework",
+      label: `Sent back to the builder after round ${gate.round} of the design audit`,
       status: "calling",
       detail: { round: gate.round },
     });
@@ -506,15 +623,15 @@ export const rework = internalAction({
         throw new Unusable(describe(error));
       }
       await trace.note({
-        phase: "layout_rework_done",
-        label: "The builder sent back its rework",
+        phase: "design_rework_done",
+        label: "The builder made the auditors' changes",
         detail: { round: gate.round, htmlChars: (back.shell ?? back.html ?? "").length },
       });
       await ctx.runMutation(internal.designGate.reworked, { id, ...back });
     } catch (error) {
       const problem = error instanceof Unusable ? error.message : undefined;
       await trace.note({
-        phase: "layout_rework_error",
+        phase: "design_rework_error",
         label: `The rework could not be used: ${problem ?? describe(error)}`,
         level: "warn",
         detail: { round: gate.round },
@@ -526,9 +643,9 @@ export const rework = internalAction({
   },
 });
 
-// What the check found on recent builds, for whoever runs the deployment:
-// `npx convex run designGate:inspect`. Each round's lowest score and the
-// regions below the bar. Never a page.
+// What the audit found on recent builds, for whoever runs the deployment:
+// `npx convex run designGate:inspect`. Each round's verdict and the parts the
+// auditors sent back. Never a page.
 export const inspect = internalQuery({
   args: {},
   handler: async (ctx) => {

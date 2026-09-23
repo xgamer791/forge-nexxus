@@ -1,11 +1,23 @@
+// The design research worker: the reference a site's design comes from.
+//
+// A new site's reference is found once: Brave searches four cities for
+// businesses like the member's, candidate sites are inspected in Chromium and
+// the best one is chosen. A site that already has one is researched again at
+// the same address with no search. Then the page discovery agent chooses the
+// reference's pages -- five at most (discover.mjs) -- and SkillUI Ultra
+// extracts its design (skillui.mjs). The whole `.skill` package is uploaded to
+// Convex, and the extract, its foundation stylesheet and the chosen pages go
+// back with it. Every stage streams as it happens; any failure fails the job,
+// and nothing is ever made up in place of a reference.
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
 import { chromium } from 'playwright';
-import { publicUrl } from './capture.mjs';
-import { FORMAT, auditBuild, captureReference } from './reference.mjs';
+import { discoverPages, publicUrl } from './discover.mjs';
+import { extractPrompt, foundationCss, runSkillUI } from './skillui.mjs';
 
 const CITIES = ['Los Angeles', 'New York', 'San Diego', 'Miami'];
 const DIRECTORY = /(?:google|yelp|facebook|instagram|linkedin|tripadvisor|pinterest|tiktok|yellowpages|mapquest|thumbtack|angi)\./i;
@@ -74,25 +86,13 @@ async function inspect(browser, entry, feel) {
   } finally { await context.close(); }
 }
 
-// Each job keeps its screenshots and mask images on this machine, for checking
-// a run by eye. Only the newest few are kept.
-const ARTIFACTS = path.join(os.tmpdir(), 'forge-design');
-const KEEP_JOBS = 12;
-
-async function jobFolder(kind) {
-  await fs.mkdir(ARTIFACTS, { recursive: true });
-  const names = (await fs.readdir(ARTIFACTS)).sort();
-  for (const old of names.slice(0, Math.max(0, names.length - KEEP_JOBS + 1))) {
-    await fs.rm(path.join(ARTIFACTS, old), { recursive: true, force: true });
-  }
-  const dir = path.join(ARTIFACTS, `${new Date().toISOString().replace(/[:.]/g, '-')}-${kind}`);
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
-}
-
-// A new site's reference is found once through Brave; a site that already has
-// one is measured again at the same address with no search at all.
-async function research(input, emit, artifacts) {
+// The inspection browser closes before SkillUI starts its own Chromium, and
+// the package streams from disk to Convex rather than through Node's memory.
+// The search, the page loads and the upload keep the limits they always had,
+// and nothing else is timed: the job lasts as long as the request that asked
+// for it, and `signal` stops whatever is still running -- the browser, or
+// SkillUI -- once that request is closed.
+async function research(input, emit, signal) {
   const known = input.referenceUrl ? publicUrl(input.referenceUrl) : null;
   if (input.referenceUrl && !known) throw new Error('The saved design reference is not a public web address');
   let candidates = [];
@@ -101,9 +101,12 @@ async function research(input, emit, artifacts) {
     if (!categoryText) throw new Error('A business category is needed for design research');
     candidates = await search(categoryText, input.references, emit);
   }
+  let chosenUrl = known;
+  let routes;
   const browser = await chromium.launch({ headless: true });
+  const closeBrowser = () => { browser.close().catch(() => {}); };
+  signal?.addEventListener('abort', closeBrowser, { once: true });
   try {
-    let chosenUrl = known;
     if (!chosenUrl) {
       const measured = [];
       const byCity = new Map();
@@ -120,50 +123,41 @@ async function research(input, emit, artifacts) {
       if (!measured[0]) throw new Error('No reference site could be inspected');
       chosenUrl = measured[0].url;
     }
-    const { reference, prompt } = await captureReference(browser, chosenUrl, { emit, artifacts });
-    emit('uploading', { pages: reference.routes.length });
+    routes = await discoverPages(browser, chosenUrl, { emit });
+  } finally {
+    signal?.removeEventListener('abort', closeBrowser);
+    await browser.close();
+  }
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'forge-design-'));
+  try {
+    const name = `reference-${new URL(chosenUrl).hostname.replace(/[^a-z0-9-]/gi, '-')}`.slice(0, 70);
+    const pkg = await runSkillUI(chosenUrl, out, name, { emit, signal });
+    const prompt = extractPrompt({ source: chosenUrl, routes, pkg });
+    const foundation = foundationCss({ source: chosenUrl, tokens: pkg.tokens });
+    emit('uploading', { pages: routes.length });
+    const { size } = await fs.stat(pkg.skillFile);
     const upload = await fetch(input.uploadUrl, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(reference),
-      signal: AbortSignal.timeout(45000),
+      headers: { 'content-type': 'application/zip', 'content-length': String(size) },
+      body: createReadStream(pkg.skillFile), duplex: 'half',
+      signal: signal ? AbortSignal.any([AbortSignal.timeout(45000), signal]) : AbortSignal.timeout(45000),
     });
-    if (!upload.ok) throw new Error(`Design reference upload failed (${upload.status})`);
+    if (!upload.ok) throw new Error(`Design package upload failed (${upload.status})`);
     const { storageId } = await upload.json();
-    if (!storageId) throw new Error('Design reference upload returned no storage ID');
-    return { storageId, referenceUrl: chosenUrl, prompt, inspectedPages: reference.routes.length, routes: reference.routes.map(route => route.path), artifacts };
-  } finally { await browser.close(); }
+    if (!storageId) throw new Error('Design package upload returned no storage ID');
+    return { storageId, referenceUrl: chosenUrl, prompt, foundation, inspectedPages: pkg.screens, routes: routes.map(route => route.path) };
+  } finally { await fs.rm(out, { recursive: true, force: true }); }
 }
 
-// The layout check: the site's pages against the measured reference, every
-// route at every width. Nothing about it is a judgement call.
-async function audit(input, emit, artifacts) {
-  const source = publicUrl(input.reference);
-  if (!source || !source.startsWith('https://')) throw new Error('The design reference address is not usable');
-  const response = await fetch(source, { signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error(`The design reference could not be read (${response.status})`);
-  const reference = await response.json();
-  if (reference?.format !== FORMAT || !Array.isArray(reference.routes) || !reference.routes.length) {
-    throw new Error('The saved design reference is not a measured reference');
-  }
-  const browser = await chromium.launch({ headless: true });
-  try { return { ...await auditBuild(browser, reference, input.pages, { emit, artifacts }), artifacts }; }
-  finally { await browser.close(); }
-}
+const LIMIT = 16000;
 
-const LIMITS = { '/research': 16000, '/audit': 16 * 1024 * 1024 };
-
-function valid(route, input) {
-  if (route === '/research') {
-    return input.uploadUrl?.startsWith('https://') && (Boolean(input.offer) || typeof input.referenceUrl === 'string');
-  }
-  return typeof input.reference === 'string' && Array.isArray(input.pages) && input.pages.length > 0 &&
-    input.pages.every(page => typeof page?.path === 'string' && typeof page?.html === 'string');
+function valid(input) {
+  return input.uploadUrl?.startsWith('https://') && (Boolean(input.offer) || typeof input.referenceUrl === 'string');
 }
 
 const server = http.createServer(async (req, res) => {
   if (req.url === '/health') { res.writeHead(200); res.end('ok'); return; }
-  if (req.method !== 'POST' || !(req.url in LIMITS)) { res.writeHead(404); res.end(); return; }
+  if (req.method !== 'POST' || req.url !== '/research') { res.writeHead(404); res.end(); return; }
   const expected = Buffer.from(process.env.DESIGN_WORKER_TOKEN || '');
   const actual = Buffer.from(req.headers.authorization?.replace(/^Bearer /, '') || '');
   if (!expected.length || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
@@ -173,21 +167,23 @@ const server = http.createServer(async (req, res) => {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > LIMITS[req.url]) { res.writeHead(413); res.end(); return; }
+    if (size > LIMIT) { res.writeHead(413); res.end(); return; }
     chunks.push(chunk);
   }
   let input;
   try {
     input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (!valid(req.url, input)) throw new Error('Invalid request');
+    if (!valid(input)) throw new Error('Invalid request');
   } catch { res.writeHead(400); res.end(); return; }
   res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' });
   res.flushHeaders();
-  const emit = (phase, detail = {}) => res.write(JSON.stringify({ type: 'progress', phase, detail }) + '\n');
+  // Once Convex closes the connection, nobody is waiting on the job: whatever
+  // is still running stops, rather than any clock here deciding it.
+  const job = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) job.abort(); });
+  const emit = (phase, detail = {}) => { if (!job.signal.aborted) res.write(JSON.stringify({ type: 'progress', phase, detail }) + '\n'); };
   try {
-    const artifacts = await jobFolder(req.url.slice(1));
-    const result = req.url === '/research' ? await research(input, emit, artifacts) : await audit(input, emit, artifacts);
-    res.write(JSON.stringify({ type: 'complete', ...result }) + '\n');
+    res.write(JSON.stringify({ type: 'complete', ...await research(input, emit, job.signal) }) + '\n');
   } catch (error) {
     res.write(JSON.stringify({ type: 'error', reason: String(error.message || error).slice(0, 180) }) + '\n');
   }

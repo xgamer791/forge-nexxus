@@ -94,8 +94,9 @@ export function unnamedVerdict(missing: Part[], hadBlock: boolean): Verdict {
 }
 
 // The first whole JSON object in a reply, however it was wrapped: a code
-// fence, a sentence in front, a sentence after.
-function firstObject(text: string): unknown {
+// fence, a sentence in front, a sentence after. The design auditors'
+// verdicts (crew.ts) are read the same way.
+export function firstObject(text: string): unknown {
   for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
     let depth = 0;
     let quoted = false;
@@ -123,7 +124,7 @@ function firstObject(text: string): unknown {
 }
 
 // A model writing JSON by hand sometimes quotes its booleans.
-function truth(value: unknown) {
+export function truth(value: unknown) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string" && /^(true|false)$/i.test(value.trim())) return /^true$/i.test(value.trim());
   return undefined;
@@ -131,7 +132,7 @@ function truth(value: unknown) {
 
 const LINE_LIMIT = 400;
 const LIST_LIMIT = 24;
-function lines(value: unknown): string[] {
+export function lines(value: unknown): string[] {
   const list = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
   return list
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)

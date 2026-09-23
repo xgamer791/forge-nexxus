@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { answerDesignResearch, storeDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, crewCall, resetDesignRoutes, setDesignRoutes, storeDesignPackage, type CrewCall } from "./designWorkerMock";
 import { builtSite, parseReply } from "./generate";
 import { QUESTIONS } from "./onboardingQuestions";
 import { serializeSite } from "./pages";
@@ -54,9 +54,28 @@ const siteReply = (summary: string, about = ABOUT) =>
 const json = (payload: unknown) =>
   new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
 
-// One fetch for both providers, as in buildFlow.test.ts: the strategist is told
-// apart by what it was asked; every other chat call is a build.
-function stubProviders(build: (call: number) => string) {
+// A first build's crew, writing the same two-page site: the header with the
+// nav, the footer, and each page's two halves. The picture sits on both
+// pages, which is one picture.
+const HEADER = '<style>.site-header{padding:16px}</style><header class="site-header"><nav><a href="/">Home</a> <a href="/about">About</a></nav></header>';
+const FOOTER = "<footer>Harbor Roasters</footer>";
+function crewSite(about = "<p>Roasting since 2019.</p>") {
+  return (call: CrewCall) => {
+    const block = (markup: string, title?: string) =>
+      `Built the ${call.part}.\n\n\`\`\`html part="${call.part}"${title ? ` title="${title}"` : ""}\n${markup}\n\`\`\``;
+    if (call.part === "header") return block(HEADER);
+    if (call.part === "footer") return block(FOOTER);
+    if (call.path === "/") {
+      return call.part === "body1" ? block(`<section><h1>Harbor Roasters</h1>${PICTURE}</section>`, "Harbor Roasters") : block("<section><p>Roasted on the pier.</p></section>");
+    }
+    return call.part === "body1" ? block(`<section><h1>Our story</h1>${PICTURE}</section>`, "Our story") : block(`<section>${about}</section>`);
+  };
+}
+
+// One fetch for every provider, as in buildFlow.test.ts: the strategist is
+// told apart by what it was asked, a first build's crew by its turn, and every
+// other chat call is a thread build.
+function stubProviders(build: (call: number) => string, crew: (call: CrewCall) => string = crewSite()) {
   const calls: { url: string; body: any }[] = [];
   let builds = 0;
   vi.stubGlobal(
@@ -73,6 +92,8 @@ function stubProviders(build: (call: number) => string) {
       if (/private website strategist/.test(system)) {
         return json({ choices: [{ message: { content: "Lead with the roastery. One clear call." } }] });
       }
+      const member = crewCall(body);
+      if (member) return json({ choices: [{ message: { content: crew(member) } }] });
       builds += 1;
       return json({ choices: [{ message: { content: build(builds) } }] });
     }),
@@ -85,6 +106,7 @@ function stubProviders(build: (call: number) => string) {
 }
 
 beforeEach(() => {
+  setDesignRoutes(["/", "/about"]);
   process.env.AI_BASE_URL = "https://ai.example/v1/";
   process.env.AI_API_KEY = KEY;
   process.env.AI_MODEL = "forge-test";
@@ -93,6 +115,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  resetDesignRoutes();
   for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_BUILD_MODEL", "AI_BUILD_BASE_URL", "AI_BUILD_API_KEY", "AI_REASONING_EFFORT", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL"]) {
     delete process.env[name];
   }
@@ -192,7 +215,8 @@ describe("a build with pages, start to finish", () => {
     expect(providers.pictures()).toBe(1);
     const [version] = await t.run((ctx) => ctx.db.query("siteVersions").collect());
     expect(version.html).toBeUndefined();
-    expect(version.shell).toBe(SHELL);
+    expect(version.shell).toContain('<nav><a href="/">Home</a> <a href="/about">About</a></nav>');
+    expect(version.shell).toContain("<!--forge-page-->\n<footer>Harbor Roasters</footer>");
     expect(version.pages!.map((page) => [page.path, page.title])).toEqual([["/", "Harbor Roasters"], ["/about", "Our story"]]);
     const images = await t.run((ctx) => ctx.db.query("siteImages").collect());
     expect(images).toHaveLength(1);
@@ -227,21 +251,20 @@ describe("a build with pages, start to finish", () => {
   test("an edit is handed the whole site in the blocks it came in, and returns a new version of it", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const providers = stubProviders((call) =>
-      call === 1 ? siteReply("Built it.") : siteReply("Added the founding year.", "<h1>Our story</h1><p>Founded in 2019.</p>"),
-    );
+    const providers = stubProviders(() => siteReply("Added the founding year.", "<h1>Our story</h1><p>Founded in 2019.</p>"));
     const site = await onboarded(t, member);
     await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add the founding year to the story" });
 
-    // The strategist, the onboarding build, then the edit. Captured before the
-    // layout check's drain, which also runs the memory note.
+    // The strategist, the onboarding crew, then the edit. Captured before the
+    // audit's drain, which also runs the memory note.
     const edit = providers.builds().at(-1)!;
     const handed = edit.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
-    expect(handed).toContain("```html shell\n" + SHELL);
+    expect(handed).toContain("```html shell\n<!doctype html>");
+    expect(handed).toContain('<nav><a href="/">Home</a> <a href="/about">About</a></nav>');
     expect(handed).toContain('```html path="/about" title="Our story"');
     expect(handed).toContain("return the whole updated site, every block");
 
-    // The edit is saved when the layout check passes.
+    // The edit is saved when its auditors agree.
     await t.finishAllScheduledFunctions(() => {});
     const versions = await t.run((ctx) => ctx.db.query("siteVersions").collect());
     expect(versions).toHaveLength(2);
@@ -249,24 +272,28 @@ describe("a build with pages, start to finish", () => {
     expect(await (await t.fetch(`/sites/${site.slug}/about`)).text()).toContain("Founded in 2019.");
   });
 
-  test("a first build that stopped short of a whole site is asked again for one in blocks, not one document", async () => {
+  test("a first build's part that stopped short is asked for again, whole, and the site still lands in blocks", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    // The last page never closed, which writePage asks for once more.
-    const providers = stubProviders((call) => (call === 1 ? siteReply("Built it.").slice(0, -3) : siteReply("Built it.")));
+    // The about page's top half never closed its block the first time.
+    const whole = crewSite();
+    let cut = true;
+    const providers = stubProviders(() => siteReply("Built it."), (call) => {
+      const reply = whole(call);
+      if (call.path === "/about" && call.part === "body1" && cut) {
+        cut = false;
+        return reply.slice(0, -3);
+      }
+      return reply;
+    });
     await onboarded(t, member);
 
-    const builds = providers.builds().filter((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)));
-    expect(builds).toHaveLength(2);
-    const told = (call: (typeof builds)[number]) =>
-      call.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
-    expect(told(builds[0])).toContain("A site is one shell and one or more pages");
-    expect(told(builds[1])).toContain("did not contain a complete website");
-    expect(told(builds[1])).toContain("```html shell block");
-    expect(told(builds[1])).not.toContain("single ```html code block");
-
+    const tops = providers.calls.filter((call) => /chat\/completions/.test(call.url) && crewCall(call.body)?.path === "/about" && crewCall(call.body)?.part === "body1");
+    expect(tops).toHaveLength(2);
+    expect(tops[1].body.messages.at(-1).content).toContain("Your last reply for this part could not be used: the top half stopped before its block closed.");
     const [version] = await t.run((ctx) => ctx.db.query("siteVersions").collect());
     expect(version.pages!.map((page) => page.path)).toEqual(["/", "/about"]);
+    expect(version.html).toBeUndefined();
   });
 });
 
@@ -274,7 +301,7 @@ describe("the site as files", () => {
   test("one file per page, named for its address, linked to each other, badge-free on a paid plan", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    stubProviders(() => siteReply("Built it.", '<h1>Our story</h1><a href="/">Back home</a><a href="/about#team">Team</a>'));
+    stubProviders(() => siteReply("Built it."), crewSite('<a href="/">Back home</a><a href="/about#team">Team</a>'));
     const site = await onboarded(t, member);
 
     const exported = await member.as.query(api.sites.exportPages, { siteId: site._id });
@@ -298,8 +325,14 @@ describe("the site as files", () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const page = '<!doctype html><html lang="en"><head><title>Shop</title></head><body><h1>Shop</h1><a href="/">Top</a></body></html>';
-    stubProviders(() => `Built it.\n\n\`\`\`html\n${page}\n\`\`\``);
-    const site = await onboarded(t, member);
+    // Every build writes pages now, so the old one-document site is seeded as it was saved.
+    const site = await t.run(async (ctx) => {
+      const conversationId = await ctx.db.insert("conversations", { userId: member.userId, title: "Shop", updatedAt: Date.now() });
+      const siteId = await ctx.db.insert("sites", { userId: member.userId, conversationId, name: "Shop", status: "draft", createdAt: Date.now(), updatedAt: Date.now() });
+      const versionId = await ctx.db.insert("siteVersions", { userId: member.userId, siteId, html: page, summary: "Built it.", requestKind: "generate", createdAt: Date.now() });
+      await ctx.db.patch(siteId, { currentVersionId: versionId });
+      return (await ctx.db.get(siteId))!;
+    });
     const exported = await member.as.query(api.sites.exportPages, { siteId: site._id });
     expect(exported!.files).toHaveLength(1);
     expect(exported!.files[0].name).toBe("index.html");

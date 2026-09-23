@@ -7,7 +7,7 @@ import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "
 import { closeRun, providerTrace, recordLastSign, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
-import { designReviewOn, reviewInFlight } from "./designCheck";
+import { reviewInFlight } from "./designCheck";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
@@ -15,7 +15,7 @@ import { memoryEnabled, memoryNote } from "./memory";
 import { hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
-import { assertDesignRules, gateInFlight, isMeasured, NOT_MEASURED } from "./siteDesign";
+import { assertDesignRules, gateInFlight, isSkillUI, NOT_EXTRACTED } from "./siteDesign";
 import { isEventStream, readStream, StreamStopped, type Milestone, type StopReason, type StreamPhase, type StreamStats } from "./stream";
 
 // How much of the thread the model sees, and how long a page it may write.
@@ -188,9 +188,9 @@ const RUN_WATCHDOG_MS = 610000;
 // builds on the model chat uses.
 // The kinds of turn this route carries. They differ in what they are worth
 // thinking about and, for planning, a build and its design review, which
-// provider answers. The design reviewer is a separate agent with its own
-// instructions, but it rides the build route: it judges the build's work, so
-// it answers on the model the deployment chose for building.
+// provider answers. The design auditors are separate agents with their own
+// instructions, but they ride the build route: they judge the build's work, so
+// they answer on the model the deployment chose for building.
 export type Purpose = "chat" | "build" | "strategy" | "review";
 
 function agentTurn(purpose: Purpose) {
@@ -245,7 +245,8 @@ export const routing = internalQuery({
       chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl, chat.model, "chat") ?? null, maxTokens: maxTokensFor("chat") },
       build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, keySet: Boolean(build.apiKey), sameAsChat: build.model === chat.model && build.baseUrl === chat.baseUrl, reasoningEffort: reasoningEffort(build.baseUrl, build.model, "build") ?? null, maxTokens: maxTokensFor("build") },
       strategy: { host: new URL(strategy.baseUrl).host, model: strategy.model, label: strategy.label, sameAsBuild: strategy.model === build.model && strategy.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(strategy.baseUrl, strategy.model, "strategy") ?? null },
-      review: { host: new URL(review.baseUrl).host, model: review.model, on: designReviewOn(), sameAsBuild: review.model === build.model && review.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(review.baseUrl, review.model, "review") ?? null, maxTokens: maxTokensFor("review") },
+      // The design auditors (crew.ts) ride this route on every build and edit.
+      review: { host: new URL(review.baseUrl).host, model: review.model, on: true, sameAsBuild: review.model === build.model && review.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(review.baseUrl, review.model, "review") ?? null, maxTokens: maxTokensFor("review") },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -296,7 +297,7 @@ What this platform can serve, which is not a matter of taste:
 
 ${pictures}
 
-Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change. The saved measured design reference is required for every build and edit. Match its measured layout but never reuse its source copy, images, logos or brand identity. The Type, Icons, accessibility and Anti-slop rules in DESIGN_GOD win over any measured style instructions.
+Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change. The saved SkillUI Ultra design reference is required for every build and edit. Match it, but never reuse its source copy, images, logos or brand identity. The Type, Icons, accessibility and Anti-slop rules in DESIGN_GOD win over it.
 
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
@@ -376,10 +377,10 @@ export const run = action({
       const site = builtSite(parsed);
       if (site && job.requestKind !== "chat") {
         const reference = await ctx.runQuery(internal.siteDesign.forSite, { siteId: job.siteId });
-        if (!reference || reference.buildEpoch !== job.epoch || !isMeasured(reference)) throw new Error(NOT_MEASURED);
+        if (!reference || reference.buildEpoch !== job.epoch || !isSkillUI(reference)) throw new Error(NOT_EXTRACTED);
         assertDesignRules(site, reference.referenceUrl);
-        // A built site is saved only once the layout check passes it
-        // (designGate.ts), which finishes the turn from there.
+        // A built site is saved only once the design auditors agree it
+        // matches the reference (designGate.ts), which finishes the turn.
         await ctx.runMutation(internal.designGate.open, {
           source: "thread",
           runId,
@@ -431,8 +432,8 @@ export const run = action({
 });
 
 // The end of a thread turn: the pictures a page asked for, the save, the log
-// and the memory note. A build comes here from the layout check
-// (`designGate.ts`) once it passes, with the site it passed.
+// and the memory note. A build comes here from the design audit
+// (`designGate.ts`) once its auditors agree, with the site they agreed to.
 export async function finishThreadBuild(
   ctx: ActionCtx,
   trace: ProviderTrace,
@@ -557,8 +558,8 @@ export const begin = internalMutation({
     const design = mayBuild
       ? await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", site._id)).first()
       : null;
-    if (mayBuild && (!design || design.buildEpoch !== (site.buildEpoch ?? 0) || !isMeasured(design))) {
-      throw new ConvexError(NOT_MEASURED);
+    if (mayBuild && (!design || design.buildEpoch !== (site.buildEpoch ?? 0) || !isSkillUI(design))) {
+      throw new ConvexError(NOT_EXTRACTED);
     }
     const { holdId } = await holdCredits(ctx, userId, kind, now);
     const recent = await ctx.db
@@ -612,7 +613,7 @@ export const beginOnboarding = internalMutation({
     const site = await ctx.db.get(row.siteId);
     if (!site || site.userId !== row.userId) throw new ConvexError("Site not found");
     const design = await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", site._id)).first();
-    if (!design || design.buildEpoch !== (site.buildEpoch ?? 0) || !isMeasured(design)) throw new ConvexError(NOT_MEASURED);
+    if (!design || design.buildEpoch !== (site.buildEpoch ?? 0) || !isSkillUI(design)) throw new ConvexError(NOT_EXTRACTED);
     if ((await currentPlan(ctx, row.userId)).key === "free") throw new ConvexError("Choose a paid plan to build");
     const { holdId } = await holdCredits(ctx, row.userId, "generate");
     const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
@@ -753,8 +754,8 @@ export const expire = internalMutation({
     const reason = "The build stopped responding. Try again.";
     const message = await ctx.db.get(assistantId);
     if (message?.status === "pending") {
-      // A build the layout check is holding outlives this clock, because each
-      // step of the check is an action of its own. While the check is moving
+      // A build the design audit is holding outlives this clock, because each
+      // step of the audit is an action of its own. While the audit is moving
       // the watchdog waits for it; once it has gone quiet for longer than a
       // step can run, the watchdog speaks for it.
       const gate = await ctx.db
@@ -825,7 +826,7 @@ function buildMessages(
   if (shown) {
     messages.push({
       role: "system",
-      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form. Keep it matching its saved measured design reference.\n\n${shown}`,
+      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form. Keep it matching its saved SkillUI Ultra design reference.\n\n${shown}`,
     });
   }
   if (talkOnly) {
@@ -847,8 +848,8 @@ function buildMessages(
 }
 
 // The design agent's turn when its work is sent back: the same instructions a
-// build reads, the measured design reference where a build reads it, the site
-// as it stands, and the fixes as the request.
+// build reads, the SkillUI Ultra reference where a build reads it, the site as
+// it stands, and the fixes as the request.
 export function designAgentTurn(siteName: string, site: BuiltSite, clones: string | undefined, request: string, design?: string) {
   const messages = buildMessages(siteName, { ...site, clones }, [], request, null, "build", null);
   if (design) messages.splice(4, 0, { role: "system", content: design });
@@ -1394,8 +1395,8 @@ export function builtSite(parsed: ParsedReply): BuiltSite | null {
 // Every fenced block in a reply: what followed its opening backticks, its
 // text, and whether it was closed. The last block of a reply the token cap
 // cut off has no closing fence, and that is the difference between a site
-// and most of one.
-function fencedBlocks(content: string) {
+// and most of one. A crew builder's part is read the same way (crew.ts).
+export function fencedBlocks(content: string) {
   const blocks: { info: string; body: string; closed: boolean; index: number }[] = [];
   const fence = /```[ \t]*([^\n]*)\n([\s\S]*?)(```|$)/g;
   for (let match = fence.exec(content); match; match = fence.exec(content)) {
@@ -1409,7 +1410,7 @@ function clonesIn(blocks: ReturnType<typeof fencedBlocks>) {
   return blocks.find((block) => /^clones\b/i.test(block.info))?.body.trim() || undefined;
 }
 
-function fenceAttr(info: string, name: string) {
+export function fenceAttr(info: string, name: string) {
   return (
     info.match(new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, "i"))?.[1] ??
     info.match(new RegExp(`\\b${name}\\s*=\\s*'([^']*)'`, "i"))?.[1] ??
@@ -1520,36 +1521,6 @@ export function parseShellReply(content: string): { shell: string; pages: SitePa
     pages.push({ path, title: (fenceAttr(block.info, "title") ?? titleFor(block.body, path)).trim(), body: block.body });
   }
   return { shell: shellBlock.body, pages, summary: summaryBefore(content, blocks[0]?.index), clones: clonesIn(blocks) };
-}
-
-// A reply to one turn of a build written a page at a time, block by block.
-// Unlike `parseReply`, nothing here is refused for being unfinished: whatever
-// closed its fence can be kept, and the block the reply was still inside when
-// it stopped is where the next turn carries on, so it is named along with the
-// character its fence opens at. `path` is null for an address that cannot be
-// served.
-export type DraftReply = {
-  summary: string;
-  shell?: { body: string; closed: boolean };
-  pages: { path: string | null; title: string; body: string; closed: boolean }[];
-  open?: { at: number; shell: boolean; path: string | null };
-};
-
-export function readDraftReply(content: string): DraftReply {
-  const blocks = fencedBlocks(content);
-  const reply: DraftReply = { summary: summaryBefore(content, blocks[0]?.index), pages: [] };
-  for (const block of blocks) {
-    const shell = /^html\s+shell\b/i.test(block.info);
-    const page = !shell && /^html\b/i.test(block.info) && (fenceAttr(block.info, "path") !== null || /^html\s+\/\S*/i.test(block.info));
-    const path = page ? normalizePath(fenceAttr(block.info, "path") ?? block.info.match(/^html\s+(\/\S*)/i)?.[1] ?? "/") : null;
-    if (!block.closed) reply.open = { at: block.index, shell, path };
-    if (shell) {
-      reply.shell ??= { body: block.body, closed: block.closed };
-    } else if (page) {
-      reply.pages.push({ path, title: (fenceAttr(block.info, "title") ?? titleFor(block.body, path ?? "/")).trim(), body: block.body, closed: block.closed });
-    }
-  }
-  return reply;
 }
 
 // Where a reasoning model keeps its thinking. It is not an answer and never

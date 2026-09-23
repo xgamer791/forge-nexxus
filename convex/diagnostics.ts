@@ -79,6 +79,8 @@ const detailValidator = v.object({
   round: v.optional(v.number()),
   path: v.optional(v.string()),
   step: v.optional(v.number()),
+  part: v.optional(v.string()),
+  agree: v.optional(v.boolean()),
 });
 
 const eventValidator = v.object({
@@ -168,6 +170,10 @@ export type EventDetail = {
   // step that wrote it.
   path?: string;
   step?: number;
+  // Which part of the page a crew event is about, and whether its auditor
+  // agreed.
+  part?: string;
+  agree?: boolean;
 };
 
 export type ProviderTrace = {
@@ -737,6 +743,9 @@ const STOP_PHASES = new Set([
   // A build written a page at a time: a page kept part way, a reply that
   // could not be used, a page written again, a quiet step restarted, a stop.
   "draft_partial", "draft_unusable", "draft_retry", "draft_rescued", "draft_failed",
+  // Its crews: a part that came back unusable, and an auditor that sent a part
+  // back or ran out of rounds.
+  "crew_unusable", "crew_sent_back", "crew_exhausted",
 ]);
 export const inspectStalls = internalQuery({
   args: {},
