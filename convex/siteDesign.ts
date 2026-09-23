@@ -139,7 +139,8 @@ export async function researchDesign(
       } else if (event.type === "complete" && typeof event.storageId === "string" &&
           typeof event.referenceUrl === "string" && typeof event.prompt === "string" &&
           Number.isInteger(event.inspectedPages)) {
-        // The worker's line also carries `type`. Only the package fields are saved.
+        // The worker's line also carries `type`. Copy the package fields into a
+        // new object so that extra key never reaches the save mutation.
         result = {
           storageId: event.storageId as Id<"_storage">,
           referenceUrl: event.referenceUrl,
@@ -156,8 +157,14 @@ export async function researchDesign(
     throw new Error("SkillUI did not return a complete design package");
   }
   const saved = await ctx.runMutation(internal.siteDesign.save, {
-    ...result, siteId: input.siteId, onboardingId: input.onboardingId,
-    attempt: input.attempt, epoch: input.epoch,
+    siteId: input.siteId,
+    onboardingId: input.onboardingId,
+    attempt: input.attempt,
+    epoch: input.epoch,
+    storageId: result.storageId,
+    referenceUrl: result.referenceUrl,
+    prompt: result.prompt,
+    inspectedPages: result.inspectedPages,
   });
   if (!saved) {
     await ctx.runMutation(internal.siteDesign.discardUpload, { storageId: result.storageId });
