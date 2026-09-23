@@ -183,8 +183,17 @@ describe("the contract sets a floor, not a mould", () => {
 
   test("navigation is designed, and DESIGN_GOD is where that is said", () => {
     expect(DESIGN_GOD).toContain("## Navigation");
-    expect(DESIGN_GOD).toContain("a bar with the name on the left and links on the right is one answer, not the answer");
+    expect(DESIGN_GOD).toContain("the header, the dropdown, and the footer are cloned as the Header, menu and footer section requires");
     expect(DESIGN_GOD).toContain("at least 44px");
+  });
+
+  test("header, dropdown and footer are cloned from Awwwards", () => {
+    expect(DESIGN_GOD).toContain("## Header, menu and footer");
+    expect(DESIGN_GOD).toContain("https://www.awwwards.com/");
+    expect(DESIGN_GOD).toContain("Structure and spacing must match that original completely");
+    expect(DESIGN_GOD).toContain("A second and separate agent compares your header");
+    expect(DESIGN_GOD).toContain("Fonts and colors match the aesthetic of the site you are building");
+    expect(DESIGN_GOD).toContain("the Header, menu and footer section");
   });
 
   test("every icon, including a hamburger, comes from Phosphor or Lucide", () => {
