@@ -71,6 +71,9 @@ const detailValidator = v.object({
   reasoningTokens: v.optional(v.number()),
   providerError: v.optional(v.string()),
   city: v.optional(v.string()),
+  domain: v.optional(v.string()),
+  verdict: v.optional(v.string()),
+  reason: v.optional(v.string()),
   page: v.optional(v.number()),
   total: v.optional(v.number()),
   mode: v.optional(v.string()),
@@ -160,6 +163,9 @@ export type EventDetail = {
   providerError?: string;
   loopRepeats?: number;
   city?: string;
+  domain?: string;
+  verdict?: string;
+  reason?: string;
   page?: number;
   total?: number;
   mode?: string;

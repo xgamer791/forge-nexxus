@@ -17,6 +17,7 @@ import os from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
 import { chromium } from 'playwright';
 import { discoverPages, publicUrl } from './discover.mjs';
+import { chooseByVision, judgeHomepage, researchRoute } from './researchAgent.mjs';
 import { extractPrompt, foundationCss, runSkillUI } from './skillui.mjs';
 
 const CITIES = ['Los Angeles', 'New York', 'San Diego', 'Miami'];
@@ -82,7 +83,10 @@ async function inspect(browser, entry, feel) {
     const score = entry.priority * 100 + Math.min(detail.sections, 9) * 2 + Math.min(detail.images, 8) +
       Math.min(links.length, 12) + (detail.footer.length ? 5 : 0) + (detail.headings.length > 2 ? 5 : 0) +
       Math.min(matches, 3) * 8 + (String(feel.tone).toLowerCase().includes('bold') && detail.images > 2 ? 2 : 0);
-    return { ...entry, url: page.url(), detail, score };
+    // The DOM score only shortlists. Vision needs this homepage shot before a pick.
+    let shot = '';
+    try { shot = Buffer.from(await page.screenshot({ type: 'jpeg', quality: 55 })).toString('base64'); } catch { shot = ''; }
+    return { ...entry, url: page.url(), detail, score, shot };
   } finally { await context.close(); }
 }
 
@@ -119,9 +123,15 @@ async function research(input, emit, signal) {
         emit('candidate', { city: candidate.city, domain: new URL(candidate.url).hostname });
         try { measured.push(await inspect(browser, candidate, { tone: input.feel, offer: input.offer })); } catch { /* Try another site. */ }
       }
-      measured.sort((a, b) => b.score - a.score);
-      if (!measured[0]) throw new Error('No reference site could be inspected');
-      chosenUrl = measured[0].url;
+      if (!measured.length) throw new Error('No reference site could be inspected');
+      // DOM score orders the shortlist. Gemini must see a homepage before any URL is chosen.
+      const route = researchRoute();
+      chosenUrl = await chooseByVision(measured, {
+        offer: input.offer,
+        feel: input.feel,
+        emit,
+        judge: (candidate) => judgeHomepage(route, candidate),
+      });
     }
     routes = await discoverPages(browser, chosenUrl, { emit });
   } finally {

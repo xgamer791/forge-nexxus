@@ -22,6 +22,9 @@ export const NOT_EXTRACTED = "This site needs a new design reference before it c
 const PHASES: Record<string, string> = {
   searching: "Searching for design references",
   candidate: "Comparing reference sites",
+  vision: "Looking at a reference",
+  vision_rejected: "A reference didn't pass a visual check",
+  vision_accepted: "Chose a reference after seeing it",
   discovering: "Choosing up to five pages from the reference",
   skillui: "Reading the reference's design with SkillUI Ultra",
   uploading: "Saving the design reference",
@@ -185,13 +188,21 @@ export async function researchDesign(
       const total = Number.isInteger(event.detail?.total) && event.detail.total > 0 ? event.detail.total : 0;
       const pages = Number.isInteger(event.detail?.pages) && event.detail.pages > 0 ? Math.min(event.detail.pages, MAX_PAGES) : 0;
       const screens = Number.isInteger(event.detail?.screens) && event.detail.screens > 0 ? Math.min(event.detail.screens, MAX_PAGES) : 0;
+      const domain = typeof event.detail?.domain === "string" ? event.detail.domain.slice(0, 120) : "";
+      const verdict = event.detail?.verdict === "judging" || event.detail?.verdict === "rejected" || event.detail?.verdict === "accepted"
+        ? event.detail.verdict : "";
+      const reason = typeof event.detail?.reason === "string" ? event.detail.reason.replace(/\s+/g, " ").slice(0, 180) : "";
       const label = event.phase === "searching" && city ? `Searching ${city} for design references`
         : event.phase === "discovering" && pages ? `Chose ${pages === 1 ? "1 page" : `${pages} pages`} from the reference`
         : event.phase === "skillui" && screens ? `Reading the reference's design with SkillUI Ultra, ${screens === 1 ? "1 screen" : `${screens} screens`}`
+        : event.phase === "vision" && domain ? `Looking at ${domain}`
+        : event.phase === "vision_rejected" && domain ? `${domain} didn't pass a visual check`
+        : event.phase === "vision_accepted" && domain ? `Chose ${domain} after seeing it`
         : PHASES[event.phase];
       await trace.note({ phase: `research_${event.phase}`, label, status: "researching",
         detail: { ...(city ? { city } : {}), ...(page ? { page, total } : {}), ...(pages ? { total: pages } : {}),
-          ...(screens ? { mode: "ultra", screens } : {}) } });
+          ...(screens ? { mode: "ultra", screens } : {}),
+          ...(domain ? { domain } : {}), ...(verdict ? { verdict } : {}), ...(reason ? { reason } : {}) } });
     } else if (event.type === "complete" && typeof event.storageId === "string" &&
         typeof event.referenceUrl === "string" && typeof event.prompt === "string" &&
         Number.isInteger(event.inspectedPages) && Array.isArray(event.routes) &&

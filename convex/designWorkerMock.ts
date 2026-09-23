@@ -257,6 +257,8 @@ export async function answerDesignResearch(
   return ndjson([
     { type: "progress", phase: "searching", detail: { city: "Los Angeles" } },
     { type: "progress", phase: "candidate", detail: { city: "New York", domain: "harbor-reference.example" } },
+    { type: "progress", phase: "vision", detail: { domain: "harbor-reference.example", verdict: "judging" } },
+    { type: "progress", phase: "vision_accepted", detail: { domain: "harbor-reference.example", verdict: "accepted", reason: "Designed homepage" } },
     { type: "progress", phase: "discovering", detail: { pages: routes.length } },
     { type: "progress", phase: "skillui", detail: { mode: "ultra", screens: routes.length } },
     { type: "progress", phase: "uploading", detail: { pages: routes.length } },

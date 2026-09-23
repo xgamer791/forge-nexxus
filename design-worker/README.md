@@ -5,9 +5,12 @@ reference a site's design comes from, chooses which of its pages the site
 will have, and extracts the reference's design:
 
 1. **Search.** Brave Search looks for businesses like the member's in Los
-   Angeles, New York, San Diego and Miami, and candidate sites are inspected in
-   Playwright; the best one is chosen. A site that already has a reference
-   (a rebuild) is researched again at the same address with no search.
+   Angeles, New York, San Diego and Miami. Playwright inspects candidates and
+   scores the DOM only to shortlist them. **Gemini 3.8 Flash Max**
+   (`gemini-3.8-flash`, thinking level `high` — the API's ceiling) must
+   screenshot each shortlisted homepage and accept it before that URL can be
+   chosen. If none pass, research fails. It does not fall back to the highest
+   DOM score. A rebuild re-extracts the saved address and does not search again.
 2. **Page discovery agent** (`discover.mjs`). It opens the reference's home
    page and reads the links its header and navigation carry, the phone menu's
    included, in the site's own order. It keeps the home page and the site's own
@@ -30,8 +33,8 @@ will have, and extracts the reference's design:
    light surfaces white per DESIGN_GOD) and the chosen pages.
 
 Every stage streams to the build as it happens (`searching`, `candidate`,
-`discovering`, `skillui`, `uploading`), and the member's build log shows each
-one. A failed search, browser session, discovery, SkillUI run or upload fails
+`vision`, `vision_rejected`, `vision_accepted`, `discovering`, `skillui`,
+`uploading`), and the member's build log shows each one. A failed search, browser session, discovery, SkillUI run or upload fails
 the job; so does a SkillUI run without its ultra outputs (DESIGN.md,
 LAYOUT.md, page screenshots and the `.skill` archive), including one that
 could not start Chromium. The model is never asked to invent a reference.
@@ -60,6 +63,9 @@ Worker environment:
 
 * `DESIGN_WORKER_TOKEN`: a long random bearer token shared only with Convex.
 * `BRAVE_SEARCH_API_KEY`: Brave Web Search API credential.
+* `AI_RESEARCH_API_KEY`: Gemini key for the research chooser. Falls back to `GEMINI_API_KEY`, then `AI_IMAGE_API_KEY`.
+* `AI_RESEARCH_MODEL`: optional, default `gemini-3.8-flash` (Gemini 3.8 Flash Max).
+* `AI_RESEARCH_BASE_URL`: optional, default `https://generativelanguage.googleapis.com/v1beta`.
 * `PORT`: optional, defaults to 8080.
 
 Convex environment:
