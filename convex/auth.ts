@@ -158,6 +158,8 @@ export async function adoptGuestData(
   await Promise.all(buildRuns.map(row => ctx.db.patch(row._id, { userId })));
   const buildEvents = await ctx.db.query("buildEvents").withIndex("by_user", q => q.eq("userId", guestId)).collect();
   await Promise.all(buildEvents.map(row => ctx.db.patch(row._id, { userId })));
+  const buildDrafts = await ctx.db.query("buildDrafts").withIndex("by_user", q => q.eq("userId", guestId)).collect();
+  await Promise.all(buildDrafts.map(row => ctx.db.patch(row._id, { userId })));
   const memories = await ctx.db.query("memories").withIndex("by_user", q => q.eq("userId", guestId)).collect();
   await Promise.all(memories.map(row => ctx.db.patch(row._id, { userId })));
   // Appearance choices made as a guest carry over only when the account has

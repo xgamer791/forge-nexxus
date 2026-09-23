@@ -112,6 +112,19 @@ export function designSource(version: VersionPages) {
   return version.html ?? "";
 }
 
+// The pages a measured reference asks for, as the addresses a build stores:
+// each once, the home page first, the rest in the order they were measured.
+// An address that cannot be served names no page, so it is left out. More
+// than one is a site written a page at a time (buildDraft.ts).
+export function pagePlan(routes: readonly string[] | undefined): string[] {
+  const plan: string[] = [];
+  for (const route of routes ?? []) {
+    const path = normalizePath(route);
+    if (path !== null && !plan.includes(path)) plan.push(path);
+  }
+  return ["/", ...plan.filter((path) => path !== "/")];
+}
+
 // One page of a build, before it is stored.
 export type SitePage = { path: string; title: string; body: string };
 

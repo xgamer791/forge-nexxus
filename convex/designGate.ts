@@ -17,7 +17,7 @@
 // Each step is its own action, so a build and several rounds of checking are
 // never inside one ten-minute clock. The thread's and onboarding's watchdogs
 // wait while a check is moving and speak for it once it has gone quiet.
-import { v } from "convex/values";
+import { v, type ObjectType } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
@@ -128,44 +128,51 @@ async function prune(ctx: MutationCtx, userId: Id<"users">) {
   for (const row of finished.slice(KEEP_GATES - 1)) await ctx.db.delete(row._id);
 }
 
+const openArgs = {
+  source: v.union(v.literal("thread"), v.literal("onboarding")),
+  userId: v.id("users"),
+  siteId: v.id("sites"),
+  runId: v.id("buildRuns"),
+  assistantId: v.id("messages"),
+  holdId: v.id("creditHolds"),
+  requestKind,
+  epoch: v.number(),
+  onboardingId: v.optional(v.id("siteOnboarding")),
+  attempt: v.optional(v.number()),
+  rebuild: v.optional(v.boolean()),
+  siteName: v.string(),
+  prompt: v.optional(v.string()),
+  remember: v.optional(v.boolean()),
+  blockedNote: v.optional(v.string()),
+  ...siteFields,
+  summary: v.string(),
+};
+
+// Parks a build's site for the check and starts the first round. A build
+// written a page at a time (buildDraft.ts) comes here from inside the same
+// transaction that closes its draft, so a site can never be handed on twice.
+export async function openGate(ctx: MutationCtx, args: ObjectType<typeof openArgs>) {
+  await prune(ctx, args.userId);
+  const now = Date.now();
+  const gateId = await ctx.db.insert("designGates", {
+    ...args,
+    status: "checking",
+    round: 1,
+    trouble: 0,
+    fixes: [],
+    results: [],
+    createdAt: now,
+    updatedAt: now,
+  });
+  await tell(ctx, (await ctx.db.get(gateId))!, "checking");
+  await ctx.scheduler.runAfter(0, internal.designGate.check, { id: gateId });
+  return gateId;
+}
+
 export const open = internalMutation({
-  args: {
-    source: v.union(v.literal("thread"), v.literal("onboarding")),
-    userId: v.id("users"),
-    siteId: v.id("sites"),
-    runId: v.id("buildRuns"),
-    assistantId: v.id("messages"),
-    holdId: v.id("creditHolds"),
-    requestKind,
-    epoch: v.number(),
-    onboardingId: v.optional(v.id("siteOnboarding")),
-    attempt: v.optional(v.number()),
-    rebuild: v.optional(v.boolean()),
-    siteName: v.string(),
-    prompt: v.optional(v.string()),
-    remember: v.optional(v.boolean()),
-    blockedNote: v.optional(v.string()),
-    ...siteFields,
-    summary: v.string(),
-  },
+  args: openArgs,
   returns: v.id("designGates"),
-  handler: async (ctx, args) => {
-    await prune(ctx, args.userId);
-    const now = Date.now();
-    const gateId = await ctx.db.insert("designGates", {
-      ...args,
-      status: "checking",
-      round: 1,
-      trouble: 0,
-      fixes: [],
-      results: [],
-      createdAt: now,
-      updatedAt: now,
-    });
-    await tell(ctx, (await ctx.db.get(gateId))!, "checking");
-    await ctx.scheduler.runAfter(0, internal.designGate.check, { id: gateId });
-    return gateId;
-  },
+  handler: async (ctx, args) => await openGate(ctx, args),
 });
 
 // The start of a step. It hands the step its gate only while the build is

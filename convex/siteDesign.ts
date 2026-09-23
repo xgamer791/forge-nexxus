@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
 import type { ProviderTrace } from "./diagnostics";
-import { siteParts, type BuiltSite } from "./pages";
+import { normalizePath, siteParts, type BuiltSite } from "./pages";
 
 // A measured design reference: every route of the reference site at phone,
 // tablet and desktop widths, as the design worker measured it (see
@@ -24,6 +24,26 @@ const PHASES: Record<string, string> = {
   measuring: "Measuring the reference site's layout",
   uploading: "Saving the design reference",
 };
+
+// The measured spec for the pages a turn writes: everything before the first
+// route -- what the reference decides, its routes, its type scale -- and then
+// those routes' own sections. A later turn writes one page, and the numbers
+// for pages it is not writing are only more to read before it starts. A spec
+// in another shape, or one without the route, goes whole.
+export function routeSpec(spec: string, paths: string[]) {
+  const lines = spec.split("\n");
+  const starts = lines.flatMap((line, index) => (/^ROUTE \S/.test(line) ? [index] : []));
+  if (!starts.length) return spec;
+  const kept = lines.slice(0, starts[0]);
+  let found = false;
+  starts.forEach((start, n) => {
+    const path = normalizePath(lines[start].slice("ROUTE ".length).trim());
+    if (path === null || !paths.includes(path)) return;
+    found = true;
+    kept.push(...lines.slice(start, starts[n + 1] ?? lines.length));
+  });
+  return found ? kept.join("\n").trimEnd() : spec;
+}
 
 export function assertDesignRules(site: BuiltSite, referenceUrl: string) {
   const html = siteParts(site).join("\n");

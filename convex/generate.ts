@@ -617,13 +617,27 @@ export const beginOnboarding = internalMutation({
     const { holdId } = await holdCredits(ctx, row.userId, "generate");
     const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
     await ctx.db.patch(id, { holdId, assistantId, events: [...row.events, { label: "Agent started building your website", at: Date.now() }] });
+    const memory = await memoryNote(ctx, row.userId);
     return {
       siteName: site.name,
-      messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null, "build", await memoryNote(ctx, row.userId)),
+      // Kept by a build written a page at a time, so every step says the same.
+      memory,
+      messages: onboardingMessages(site.name, memory),
       result: { siteId: site._id, holdId, assistantId, requestKind: "generate" as const, epoch: site.buildEpoch ?? 0 },
     };
   },
 });
+
+// What a first build is asked, ahead of the brief file itself.
+const ONBOARDING_REQUEST = "Build the website from the saved onboarding brief.";
+
+// The turn a first build is written from: the house rules, the design files,
+// the platform contract and the member's memory note. A build written a page
+// at a time (buildDraft.ts) sends it again on every step, so each step is told
+// exactly what a one-reply build is.
+export function onboardingMessages(siteName: string, memory: string | null) {
+  return buildMessages(siteName, null, [], ONBOARDING_REQUEST, null, "build", memory);
+}
 
 export const finish = internalMutation({
   args: {
@@ -919,6 +933,15 @@ function outOfTimeMessage(phase: StreamPhase) {
       ? "The model was still thinking your website through when the build ran out of time. Try again."
       : "The model hadn't started on your website when the build ran out of time. Try again in a moment.";
 }
+// A reply the stream stopped: what the member reads, with where the reply had
+// got to kept alongside for whatever carries the build on.
+export class ReplyStopped extends Error {
+  constructor(readonly stop: StreamStopped) {
+    super(stoppedMessage(stop));
+    this.name = "ReplyStopped";
+  }
+}
+
 function stoppedMessage(stop: StreamStopped) {
   if (stop.reason === "looping") return "The model got stuck repeating itself instead of writing your website. Try again.";
   if (stop.reason === "provider_error") {
@@ -987,8 +1010,10 @@ async function complete(
   maxTokens: number,
   deadline: number,
   trace?: ProviderTrace,
-  meta?: { continuation?: number },
-) {
+  // `keepPartial`: a build written a page at a time wants a page its clock
+  // stopped part way back as far as it got, not a failure (callProviderPart).
+  meta?: { continuation?: number; keepPartial?: boolean },
+): Promise<{ content: string; truncated: boolean; outOfTime?: boolean; stats?: StreamStats }> {
   let limit = maxTokens;
   // The most this provider will take, once it has said so itself. Widening
   // after an all-thinking reply stops here: asking again above a cap the
@@ -1079,13 +1104,19 @@ async function complete(
     }
     if (stopped) {
       const { reason, stats } = stopped;
+      // The step's clock ran out while the page was being written. Kept, this
+      // is a checkpoint rather than a stop: the next step carries the page on
+      // from this character, and says so in the build's log.
+      if (reason === "out_of_time" && meta?.keepPartial && stats.phase === "writing" && stopped.content) {
+        return { content: stopped.content, truncated: true, outOfTime: true, stats };
+      }
       await trace?.note({
         phase: "provider_stop",
         label: stopLabel(reason, stats.phase),
         level: reason === "out_of_time" ? "error" : "warn",
         detail: { attempt, continuation: meta?.continuation, host, model: route.model, stopReason: reason, errorClass: STOP_CLASS[reason], ...streamDetail(stats, started) },
       });
-      if (reason === "out_of_time") throw new Error(stoppedMessage(stopped));
+      if (reason === "out_of_time") throw new ReplyStopped(stopped);
       // The page had begun: what it has is kept, and the next call carries on
       // from the character where this one stopped.
       const begun = stats.phase === "writing" && (meta?.continuation ? stopped.content.length > 0 : /```html|<!doctype html/i.test(stopped.content));
@@ -1096,7 +1127,7 @@ async function complete(
           level: "warn",
           detail: { attempt, continuation: meta?.continuation, stopReason: reason, replyChars: stopped.content.length, host, model: route.model },
         });
-        return { content: stopped.content, truncated: true };
+        return { content: stopped.content, truncated: true, stats };
       }
       if (!retriedStop && deadline - Date.now() > STOP_RETRY_FLOOR_MS) {
         retriedStop = true;
@@ -1109,7 +1140,7 @@ async function complete(
         });
         continue;
       }
-      throw new Error(stoppedMessage(stopped));
+      throw new ReplyStopped(stopped);
     }
     response = response!;
     if (!response.ok) {
@@ -1254,7 +1285,7 @@ async function complete(
         model: route.model,
       },
     });
-    return { content, truncated: finishReason === "length" };
+    return { content, truncated: finishReason === "length", stats: streamed?.stats };
   }
   throw new Error("The model provider kept refusing this request.");
 }
@@ -1270,6 +1301,28 @@ export async function callProvider(
   trace?: ProviderTrace,
   purpose: Purpose = "chat",
 ) {
+  return (await provide(messages, { tokenLimit, budgetMs, trace, purpose })).content;
+}
+
+// A reply for a build written a page at a time (buildDraft.ts): the same call
+// on the build route, except that a reply the step's clock stops while it is
+// writing comes back as far as it got, marked cut, instead of failing -- the
+// next step carries it on from that character. `resuming` is a reply that is
+// itself carrying a page on, so it starts mid-page rather than at a fence.
+export async function callProviderPart(
+  messages: ChatMessage[],
+  budgetMs: number,
+  trace?: ProviderTrace,
+  resuming = false,
+) {
+  return await provide(messages, { budgetMs, trace, purpose: "build", keepPartial: true, resuming });
+}
+
+async function provide(
+  messages: ChatMessage[],
+  options: { tokenLimit?: number; budgetMs: number; trace?: ProviderTrace; purpose: Purpose; keepPartial?: boolean; resuming?: boolean },
+): Promise<{ content: string; cut: boolean; outOfTime?: boolean; stats?: StreamStats }> {
+  const { trace, purpose, keepPartial, resuming } = options;
   const route = chatRoute(purpose);
   if (!route.apiKey) {
     await trace?.note({
@@ -1280,37 +1333,48 @@ export async function callProvider(
     });
     throw new ConvexError("Site generation isn't set up on this deployment yet");
   }
-  const maxTokens = tokenLimit ?? maxTokensFor(purpose);
-  const deadline = Date.now() + Math.min(budgetMs, TEXT_BUDGET_MS);
-  let reply = await complete(route, messages, maxTokens, deadline, trace);
+  const maxTokens = options.tokenLimit ?? maxTokensFor(purpose);
+  const deadline = Date.now() + Math.min(options.budgetMs, TEXT_BUDGET_MS);
+  const carried = resuming ? 1 : 0;
+  let reply = await complete(route, messages, maxTokens, deadline, trace, { continuation: carried || undefined, keepPartial });
   let content = reply.content;
   for (
     let round = 0;
-    reply.truncated && round < MAX_CONTINUATIONS && /```html|<!doctype html/i.test(content) && deadline - Date.now() > CONTINUE_FLOOR_MS;
+    reply.truncated && !reply.outOfTime && round < MAX_CONTINUATIONS && (resuming || /```html|<!doctype html/i.test(content)) && deadline - Date.now() > CONTINUE_FLOOR_MS;
     round += 1
   ) {
-    reply = await complete(
-      route,
-      [
-        ...messages,
-        { role: "assistant", content },
-        {
-          role: "user",
-          content:
-            "Your reply was cut off by the length limit. Continue from the exact character where it stopped. " +
-            "Do not repeat anything already written, do not restart the document, and do not add commentary or open a new code fence. " +
-            "Output only the remaining text, and finish by closing the HTML document and then the code fence.",
-        },
-      ],
-      maxTokens,
-      deadline,
-      trace,
-      { continuation: round + 1 },
-    );
+    try {
+      reply = await complete(
+        route,
+        [
+          ...messages,
+          { role: "assistant", content },
+          {
+            role: "user",
+            content:
+              "Your reply was cut off by the length limit. Continue from the exact character where it stopped. " +
+              "Do not repeat anything already written, do not restart the document, and do not add commentary or open a new code fence. " +
+              "Output only the remaining text, and finish by closing the HTML document and then the code fence.",
+          },
+        ],
+        maxTokens,
+        deadline,
+        trace,
+        { continuation: carried + round + 1, keepPartial },
+      );
+    } catch (error) {
+      // What the reply had written stays written: a build that keeps its
+      // pages carries it on in its next step rather than losing it here.
+      if (keepPartial) {
+        const outOfTime = error instanceof ReplyStopped && error.stop.reason === "out_of_time";
+        return { content, cut: true, outOfTime, stats: outOfTime ? error.stop.stats : reply.stats };
+      }
+      throw error;
+    }
     // A continuation that opens its own fence anyway would split the page in two.
     content += reply.content.replace(/^\s*```(?:html)?[ \t]*\r?\n/i, "");
   }
-  return content;
+  return { content, cut: reply.truncated, outOfTime: reply.outOfTime, stats: reply.stats };
 }
 
 // The page is the fenced block; the sentence before it is the summary. A
@@ -1456,6 +1520,36 @@ export function parseShellReply(content: string): { shell: string; pages: SitePa
     pages.push({ path, title: (fenceAttr(block.info, "title") ?? titleFor(block.body, path)).trim(), body: block.body });
   }
   return { shell: shellBlock.body, pages, summary: summaryBefore(content, blocks[0]?.index), clones: clonesIn(blocks) };
+}
+
+// A reply to one turn of a build written a page at a time, block by block.
+// Unlike `parseReply`, nothing here is refused for being unfinished: whatever
+// closed its fence can be kept, and the block the reply was still inside when
+// it stopped is where the next turn carries on, so it is named along with the
+// character its fence opens at. `path` is null for an address that cannot be
+// served.
+export type DraftReply = {
+  summary: string;
+  shell?: { body: string; closed: boolean };
+  pages: { path: string | null; title: string; body: string; closed: boolean }[];
+  open?: { at: number; shell: boolean; path: string | null };
+};
+
+export function readDraftReply(content: string): DraftReply {
+  const blocks = fencedBlocks(content);
+  const reply: DraftReply = { summary: summaryBefore(content, blocks[0]?.index), pages: [] };
+  for (const block of blocks) {
+    const shell = /^html\s+shell\b/i.test(block.info);
+    const page = !shell && /^html\b/i.test(block.info) && (fenceAttr(block.info, "path") !== null || /^html\s+\/\S*/i.test(block.info));
+    const path = page ? normalizePath(fenceAttr(block.info, "path") ?? block.info.match(/^html\s+(\/\S*)/i)?.[1] ?? "/") : null;
+    if (!block.closed) reply.open = { at: block.index, shell, path };
+    if (shell) {
+      reply.shell ??= { body: block.body, closed: block.closed };
+    } else if (page) {
+      reply.pages.push({ path, title: (fenceAttr(block.info, "title") ?? titleFor(block.body, path ?? "/")).trim(), body: block.body, closed: block.closed });
+    }
+  }
+  return reply;
 }
 
 // Where a reasoning model keeps its thinking. It is not an answer and never
