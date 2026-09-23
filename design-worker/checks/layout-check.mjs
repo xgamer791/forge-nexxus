@@ -91,10 +91,23 @@ test("an empty region matches an empty region and nothing else", () => {
   assert.equal(scoreMasks(empty, some).score, 0);
 });
 
-test("a boundary moved by one cell is the same boundary", () => {
+test("a boundary moved by one cell is counted, with no allowance", () => {
   const ref = rasterize([[KIND.media, 0, 0, 200, 80], [KIND.text, 200, 0, 200, 80]], { width: 400, bottom: 80, cell });
   const cand = rasterize([[KIND.media, 0, 0, 208, 80], [KIND.text, 208, 0, 192, 80]], { width: 400, bottom: 80, cell });
-  assert.equal(scoreMasks(ref, cand).score, 1);
+  const result = scoreMasks(ref, cand);
+  assert.ok(result.score < 1 && result.score > 0.9, `score ${result.score}`);
+});
+
+test("a region passes only when every one of its bands does", () => {
+  const bands = [[KIND.media, 600], [KIND.surface, 400], [KIND.media, 600]];
+  const reference = site(["/"], bands);
+  const candidate = site(["/"], bands);
+  // The same page, except one band's picture swapped for text.
+  const page = candidate.routes[0].viewports.desktop;
+  page.boxes = page.boxes.map((box) => (box[0] === KIND.media && box[2] > 1000 ? [KIND.text, box[1], box[2], box[3], box[4]] : box));
+  const outcome = auditSite(reference, candidate).routes[0].viewports.desktop.regions.body;
+  assert.equal(outcome.passed, false);
+  assert.ok(outcome.bands.some((band) => band.score < 0.95));
 });
 
 test("each alignment covers every row of both masks once in order", () => {

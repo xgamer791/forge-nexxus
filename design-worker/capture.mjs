@@ -21,6 +21,18 @@ import { VIEWPORTS } from "./layout.mjs";
 const UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+// Slideshows advance, captions rotate and pop-ups open on timers of a second
+// and a half or more; held from the first line of script, every measurement
+// of a page sees its first slide. Loading, lazy images and this file's own
+// waits all run on shorter timers and are untouched.
+const HOLD_LONG_TIMERS = `(() => {
+  const LONG = 1500;
+  const timeout = window.setTimeout;
+  const interval = window.setInterval;
+  window.setTimeout = function (fn, ms, ...rest) { return Number(ms) >= LONG ? 0 : timeout.call(this, fn, ms, ...rest); };
+  window.setInterval = function (fn, ms, ...rest) { return Number(ms) >= LONG ? 0 : interval.call(this, fn, ms, ...rest); };
+})();`;
+
 // The origin a candidate site is served from while it is checked. Nothing
 // leaves the browser for it: every request to it is answered from the routes
 // the check was given.
@@ -299,8 +311,12 @@ function measureInPage(options) {
   // the site's own; its place and size are the layout's.
   const marks = new Set();
   const headerLinks = headerEls.flatMap((h) => [...h.querySelectorAll("a[href]")]);
+  const painted = (el) => [el, ...el.querySelectorAll("*")].some((part) => {
+    const r = part.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && getComputedStyle(part).visibility !== "hidden" && getComputedStyle(part).display !== "none";
+  });
   const home = headerLinks.find((a) => {
-    if (!shown(a)) return false;
+    if (!painted(a)) return false;
     try {
       const u = new URL(a.href, location.href);
       return (u.origin === location.origin && /^\/?(index\.html?)?$/i.test(u.pathname)) ||
@@ -360,9 +376,23 @@ function measureInPage(options) {
     if (cs.position === "fixed") next.clip = PAGE;
     const r = el.getBoundingClientRect();
     const rect = rectOf(r);
+    // The brand mark is whatever the home link paints, however its box is
+    // built: a link with no box of its own around a positioned logo is the logo.
+    if (marks.has(el)) {
+      const parts = [el, ...el.querySelectorAll("*")].map((part) => part.getBoundingClientRect()).filter((part) => part.width > 0 && part.height > 0);
+      if (parts.length) {
+        paint(KIND.mark, {
+          x0: Math.min(...parts.map((p) => p.left)) + sx,
+          y0: Math.min(...parts.map((p) => p.top)) + sy,
+          x1: Math.max(...parts.map((p) => p.right)) + sx,
+          y1: Math.max(...parts.map((p) => p.bottom)) + sy,
+        }, next);
+      }
+      return;
+    }
     const paints = cs.visibility === "visible" && cs.display !== "contents" && r.width > 0 && r.height > 0;
     if (paints) {
-      if (marks.has(el) || (iconLike(el, r) && !el.children.length)) {
+      if (iconLike(el, r) && !el.children.length) {
         paint(KIND.mark, rect, next);
         return;
       }
@@ -636,10 +666,13 @@ async function waitStill(page, { timeout = 3000, every = 150 } = {}) {
 // menu, measure again. `serve` answers the audit origin's requests.
 // ---------------------------------------------------------------------------
 
-export async function measurePage(browser, url, viewportName, { serve = null, discover = false, shots = null } = {}) {
+// `rewrite(html)` changes the page's own document before the browser reads it
+// -- calibration uses it to restyle a reference without touching its layout.
+export async function measurePage(browser, url, viewportName, { serve = null, discover = false, shots = null, rewrite = null } = {}) {
   const viewport = VIEWPORTS[viewportName];
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1, serviceWorkers: "block", userAgent: UA });
   try {
+    await context.addInitScript(HOLD_LONG_TIMERS);
     const page = await context.newPage();
     await page.route("**/*", async (route) => {
       const target = route.request().url();
@@ -649,7 +682,12 @@ export async function measurePage(browser, url, viewportName, { serve = null, di
           ? route.fulfill({ status: 404, contentType: "text/html", body: "Not found" })
           : route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: found });
       }
-      return publicUrl(target) ? route.continue() : route.abort();
+      if (!publicUrl(target)) return route.abort();
+      if (rewrite && route.request().isNavigationRequest()) {
+        const response = await route.fetch();
+        return route.fulfill({ response, body: rewrite(await response.text()) });
+      }
+      return route.continue();
     });
     const response = await page.goto(url, { waitUntil: "load", timeout: 45000 });
     if (!response || response.status() >= 400) throw new Error(`The page answered ${response ? response.status() : "nothing"}`);

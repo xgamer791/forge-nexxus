@@ -37,10 +37,10 @@ export const CELL = { phone: [4, 8], tablet: [6, 8], desktop: [8, 8] };
 
 export const REGIONS = ["full", "header", "menu", "body", "footer"];
 
-// The lowest score each region may have, on every route at every width.
-// Calibrated in checks/calibration.md: the measured Taqueria build fails its
-// body and footer, a copy-and-font restyle of the reference passes.
-export const THRESHOLDS = { full: 0.8, header: 0.8, menu: 0.8, body: 0.8, footer: 0.8 };
+// The lowest score each region may have, on every route at every width -- and
+// each of its ten bands too, as ai-site-cloner's triage demands of a passing
+// page, so a failing section cannot hide inside a passing average.
+export const THRESHOLDS = { full: 0.95, header: 0.95, menu: 0.95, body: 0.95, footer: 0.95 };
 
 const BANDS = 10;
 
@@ -67,9 +67,7 @@ export function rasterize(boxes, { width, top = 0, bottom, cell }) {
 }
 
 // How two rows of the same width disagree: the cells either paints, and of
-// those the ones they paint differently. A boundary that moved by one cell is
-// the same boundary -- the label on each side is found one cell over on the
-// other -- which is the same allowance pixelmatch gives antialiased edges.
+// those the ones they paint differently.
 function rowCost(a, ai, b, bi, cols) {
   let mismatch = 0;
   let union = 0;
@@ -78,11 +76,7 @@ function rowCost(a, ai, b, bi, cols) {
     const q = b[bi + c];
     if (p === 0 && q === 0) continue;
     union += 1;
-    if (p === q) continue;
-    const pNear = (c > 0 && b[bi + c - 1] === p) || (c < cols - 1 && b[bi + c + 1] === p);
-    const qNear = (c > 0 && a[ai + c - 1] === q) || (c < cols - 1 && a[ai + c + 1] === q);
-    if (pNear && qNear) continue;
-    mismatch += 1;
+    if (p !== q) mismatch += 1;
   }
   return [mismatch, union];
 }
@@ -228,10 +222,9 @@ export function scoreMasks(ref, cand) {
 }
 
 // Per kind: cells the reference paints with it, cells the candidate does, and
-// of each the ones the other side paints the same (one cell over counts, as in
-// rowCost). Plus the plain union and mismatch counts.
+// the cells both paint with it. Plus the plain union and mismatch counts.
 function tally() {
-  return { ref: new Float64Array(KINDS.length), cand: new Float64Array(KINDS.length), refHit: new Float64Array(KINDS.length), candHit: new Float64Array(KINDS.length), mismatch: 0, union: 0 };
+  return { ref: new Float64Array(KINDS.length), cand: new Float64Array(KINDS.length), both: new Float64Array(KINDS.length), mismatch: 0, union: 0 };
 }
 
 function countRow(a, ai, b, bi, cols, ...into) {
@@ -239,20 +232,12 @@ function countRow(a, ai, b, bi, cols, ...into) {
     const p = a[ai + c];
     const q = b[bi + c];
     if (p === 0 && q === 0) continue;
-    const pFound = p !== 0 && (q === p || (c > 0 && b[bi + c - 1] === p) || (c < cols - 1 && b[bi + c + 1] === p));
-    const qFound = q !== 0 && (p === q || (c > 0 && a[ai + c - 1] === q) || (c < cols - 1 && a[ai + c + 1] === q));
-    const same = p === q || ((p === 0 || pFound) && (q === 0 || qFound) && p !== 0 && q !== 0);
     for (const t of into) {
       t.union += 1;
-      if (!same) t.mismatch += 1;
-      if (p !== 0) {
-        t.ref[p] += 1;
-        if (pFound) t.refHit[p] += 1;
-      }
-      if (q !== 0) {
-        t.cand[q] += 1;
-        if (qFound) t.candHit[q] += 1;
-      }
+      if (p !== q) t.mismatch += 1;
+      if (p !== 0) t.ref[p] += 1;
+      if (q !== 0) t.cand[q] += 1;
+      if (p !== 0 && p === q) t.both[p] += 1;
     }
   }
 }
@@ -262,7 +247,7 @@ function dice(t) {
   const out = {};
   for (let k = 1; k < KINDS.length; k += 1) {
     const total = t.ref[k] + t.cand[k];
-    if (total) out[KINDS[k]] = round((t.refHit[k] + t.candHit[k]) / total);
+    if (total) out[KINDS[k]] = round((2 * t.both[k]) / total);
   }
   return out;
 }
@@ -281,7 +266,7 @@ function balanced(t) {
     if (!total) continue;
     const w = Math.sqrt(total);
     weight += w;
-    sum += w * ((t.refHit[k] + t.candHit[k]) / total);
+    sum += w * ((2 * t.both[k]) / total);
   }
   return weight ? sum / weight : 1;
 }
@@ -323,7 +308,9 @@ export function compareRoute(refPage, candPage, viewportName) {
     const ref = regionMask(refPage, region, viewportName);
     const cand = regionMask(candPage, region, viewportName);
     const result = scoreMasks(ref, cand);
-    regions[region] = { ...result, threshold: THRESHOLDS[region], passed: result.score >= THRESHOLDS[region] };
+    const threshold = THRESHOLDS[region];
+    const passed = result.score >= threshold && result.bands.every((band) => band.score >= threshold);
+    regions[region] = { ...result, threshold, passed };
   }
   return regions;
 }
