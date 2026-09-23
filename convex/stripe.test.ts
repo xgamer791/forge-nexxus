@@ -384,7 +384,7 @@ describe("cancel, resume, and the portal", () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     const calls = stubStripe(() => json({ id: "sub_1", cancel_at_period_end: true }));
-    await expect(member.as.action(api.billing.cancel, {})).rejects.toThrow("already on the free plan");
+    await expect(member.as.action(api.billing.cancel, {})).rejects.toThrow("You're already off a paid plan");
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
     await member.as.action(api.billing.cancel, {});
     expect(calls).toHaveLength(0);

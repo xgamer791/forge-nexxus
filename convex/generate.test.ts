@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { parseReply } from "./generate";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -29,6 +30,41 @@ async function createBuilder(t: ReturnType<typeof fresh>, email: string) {
   const member = await createUser(t, { email });
   await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
   return member;
+}
+
+// A first paid build is the website questions, not a prompt in the thread.
+// Tests that exercise an edit seed the page the questions would have saved.
+async function seedPage(
+  t: ReturnType<typeof fresh>,
+  siteId: Id<"sites">,
+  html = PAGE,
+  summary = "Built the first version.",
+) {
+  return await t.run(async (ctx) => {
+    const site = (await ctx.db.get(siteId))!;
+    const versionId = await ctx.db.insert("siteVersions", {
+      userId: site.userId,
+      siteId,
+      html,
+      summary,
+      requestKind: "generate",
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(siteId, { currentVersionId: versionId });
+    return versionId;
+  });
+}
+
+async function seedExchange(
+  t: ReturnType<typeof fresh>,
+  conversationId: Id<"conversations">,
+  user: string,
+  assistant: string,
+) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("messages", { conversationId, role: "user", body: user });
+    await ctx.db.insert("messages", { conversationId, role: "assistant", body: assistant });
+  });
 }
 
 const free = planFor("free");
@@ -108,67 +144,73 @@ describe("parseReply", () => {
 });
 
 describe("generate.run", () => {
-  test("a first prompt builds the site, charges the generate cost, and keeps the version", async () => {
+  test("a paid member's first build is the website questions, and the thread does not charge for one", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
     const calls = stubProvider(() => reply("Built a warm landing page with a menu."));
 
-    const { messageId } = await member.as.action(api.generate.run, {
-      conversationId,
-      prompt: "A warm site for a neighbourhood bakery",
-    });
+    await expect(
+      member.as.action(api.generate.run, {
+        conversationId,
+        prompt: "A warm site for a neighbourhood bakery",
+      }),
+    ).rejects.toThrow("Complete the website questions before your first build");
 
-    const messages = await member.as.query(api.messages.list, { conversationId });
-    expect(messages.map((m) => [m.role, m.body, m.status ?? null])).toEqual([
-      ["user", "A warm site for a neighbourhood bakery", null],
-      ["assistant", "Built a warm landing page with a menu.", null],
-    ]);
-    expect(messages[1]._id).toBe(messageId);
-    const [site] = await member.as.query(api.sites.list, {});
-    expect(site.currentVersionId).toBe(messages[1].versionId);
-    const current = await member.as.query(api.sites.currentHtml, { siteId });
-    expect(current).toMatchObject({ html: PAGE, summary: "Built a warm landing page with a menu.", published: false });
-
+    expect(calls).toHaveLength(0);
+    expect(await member.as.query(api.messages.list, { conversationId })).toEqual([]);
+    expect(await member.as.query(api.sites.currentHtml, { siteId })).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      credits: OPENING - REQUEST_COSTS.generate,
+      credits: OPENING,
       reserved: 0,
     });
-    const history = await member.as.query(api.billing.history, {});
-    expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.generate, note: "Site build" });
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe("https://ai.example/v1/chat/completions");
-    expect(calls[0].headers.authorization).toBe(`Bearer ${KEY}`);
-    expect(calls[0].body.model).toBe("forge-test");
-    const roles = calls[0].body.messages.map((m: any) => m.role);
-    expect(roles).toEqual(["system", "user"]);
-    expect(calls[0].body.messages[0].content).toContain("self-contained HTML file");
-    expect(calls[0].body.messages[1].content).toBe("A warm site for a neighbourhood bakery");
+    expect(await t.run((ctx) => ctx.db.query("creditHolds").collect())).toEqual([]);
   });
 
-  test("a second prompt is an edit: the current page goes along and the edit cost is charged", async () => {
+  test("a prompt against a built site is an edit: the current page goes along and the edit cost is charged", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { conversationId, siteId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
-    const calls = stubProvider((_body, call) =>
-      call === 1 ? reply("Built the first version.") : reply("Added opening hours.", PAGE_TWO),
-    );
-    await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
+    await seedPage(t, siteId);
+    await seedExchange(t, conversationId, "A bakery site", "Built the first version.");
+    const calls = stubProvider(() => reply("Added opening hours.", PAGE_TWO));
     await member.as.action(api.generate.run, { conversationId, prompt: "Add opening hours" });
 
-    const second = calls[1].body.messages;
-    expect(second.map((m: any) => m.role)).toEqual(["system", "system", "user", "assistant", "user"]);
-    expect(second[1].content).toContain(PAGE);
-    expect(second[2].content).toBe("A bakery site");
-    expect(second[3].content).toBe("Built the first version.");
-    expect(second[4].content).toBe("Add opening hours");
+    const sent = calls[0].body.messages;
+    expect(sent.map((m: any) => m.role)).toEqual([
+      "system",
+      "system",
+      "system",
+      "system",
+      "system",
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(sent[0].content).toContain("What every page owes");
+    expect(sent[1].content).toContain("## Navigation");
+    expect(sent[1].content).not.toContain("name on the left and links on the right");
+    expect(sent[1].content).not.toContain("at least 44px");
+    expect(sent[3].content).toContain("You are Forge, the website-building agent");
+    expect(sent.find((m: any) => m.role === "system" && m.content.includes(PAGE))?.content).toContain(PAGE);
+    expect(sent.filter((m: any) => m.role === "user").map((m: any) => m.content)).toEqual([
+      "A bakery site",
+      "Add opening hours",
+    ]);
+    expect(sent.find((m: any) => m.role === "assistant")?.content).toBe("Built the first version.");
+    expect(calls[0].url).toBe("https://ai.example/v1/chat/completions");
+    expect(calls[0].headers.authorization).toBe(`Bearer ${KEY}`);
+    expect(calls[0].body.model).toBe("forge-test");
 
-    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE_TWO);
+    const current = await member.as.query(api.sites.currentHtml, { siteId });
+    expect(current?.html).toContain("Bakery on Main — now with hours");
+    expect(current?.html).toContain("data-forge-floor");
+    expect(current?.summary).toBe("Added opening hours.");
     expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toHaveLength(2);
-    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
-      OPENING - REQUEST_COSTS.generate - REQUEST_COSTS.edit,
-    );
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING - REQUEST_COSTS.edit);
+    const history = await member.as.query(api.billing.history, {});
+    expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.edit, note: "Edit" });
   });
 
   test("what a pending reply says is decided by what the turn can afford", async () => {
@@ -193,15 +235,17 @@ describe("generate.run", () => {
     });
     expect(await pendingBody(freeThread.conversationId)).toBe("Thinking\u2026");
 
-    // A member who can afford one is told a build is happening.
+    // A paid member with no page is sent to the website questions. The thread
+    // does not open a first build, so it never promises "Building your site".
     const member = await createBuilder(t, "m@example.com");
-    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
-    await t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "A bakery" });
-    expect(await pendingBody(conversationId)).toBe("Building your site\u2026");
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    await expect(
+      t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "A bakery" }),
+    ).rejects.toThrow("Complete the website questions before your first build");
+    expect(await pendingBody(conversationId)).toBeUndefined();
 
-    // And once there is a page, the next one edits it rather than building it.
-    stubProvider(() => reply("Built it."));
-    await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
+    // Once there is a page, the next turn edits it.
+    await seedPage(t, siteId);
     await t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "Add hours" });
     expect(await pendingBody(conversationId)).toBe("Updating your site\u2026");
   });
@@ -209,7 +253,8 @@ describe("generate.run", () => {
   test("a provider failure marks the reply failed, gives the hold back, and never leaks the key", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    const seeded = await seedPage(t, siteId);
     stubProvider(() => new Response(`upstream said no to ${KEY}`, { status: 502 }));
 
     await expect(
@@ -229,13 +274,15 @@ describe("generate.run", () => {
     });
     const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
     expect(holds.map((hold) => hold.status)).toEqual(["released"]);
-    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
+    const versions = await t.run((ctx) => ctx.db.query("siteVersions").collect());
+    expect(versions.map((version) => version._id)).toEqual([seeded]);
   });
 
   test("a reply without a page is an answer: it lands in the thread and costs the chat rate", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    await seedPage(t, siteId);
     const answer = "Warm cream with a deep terracotta would suit a bakery. Want me to build it?";
     stubProvider(() => json({ choices: [{ message: { content: answer } }] }));
 
@@ -246,12 +293,13 @@ describe("generate.run", () => {
       ["user", "What colours suit a bakery?", null],
       ["assistant", answer, null],
     ]);
-    // Nothing was built, so there is no version to point at or preview.
+    // The answer did not replace the site. The hold was an edit, settled as chat.
     expect(messages[1].versionId).toBeUndefined();
-    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
-    expect(await member.as.query(api.sites.currentHtml, { siteId })).toBe(null);
+    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toHaveLength(1);
+    const current = await member.as.query(api.sites.currentHtml, { siteId });
+    expect(current?.html).toContain("<h1>Bakery on Main</h1>");
+    expect(current?.summary).toBe("Built the first version.");
 
-    // The build hold was taken and all but the chat rate handed back.
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       credits: OPENING - REQUEST_COSTS.chat,
       reserved: 0,
@@ -260,7 +308,7 @@ describe("generate.run", () => {
     expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.chat, note: "Chat" });
     const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
     expect(holds.map((hold) => [hold.requestKind, hold.amount, hold.status])).toEqual([
-      ["generate", REQUEST_COSTS.generate, "settled"],
+      ["edit", REQUEST_COSTS.edit, "settled"],
     ]);
   });
 
@@ -268,23 +316,18 @@ describe("generate.run", () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
-    stubProvider((_body, call) =>
-      call === 1
-        ? reply("Built the first version.")
-        : json({ choices: [{ message: { content: "I would keep the hero and tighten the menu." } }] }),
-    );
-    await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
+    await seedPage(t, siteId);
+    await seedExchange(t, conversationId, "A bakery site", "Built the first version.");
+    stubProvider(() => json({ choices: [{ message: { content: "I would keep the hero and tighten the menu." } }] }));
     await member.as.action(api.generate.run, { conversationId, prompt: "Does the menu read well?" });
 
     // The build survives the question untouched.
-    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE);
+    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toContain("<h1>Bakery on Main</h1>");
     expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toHaveLength(1);
-    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(
-      OPENING - REQUEST_COSTS.generate - REQUEST_COSTS.chat,
-    );
+    expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING - REQUEST_COSTS.chat);
     // The hold was an edit; what it settled for was a conversation.
     const holds = await t.run((ctx) => ctx.db.query("creditHolds").collect());
-    expect(holds.map((hold) => hold.requestKind)).toEqual(["generate", "edit"]);
+    expect(holds.map((hold) => hold.requestKind)).toEqual(["edit"]);
     const history = await member.as.query(api.billing.history, {});
     expect(history[0]).toMatchObject({ amount: -REQUEST_COSTS.chat, note: "Chat" });
   });
@@ -292,7 +335,8 @@ describe("generate.run", () => {
   test("a page cut off mid-document fails and gives the whole hold back", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    const seeded = await seedPage(t, siteId);
     stubProvider(() =>
       json({ choices: [{ message: { content: `Built it.\n\n\`\`\`html\n${PAGE.slice(0, 120)}` } }] }),
     );
@@ -300,14 +344,16 @@ describe("generate.run", () => {
       member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" }),
     ).rejects.toThrow("complete page");
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING);
-    expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toEqual([]);
+    const versions = await t.run((ctx) => ctx.db.query("siteVersions").collect());
+    expect(versions.map((version) => version._id)).toEqual([seeded]);
   });
 
   test("without provider settings the build is refused and nothing is charged", async () => {
     delete process.env.AI_API_KEY;
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    await seedPage(t, siteId);
     const calls = stubProvider(() => reply("never"));
     await expect(
       member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" }),
@@ -457,16 +503,17 @@ describe("generate.run", () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
-    const { conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
+    await seedPage(t, siteId);
     stubProvider(() => reply("Built it."));
     await member.as.action(api.generate.run, { conversationId, prompt: "A bakery site" });
     const summary = (await member.as.query(api.billing.summary, {}))!;
     expect(summary).toMatchObject({
       unlimited: false,
       reserved: 0,
-      credits: FREE_OPENING + pro.monthlyCredits! - REQUEST_COSTS.generate,
+      credits: FREE_OPENING + pro.monthlyCredits! - REQUEST_COSTS.edit,
     });
     const history = await member.as.query(api.billing.history, {});
-    expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.generate });
+    expect(history[0]).toMatchObject({ kind: "spend", amount: -REQUEST_COSTS.edit, note: "Edit" });
   });
 });
