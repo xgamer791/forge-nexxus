@@ -1966,8 +1966,8 @@ if (forge?.memory && memoryScreen) {
   });
 }
 
-// Preview: the latest build in a sandboxed frame, with publishing. The frame
-// gets the page as srcdoc, so nothing in a build can run or reach this origin.
+// Preview: the latest build in an unrestricted frame, with publishing. The
+// frame gets the page as srcdoc, and scripts in the build can run.
 const previewScreen = document.querySelector('.overlay.preview');
 if (forge?.sites && previewScreen) {
   const frame = previewScreen.querySelector('.preview-iframe');

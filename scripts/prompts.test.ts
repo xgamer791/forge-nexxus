@@ -173,7 +173,7 @@ describe("the contract sets a floor, not a mould", () => {
     // Design instruction is DESIGN_GOD's, behaviour is FORGE_MD's, and the
     // contract keeps neither: it says what this platform can store and serve.
     expect(DESIGN_GOD).toContain("Semantic landmarks");
-    expect(DESIGN_GOD).toContain("it can be navigated without a script");
+    expect(DESIGN_GOD).toContain("it is accessible");
     expect(DESIGN_GOD).toContain("design the narrow layout first");
     expect(FORGE_MD).toContain("What every page owes, whatever shape it takes");
     expect(contract).not.toContain("Semantic landmarks");
@@ -185,18 +185,14 @@ describe("the contract sets a floor, not a mould", () => {
     expect(DESIGN_GOD).toContain("at least 44px");
   });
 
-  test("a phone menu works without a script, and the Menu dropdown is the default", () => {
-    expect(DESIGN_GOD).toContain("A phone menu that opens with CSS keeps working if a script fails to load");
-    // Published sites run scripts now; nothing may tell the agent otherwise.
+  test("a phone menu is not locked to a checkbox or the word Menu", () => {
+    expect(DESIGN_GOD).toContain("JavaScript is available, so the menu is not a checkbox and it does not have to say Menu.");
     expect(DESIGN_GOD).not.toMatch(/runs no scripts/);
-    expect(DESIGN_GOD).toContain("a Menu button that opens a dropdown is the reliable default below 768px wide");
-    expect(DESIGN_GOD).not.toMatch(/wrap or scroll sideways/);
-    // The checkbox pattern is kept as a working reference.
-    expect(DESIGN_GOD).toContain('<input class="nav-toggle" type="checkbox" id="nav-toggle">');
-    expect(DESIGN_GOD).toContain('<label class="nav-button" for="nav-toggle">');
-    expect(DESIGN_GOD).toContain(".nav-toggle:checked ~ .site-nav{display:block}");
-    expect(DESIGN_GOD).toContain("@media (min-width:768px)");
-    expect(DESIGN_GOD).toContain("better not fixed or sticky");
+    expect(DESIGN_GOD).not.toContain("a Menu button that opens a dropdown is the reliable default below 768px wide");
+    expect(DESIGN_GOD).not.toContain('<input class="nav-toggle" type="checkbox" id="nav-toggle">');
+    expect(DESIGN_GOD).not.toContain('<label class="nav-button" for="nav-toggle">');
+    expect(DESIGN_GOD).not.toContain(".nav-toggle:checked ~ .site-nav{display:block}");
+    expect(DESIGN_GOD).not.toContain("better not fixed or sticky");
   });
 
   test("the floor that makes a page work stays, and is not optional", () => {
