@@ -101,7 +101,8 @@ if (command === "capture" && target) {
       for (const [ref, mine] of mapping) {
         const viewports = {};
         for (const name of VIEWPORT_NAMES) {
-          const slug = `${(normalizePath(ref) ?? "x").replace(/[^a-z0-9]+/g, "-") || "home"}-${name}`;
+          const route = normalizePath(ref) ?? "/";
+          const slug = `${route === "/" ? "home" : route.slice(1).replace(/[^a-z0-9]+/g, "-")}-${name}`;
           try {
             viewports[name] = await measurePage(browser, `${site}${mine === "/" ? "/" : mine}`, name, { shots: path.join(out, `site-${slug}`) });
           } catch (error) {

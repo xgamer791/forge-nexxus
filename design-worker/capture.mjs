@@ -458,8 +458,24 @@ function measureInPage(options) {
       }
     };
     if (document.body) visit(document.body, 0);
+    // What a section is set on: the first thing in it that covers it (itself
+    // or a wrapper inside), or else what is behind it.
     const tone = (el) => {
-      for (let cur = el; cur; cur = cur.parentElement) {
+      const box = el.getBoundingClientRect();
+      const covering = [el, ...el.querySelectorAll("*")].slice(0, 400).filter((c) => {
+        const r = c.getBoundingClientRect();
+        return r.width * r.height >= box.width * box.height * 0.8 && getComputedStyle(c).display !== "none";
+      });
+      for (const c of covering) {
+        const cs = getComputedStyle(c);
+        if (/url\(/.test(cs.backgroundImage) || ["img", "video", "picture", "canvas", "iframe"].includes(c.localName)) return "image";
+        const fill = color(cs.backgroundColor);
+        if (fill && fill.a >= 0.5) {
+          const l = luminance(fill);
+          return l < 0.3 ? "dark" : l > 0.75 ? "light" : "mid";
+        }
+      }
+      for (let cur = el.parentElement; cur; cur = cur.parentElement) {
         const cs = getComputedStyle(cur);
         if (/url\(/.test(cs.backgroundImage) || cur.querySelector(":scope > video, :scope > img, :scope > picture")) {
           const r = cur.getBoundingClientRect();

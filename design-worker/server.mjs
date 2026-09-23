@@ -1,29 +1,15 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { chromium } from 'playwright';
+import { publicUrl } from './capture.mjs';
+import { FORMAT, auditBuild, captureReference } from './reference.mjs';
 
 const CITIES = ['Los Angeles', 'New York', 'San Diego', 'Miami'];
-const BLOCKED = /(?:^|\.)(?:localhost|local|internal|test)$/i;
 const DIRECTORY = /(?:google|yelp|facebook|instagram|linkedin|tripadvisor|pinterest|tiktok|yellowpages|mapquest|thumbtack|angi)\./i;
 const PORT = Number(process.env.PORT || 8080);
-
-function publicUrl(value) {
-  try {
-    const u = new URL(value);
-    const host = u.hostname.replace(/^\[|\]$/g, '');
-    if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.port && !['80', '443'].includes(u.port)) return null;
-    if (BLOCKED.test(host) || host === 'localhost' || host === '0.0.0.0' || host === '::1' ||
-        /^10\.|^127\.|^169\.254\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-        /^(?:fc|fd|fe80)/i.test(host) || !host.includes('.')) return null;
-    u.hash = '';
-    return u.href;
-  } catch { return null; }
-}
 
 function category(offer) {
   return String(offer).replace(/https?:\/\/\S+/g, '').replace(/[^\p{L}\p{N} ]/gu, ' ')
@@ -88,170 +74,123 @@ async function inspect(browser, entry, feel) {
   } finally { await context.close(); }
 }
 
-async function capture(browser, chosen, dir, emit) {
-  const origin = new URL(chosen.url).origin;
-  // Inspect one of each useful layout, not every navigation link. The home
-  // capture below also records both viewport and menu states.
-  const candidates = [...chosen.detail.nav, ...chosen.detail.footer];
-  const roles = [
-    ['services', /services?|solutions?|offerings?|products?|collections?|shop|menu/i],
-    ['detail', /service|product|treatment|practice|item|portfolio|work|project/i],
-    ['about', /about|our.story|team|who.we.are/i],
-    ['contact', /contact|location|visit|find.us/i],
-    ['journal', /blog|journal|insight|news|resources?/i],
-    ['booking', /book|appointment|reserve|quote|order|pricing/i],
-    ['other', /./],
-  ];
-  const seen = new Set([chosen.url.replace(/\/$/, '')]);
-  const pages = [{ url: chosen.url, role: 'home' }];
-  for (const [role, pattern] of roles) {
-    const found = candidates.find(link => {
-      const url = publicUrl(link.href);
-      if (!url || new URL(url).origin !== origin || seen.has(url.replace(/\/$/, ''))) return false;
-      return pattern.test(`${link.text} ${new URL(url).pathname.replace(/[-_/]/g, ' ')}`);
-    });
-    if (found) {
-      pages.push({ url: found.href, role });
-      seen.add(found.href.replace(/\/$/, ''));
-    }
+// Each job keeps its screenshots and mask images on this machine, for checking
+// a run by eye. Only the newest few are kept.
+const ARTIFACTS = path.join(os.tmpdir(), 'forge-design');
+const KEEP_JOBS = 12;
+
+async function jobFolder(kind) {
+  await fs.mkdir(ARTIFACTS, { recursive: true });
+  const names = (await fs.readdir(ARTIFACTS)).sort();
+  for (const old of names.slice(0, Math.max(0, names.length - KEEP_JOBS + 1))) {
+    await fs.rm(path.join(ARTIFACTS, old), { recursive: true, force: true });
   }
-  const inventory = [];
-  const shots = path.join(dir, 'screens', 'pages');
-  await fs.mkdir(shots, { recursive: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
-  for (const [index, entry] of pages.entries()) {
-    emit('inspecting', { page: index + 1, total: pages.length });
-    const page = await context.newPage();
-    try {
-      await page.route('**/*', route => publicUrl(route.request().url()) ? route.continue() : route.abort());
-      await page.goto(entry.url, { waitUntil: 'domcontentloaded', timeout: 16000 });
-      const data = await page.evaluate(() => ({
-        path: location.pathname, title: document.title.slice(0, 100),
-        sections: [...document.querySelectorAll('main > section, main > article, main > div')].slice(0, 18).map(node => ({
-          tag: node.tagName.toLowerCase(), className: String(node.className).slice(0, 100),
-          heading: node.querySelector('h1,h2,h3')?.textContent?.trim().slice(0, 70) || '',
-          layout: getComputedStyle(node).display,
-        })),
-        header: document.querySelector('header')?.getBoundingClientRect().height || 0,
-        footer: document.querySelector('footer')?.getBoundingClientRect().height || 0,
-      }));
-      inventory.push({ ...data, role: entry.role });
-      if (index === 0) {
-        await page.screenshot({ path: path.join(shots, 'reference-desktop-home.png'), fullPage: true });
-        const menu = page.locator('header button[aria-expanded], nav button[aria-expanded]').first();
-        if (await menu.count()) {
-          await menu.click().catch(() => {});
-          await page.screenshot({ path: path.join(shots, 'reference-desktop-menu.png') });
-        }
-        await page.setViewportSize({ width: 390, height: 844 });
-        await page.reload({ waitUntil: 'domcontentloaded' });
-        await page.screenshot({ path: path.join(shots, 'reference-mobile-home.png'), fullPage: true });
-        const mobileMenu = page.locator('header button[aria-expanded], nav button[aria-expanded], button[aria-label*="menu" i]').first();
-        if (await mobileMenu.count()) {
-          await mobileMenu.click().catch(() => {});
-          await page.screenshot({ path: path.join(shots, 'reference-mobile-menu.png') });
-        }
-      }
-    } catch { /* A failed page stays out of the measured inventory. */ }
-    finally { await page.close(); }
-  }
-  await context.close();
-  if (inventory.length === 0) throw new Error('No reference pages could be inspected');
-  return inventory;
+  const dir = path.join(ARTIFACTS, `${new Date().toISOString().replace(/[:.]/g, '-')}-${kind}`);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
 }
 
-async function runSkillUI(url, out, name, emit) {
-  emit('skillui', { mode: 'ultra', screens: 12 });
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'skillui-home-'));
+// A new site's reference is found once through Brave; a site that already has
+// one is measured again at the same address with no search at all.
+async function research(input, emit, artifacts) {
+  const known = input.referenceUrl ? publicUrl(input.referenceUrl) : null;
+  if (input.referenceUrl && !known) throw new Error('The saved design reference is not a public web address');
+  let candidates = [];
+  if (!known) {
+    const categoryText = category(input.offer);
+    if (!categoryText) throw new Error('A business category is needed for design research');
+    candidates = await search(categoryText, input.references, emit);
+  }
+  const browser = await chromium.launch({ headless: true });
   try {
-    await new Promise((resolve, reject) => {
-      const child = spawn(path.join(process.cwd(), 'node_modules', '.bin', 'skillui'),
-        ['--url', url, '--mode', 'ultra', '--screens', '12', '--name', name, '--out', out],
-        { env: { ...process.env, HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
-      let tail = '';
-      for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { tail = (tail + chunk).slice(-2000); });
-      child.on('error', reject);
-      child.on('close', code => code === 0 ? resolve() : reject(new Error(`SkillUI ultra failed (${code}): ${tail.replace(/\x1b\[[0-9;]*m/g, '').slice(-400)}`)));
-    });
-  } finally { await fs.rm(home, { recursive: true, force: true }); }
-}
-
-async function research(input, emit) {
-  const categoryText = category(input.offer);
-  if (!categoryText) throw new Error('A business category is needed for design research');
-  const candidates = await search(categoryText, input.references, emit);
-  let browser = await chromium.launch({ headless: true });
-  let chosen;
-  try {
-    const measured = [];
-    const byCity = new Map();
-    const shortlist = candidates.filter(candidate => {
-      const count = byCity.get(candidate.city) || 0;
-      byCity.set(candidate.city, count + 1);
-      return count < 3;
-    });
-    for (const candidate of shortlist) {
-      emit('candidate', { city: candidate.city, domain: new URL(candidate.url).hostname });
-      try { measured.push(await inspect(browser, candidate, { tone: input.feel, offer: input.offer })); } catch { /* Try another site. */ }
-    }
-    measured.sort((a, b) => b.score - a.score);
-    chosen = measured[0];
-    if (!chosen) throw new Error('No reference site could be inspected');
-    const out = await fs.mkdtemp(path.join(os.tmpdir(), 'forge-design-'));
-    try {
-      const name = `reference-${new URL(chosen.url).hostname.replace(/[^a-z0-9-]/gi, '-')}`.slice(0, 70);
-      const dir = path.join(out, `${name}-design`);
-      const inventory = await capture(browser, chosen, dir, emit);
-      // SkillUI starts its own Chromium processes. Release the inspection
-      // browser first so both captures do not compete for worker memory.
-      await browser.close();
-      browser = null;
-      await runSkillUI(chosen.url, out, name, emit);
-      const skill = await fs.readFile(path.join(dir, 'SKILL.md'), 'utf8');
-      const design = await fs.readFile(path.join(dir, 'references', 'DESIGN.md'), 'utf8');
-      const layout = await fs.readFile(path.join(dir, 'references', 'LAYOUT.md'), 'utf8');
-      await fs.access(path.join(dir, 'references', 'ANIMATIONS.md'));
-      // The model uses this derivative of the persisted SkillUI package. The
-      // typography rules in Design God override sampled fonts and font URLs.
-      const reference = JSON.stringify({ source: chosen.url, pages: inventory, nav: chosen.detail.nav, footer: chosen.detail.footer });
-      const prompt = `SkillUI ultra design reference for this site. Use this for the shared shell, layout and component rhythm on every page. Do not copy source text, images, logos, addresses or brand identity. Write original copy from the user's brief and request original subject images through forge-image. DESIGN_GOD's Type section overrides all fonts and typography below; choose only Fontshare fonts.\n\nSite structure and inspected pages:\n${reference.slice(0, 13000)}\n\nSkillUI SKILL.md:\n${skill.replace(/^.*(?:fonts\.googleapis\.com|Google Fonts|google fonts).*$/gim, '').slice(0, 42000)}\n\nDesign tokens:\n${design.replace(/^.*(?:fonts\.googleapis\.com|Google Fonts|google fonts).*$/gim, '').slice(0, 14000)}\n\nLayout measurements:\n${layout.slice(0, 5000)}`.slice(0, 79000);
-      if (!skill.includes('Design System') || !inventory.length || !layout.trim()) throw new Error('SkillUI ultra produced no usable design reference');
-      emit('uploading', { pages: inventory.length });
-      const archive = path.join(dir, `${name}-design.skill`);
-      const { size } = await fs.stat(archive);
-      const upload = await fetch(input.uploadUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/zip', 'content-length': String(size) },
-        body: createReadStream(archive), duplex: 'half', signal: AbortSignal.timeout(45000),
+    let chosenUrl = known;
+    if (!chosenUrl) {
+      const measured = [];
+      const byCity = new Map();
+      const shortlist = candidates.filter(candidate => {
+        const count = byCity.get(candidate.city) || 0;
+        byCity.set(candidate.city, count + 1);
+        return count < 3;
       });
-      if (!upload.ok) throw new Error(`Design package upload failed (${upload.status})`);
-      const { storageId } = await upload.json();
-      if (!storageId) throw new Error('Design package upload returned no storage ID');
-      return { storageId, referenceUrl: chosen.url, prompt, inspectedPages: inventory.length };
-    } finally { await fs.rm(out, { recursive: true, force: true }); }
-  } finally { if (browser) await browser.close(); }
+      for (const candidate of shortlist) {
+        emit('candidate', { city: candidate.city, domain: new URL(candidate.url).hostname });
+        try { measured.push(await inspect(browser, candidate, { tone: input.feel, offer: input.offer })); } catch { /* Try another site. */ }
+      }
+      measured.sort((a, b) => b.score - a.score);
+      if (!measured[0]) throw new Error('No reference site could be inspected');
+      chosenUrl = measured[0].url;
+    }
+    const { reference, prompt } = await captureReference(browser, chosenUrl, { emit, artifacts });
+    emit('uploading', { pages: reference.routes.length });
+    const upload = await fetch(input.uploadUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(reference),
+      signal: AbortSignal.timeout(45000),
+    });
+    if (!upload.ok) throw new Error(`Design reference upload failed (${upload.status})`);
+    const { storageId } = await upload.json();
+    if (!storageId) throw new Error('Design reference upload returned no storage ID');
+    return { storageId, referenceUrl: chosenUrl, prompt, inspectedPages: reference.routes.length, routes: reference.routes.map(route => route.path), artifacts };
+  } finally { await browser.close(); }
+}
+
+// The layout check: the site's pages against the measured reference, every
+// route at every width. Nothing about it is a judgement call.
+async function audit(input, emit, artifacts) {
+  const source = publicUrl(input.reference);
+  if (!source || !source.startsWith('https://')) throw new Error('The design reference address is not usable');
+  const response = await fetch(source, { signal: AbortSignal.timeout(30000) });
+  if (!response.ok) throw new Error(`The design reference could not be read (${response.status})`);
+  const reference = await response.json();
+  if (reference?.format !== FORMAT || !Array.isArray(reference.routes) || !reference.routes.length) {
+    throw new Error('The saved design reference is not a measured reference');
+  }
+  const browser = await chromium.launch({ headless: true });
+  try { return { ...await auditBuild(browser, reference, input.pages, { emit, artifacts }), artifacts }; }
+  finally { await browser.close(); }
+}
+
+const LIMITS = { '/research': 16000, '/audit': 16 * 1024 * 1024 };
+
+function valid(route, input) {
+  if (route === '/research') {
+    return input.uploadUrl?.startsWith('https://') && (Boolean(input.offer) || typeof input.referenceUrl === 'string');
+  }
+  return typeof input.reference === 'string' && Array.isArray(input.pages) && input.pages.length > 0 &&
+    input.pages.every(page => typeof page?.path === 'string' && typeof page?.html === 'string');
 }
 
 const server = http.createServer(async (req, res) => {
   if (req.url === '/health') { res.writeHead(200); res.end('ok'); return; }
-  if (req.method !== 'POST' || req.url !== '/research') { res.writeHead(404); res.end(); return; }
+  if (req.method !== 'POST' || !(req.url in LIMITS)) { res.writeHead(404); res.end(); return; }
   const expected = Buffer.from(process.env.DESIGN_WORKER_TOKEN || '');
   const actual = Buffer.from(req.headers.authorization?.replace(/^Bearer /, '') || '');
   if (!expected.length || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
     res.writeHead(401); res.end(); return;
   }
-  let raw = '';
-  for await (const chunk of req) { raw += chunk; if (raw.length > 16000) { res.writeHead(413); res.end(); return; } }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > LIMITS[req.url]) { res.writeHead(413); res.end(); return; }
+    chunks.push(chunk);
+  }
   let input;
   try {
-    input = JSON.parse(raw);
-    if (!input.offer || !input.uploadUrl?.startsWith('https://')) throw new Error('Invalid research request');
+    input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (!valid(req.url, input)) throw new Error('Invalid request');
   } catch { res.writeHead(400); res.end(); return; }
   res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' });
   res.flushHeaders();
   const emit = (phase, detail = {}) => res.write(JSON.stringify({ type: 'progress', phase, detail }) + '\n');
-  try { res.write(JSON.stringify({ type: 'complete', ...await research(input, emit) }) + '\n'); }
-  catch (error) { res.write(JSON.stringify({ type: 'error', reason: String(error.message || error).slice(0, 180) }) + '\n'); }
+  try {
+    const artifacts = await jobFolder(req.url.slice(1));
+    const result = req.url === '/research' ? await research(input, emit, artifacts) : await audit(input, emit, artifacts);
+    res.write(JSON.stringify({ type: 'complete', ...result }) + '\n');
+  } catch (error) {
+    res.write(JSON.stringify({ type: 'error', reason: String(error.message || error).slice(0, 180) }) + '\n');
+  }
   res.end();
 });
 server.listen(PORT, '0.0.0.0');

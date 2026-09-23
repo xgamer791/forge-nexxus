@@ -208,19 +208,12 @@ export function scoreMasks(ref, cand) {
   }
   const pairs = alignRows(ref, cand);
   if (!pairs) return { score: 0, heights, ...frame, bands: [], rowMap: [], reason: "height" };
-  const cols = ref.cols;
-  const bandMis = new Float64Array(BANDS);
-  const bandUni = new Float64Array(BANDS);
   const rowMap = Array.from({ length: ref.rows }, () => [Number.POSITIVE_INFINITY, -1]);
-  let mis = 0;
-  let uni = 0;
+  const whole = tally();
+  const byBand = Array.from({ length: BANDS }, tally);
   for (const [i, j] of pairs) {
-    const [pm, pu] = rowCost(ref.data, i * cols, cand.data, j * cols, cols);
-    mis += pm;
-    uni += pu;
     const band = Math.min(BANDS - 1, Math.floor((i / ref.rows) * BANDS));
-    bandMis[band] += pm;
-    bandUni[band] += pu;
+    countRow(ref.data, i * ref.cols, cand.data, j * ref.cols, ref.cols, whole, byBand[band]);
     rowMap[i][0] = Math.min(rowMap[i][0], j);
     rowMap[i][1] = Math.max(rowMap[i][1], j);
   }
@@ -229,13 +222,72 @@ export function scoreMasks(ref, cand) {
     const r0 = Math.floor((ref.rows * band) / BANDS);
     const r1 = band === BANDS - 1 ? ref.rows : Math.floor((ref.rows * (band + 1)) / BANDS);
     if (r1 <= r0) continue;
-    bands.push({
-      from: ref.top + r0 * ref.cell[1],
-      to: ref.top + r1 * ref.cell[1],
-      score: bandUni[band] ? round(1 - bandMis[band] / bandUni[band]) : 1,
-    });
+    bands.push({ from: ref.top + r0 * ref.cell[1], to: ref.top + r1 * ref.cell[1], score: round(balanced(byBand[band])) });
   }
-  return { score: uni ? round(1 - mis / uni) : 1, heights, ...frame, bands, rowMap };
+  return { score: round(balanced(whole)), agreement: round(agreement(whole)), kinds: dice(whole), heights, ...frame, bands, rowMap };
+}
+
+// Per kind: cells the reference paints with it, cells the candidate does, and
+// of each the ones the other side paints the same (one cell over counts, as in
+// rowCost). Plus the plain union and mismatch counts.
+function tally() {
+  return { ref: new Float64Array(KINDS.length), cand: new Float64Array(KINDS.length), refHit: new Float64Array(KINDS.length), candHit: new Float64Array(KINDS.length), mismatch: 0, union: 0 };
+}
+
+function countRow(a, ai, b, bi, cols, ...into) {
+  for (let c = 0; c < cols; c += 1) {
+    const p = a[ai + c];
+    const q = b[bi + c];
+    if (p === 0 && q === 0) continue;
+    const pFound = p !== 0 && (q === p || (c > 0 && b[bi + c - 1] === p) || (c < cols - 1 && b[bi + c + 1] === p));
+    const qFound = q !== 0 && (p === q || (c > 0 && a[ai + c - 1] === q) || (c < cols - 1 && a[ai + c + 1] === q));
+    const same = p === q || ((p === 0 || pFound) && (q === 0 || qFound) && p !== 0 && q !== 0);
+    for (const t of into) {
+      t.union += 1;
+      if (!same) t.mismatch += 1;
+      if (p !== 0) {
+        t.ref[p] += 1;
+        if (pFound) t.refHit[p] += 1;
+      }
+      if (q !== 0) {
+        t.cand[q] += 1;
+        if (qFound) t.candHit[q] += 1;
+      }
+    }
+  }
+}
+
+// Dice for each kind either side paints.
+function dice(t) {
+  const out = {};
+  for (let k = 1; k < KINDS.length; k += 1) {
+    const total = t.ref[k] + t.cand[k];
+    if (total) out[KINDS[k]] = round((t.refHit[k] + t.candHit[k]) / total);
+  }
+  return out;
+}
+
+// The region's score: each kind's Dice, weighted by the square root of how
+// much of the region that kind paints. A wide band of one colour weighs more
+// than a line of text, but not so much that it hides where the text, the
+// pictures and the controls sit -- a plain share of matching cells lets a
+// footer of four columns pass for a two-line strip because both are one dark
+// band.
+function balanced(t) {
+  let weight = 0;
+  let sum = 0;
+  for (let k = 1; k < KINDS.length; k += 1) {
+    const total = t.ref[k] + t.cand[k];
+    if (!total) continue;
+    const w = Math.sqrt(total);
+    weight += w;
+    sum += w * ((t.refHit[k] + t.candHit[k]) / total);
+  }
+  return weight ? sum / weight : 1;
+}
+
+function agreement(t) {
+  return t.union ? 1 - t.mismatch / t.union : 1;
 }
 
 function round(value) {
