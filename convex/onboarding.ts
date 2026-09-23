@@ -16,7 +16,7 @@ import { inventSample, sampleRebuilds } from "./sampleBusiness";
 import { isAdminEmail } from "./admins";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
-import { assertDesignRules, researchDesign } from "./siteDesign";
+import { assertDesignRules, isMeasured, NOT_MEASURED, researchDesign } from "./siteDesign";
 import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
 
 // The words and the pictures share an action's ten minutes. The text gets the
@@ -71,11 +71,8 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
   if (!siteId) return { hashes: [] };
   const site = await ctx.db.get(siteId);
   if (!site || site.userId !== userId) return { hashes: [] };
-  const designPackages = await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
-  for (const design of designPackages) {
-    await ctx.storage.delete(design.storageId);
-    await ctx.db.delete(design._id);
-  }
+  // The design reference stays: a rebuild measures the same address again,
+  // with no new search, and replaces it (siteDesign.save).
   const images = await ctx.db.query("siteImages").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
   for (const image of images) {
     await ctx.storage.delete(image.storageId);
@@ -165,13 +162,16 @@ export const research = internalAction({
       }
       const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
       const saved = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (saved && saved.buildEpoch === epoch) {
-        await trace.note({ phase: "research_reused", label: "Using the saved SkillUI design package" });
+      if (saved && saved.buildEpoch === epoch && isMeasured(saved)) {
+        await trace.note({ phase: "research_reused", label: "Using the saved design reference" });
       } else {
+        // A site that already has a reference -- from before a rebuild, or
+        // from before measuring -- is measured again there, with no search.
         await researchDesign(ctx, {
           siteId: row.siteId, onboardingId: id, attempt, epoch,
           offer: answers[1] ?? "", audience: answers[2] ?? "", feel: answers[6] ?? "",
           references: answers[8] ?? "",
+          ...(saved?.referenceUrl ? { referenceUrl: saved.referenceUrl } : {}),
         }, trace);
       }
       const current = await ctx.runQuery(internal.onboarding.load, { id });
@@ -675,8 +675,8 @@ export const adoptSample = internalMutation({
 });
 
 // The end of an onboarding build: the pictures the page asked for, the save,
-// and the log. A build the design reviewer held comes here from
-// `designReview.ts` once the reviewer agrees, with the site it agreed to.
+// and the log. A build comes here from the layout check (`designGate.ts`)
+// once it passes, with the site it passed.
 export async function finishOnboardingBuild(
   ctx: ActionCtx,
   trace: ProviderTrace,
@@ -787,9 +787,9 @@ export const build = internalAction({
       }
       const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
       const savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (!savedDesign || savedDesign.buildEpoch !== epoch) throw new Error("This site has no current SkillUI design package");
+      if (!savedDesign || savedDesign.buildEpoch !== epoch || !isMeasured(savedDesign)) throw new Error(NOT_MEASURED);
       const designPrompt = savedDesign.prompt;
-      await trace.note({ phase: "design_loaded", label: "Loaded the saved SkillUI design package" });
+      await trace.note({ phase: "design_loaded", label: "Loaded the saved design reference" });
       const job = await ctx.runMutation(internal.generate.beginOnboarding, { id, attempt });
       await ctx.runMutation(internal.diagnostics.attach, {
         runId,
@@ -814,19 +814,26 @@ export const build = internalAction({
       ], deadline, trace, row.discardedDesignHashes,
       row.discardedDesignHashes !== undefined ? { requireImages: Boolean(imageRoute().apiKey) } : undefined);
       const design = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (!design || design.buildEpoch !== epoch) throw new Error("The saved design package disappeared during the build");
+      if (!design || design.buildEpoch !== epoch || !isMeasured(design)) throw new Error("The saved design reference disappeared during the build");
       assertDesignRules(page.site, design.referenceUrl);
-      const build = {
-        id,
-        attempt,
+      // The site is saved only once the layout check passes it
+      // (designGate.ts), which finishes the build from there.
+      await ctx.runMutation(internal.designGate.open, {
+        source: "onboarding",
         runId,
         userId: row.userId,
-        result: job.result,
+        siteId: job.result.siteId,
+        assistantId: job.result.assistantId,
+        holdId: job.result.holdId,
+        requestKind: job.result.requestKind,
+        epoch: job.result.epoch,
+        onboardingId: id,
+        attempt,
         rebuild: row.discardedDesignHashes !== undefined,
+        siteName: job.siteName,
+        ...page.site,
         summary: page.summary,
-        clones: page.clones,
-      };
-      await finishOnboardingBuild(ctx, trace, { ...build, site: page.site });
+      });
     } catch (error) {
       // What stopped the build is what the member reads, in the same words the
       // thread would use: a provider's answer, a clock that ran out, a balance.

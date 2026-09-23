@@ -20,8 +20,11 @@ export default defineSchema({
     prompt: v.string(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
-  // One retained SkillUI ultra reference per site. New pages read prompt from
-  // this row; the complete visual package lives in Convex file storage.
+  // One design reference per site: the address it was measured from, the
+  // measured reference itself in file storage (every route at phone, tablet
+  // and desktop widths), and the builder's spec written from it. A row from
+  // before measuring (no `format`) keeps its address, so the site is measured
+  // again there with no new search.
   siteDesignPackages: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
@@ -31,7 +34,59 @@ export default defineSchema({
     inspectedPages: v.number(),
     buildEpoch: v.number(),
     createdAt: v.number(),
+    format: v.optional(v.literal("forge-measured-v1")),
+    routes: v.optional(v.array(v.string())),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
+  // A build held for the layout check: the site as the builder last wrote
+  // it, until the check passes it, sends it back, or stops it. The check's
+  // scores stay after the site is gone, for `designGate:inspect`.
+  designGates: defineTable({
+    userId: v.id("users"),
+    siteId: v.id("sites"),
+    runId: v.id("buildRuns"),
+    source: v.union(v.literal("thread"), v.literal("onboarding")),
+    assistantId: v.id("messages"),
+    holdId: v.id("creditHolds"),
+    requestKind,
+    epoch: v.number(),
+    onboardingId: v.optional(v.id("siteOnboarding")),
+    attempt: v.optional(v.number()),
+    rebuild: v.optional(v.boolean()),
+    siteName: v.string(),
+    prompt: v.optional(v.string()),
+    remember: v.optional(v.boolean()),
+    blockedNote: v.optional(v.string()),
+    html: v.optional(v.string()),
+    shell: v.optional(v.string()),
+    pages: v.optional(v.array(v.object({ path: v.string(), title: v.string(), body: v.string() }))),
+    summary: v.string(),
+    status: v.union(
+      v.literal("checking"),
+      v.literal("reworking"),
+      v.literal("passed"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    // Round 1 is the first check; each rework adds one.
+    round: v.number(),
+    // Steps in a row that came back with nothing to use.
+    trouble: v.number(),
+    // Why the last rework could not be used, for the next one to put right.
+    problem: v.optional(v.string()),
+    // The measured differences the last failed check sent back.
+    fixes: v.array(v.string()),
+    // Each round's outcome: the lowest region score and the regions below the bar.
+    results: v.array(v.object({
+      round: v.number(),
+      passed: v.boolean(),
+      lowest: v.number(),
+      failing: v.array(v.string()),
+      at: v.number(),
+    })),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]).index("by_message", ["assistantId"]),
   siteOnboarding: defineTable({
     userId: v.id("users"),
     siteId: v.optional(v.id("sites")),

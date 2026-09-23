@@ -28,7 +28,7 @@ describe("saved design reference", () => {
     });
     const args = {
       siteId, onboardingId, attempt: 1, epoch: 2, storageId,
-      referenceUrl: "https://example.com/", prompt: "Original design structure", inspectedPages: 6,
+      referenceUrl: "https://example.com/", prompt: "Original design structure", inspectedPages: 6, routes: ["/"],
     };
     expect(await t.mutation(internal.siteDesign.save, { ...args, epoch: 1 })).toBe(false);
     expect(await t.mutation(internal.siteDesign.save, args)).toBe(true);

@@ -15,7 +15,7 @@ import { memoryEnabled, memoryNote } from "./memory";
 import { hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
-import { assertDesignRules } from "./siteDesign";
+import { assertDesignRules, gateInFlight, isMeasured, NOT_MEASURED } from "./siteDesign";
 import { isEventStream, readStream, StreamStopped, type Milestone, type StopReason, type StreamPhase, type StreamStats } from "./stream";
 
 // How much of the thread the model sees, and how long a page it may write.
@@ -296,7 +296,7 @@ What this platform can serve, which is not a matter of taste:
 
 ${pictures}
 
-Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change. The saved SkillUI design reference is required for every build and edit. Follow its structure but never reuse its source copy, images, logos or brand identity. The Type, Icons and Anti-slop rules in DESIGN_GOD win over any extracted style instructions.
+Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change. The saved measured design reference is required for every build and edit. Match its measured layout but never reuse its source copy, images, logos or brand identity. The Type, Icons, accessibility and Anti-slop rules in DESIGN_GOD win over any measured style instructions.
 
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
@@ -360,7 +360,7 @@ export const run = action({
         status: "calling",
       });
       const trace = providerTrace(ctx, runId, userId);
-      if (job.requestKind !== "chat") await trace.note({ phase: "design_loaded", label: "Using this site's saved SkillUI design package" });
+      if (job.requestKind !== "chat") await trace.note({ phase: "design_loaded", label: "Using this site's saved design reference" });
       await trace.note({
         phase: "held",
         label: job.requestKind === "chat" ? "Credits held for a conversation" : "Credits held for a build",
@@ -376,8 +376,27 @@ export const run = action({
       const site = builtSite(parsed);
       if (site && job.requestKind !== "chat") {
         const reference = await ctx.runQuery(internal.siteDesign.forSite, { siteId: job.siteId });
-        if (!reference || reference.buildEpoch !== job.epoch) throw new Error("The site's saved design package is missing");
+        if (!reference || reference.buildEpoch !== job.epoch || !isMeasured(reference)) throw new Error(NOT_MEASURED);
         assertDesignRules(site, reference.referenceUrl);
+        // A built site is saved only once the layout check passes it
+        // (designGate.ts), which finishes the turn from there.
+        await ctx.runMutation(internal.designGate.open, {
+          source: "thread",
+          runId,
+          userId,
+          siteId: job.siteId,
+          assistantId: job.assistantId,
+          holdId: job.holdId,
+          requestKind: job.requestKind,
+          epoch: job.epoch,
+          siteName: job.siteName,
+          prompt: text,
+          remember: job.remember,
+          blockedNote: job.blockedNote,
+          ...site,
+          summary: parsed.summary,
+        });
+        return { messageId: assistantId! };
       }
       const turn = {
         runId,
@@ -412,8 +431,8 @@ export const run = action({
 });
 
 // The end of a thread turn: the pictures a page asked for, the save, the log
-// and the memory note. A build the design reviewer held comes here from
-// `designReview.ts` once the reviewer agrees, with the site it agreed to.
+// and the memory note. A build comes here from the layout check
+// (`designGate.ts`) once it passes, with the site it passed.
 export async function finishThreadBuild(
   ctx: ActionCtx,
   trace: ProviderTrace,
@@ -538,8 +557,8 @@ export const begin = internalMutation({
     const design = mayBuild
       ? await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", site._id)).first()
       : null;
-    if (mayBuild && (!design || design.buildEpoch !== (site.buildEpoch ?? 0))) {
-      throw new ConvexError("This site has no saved SkillUI design package. Rebuild it before creating or changing pages.");
+    if (mayBuild && (!design || design.buildEpoch !== (site.buildEpoch ?? 0) || !isMeasured(design))) {
+      throw new ConvexError(NOT_MEASURED);
     }
     const { holdId } = await holdCredits(ctx, userId, kind, now);
     const recent = await ctx.db
@@ -593,12 +612,13 @@ export const beginOnboarding = internalMutation({
     const site = await ctx.db.get(row.siteId);
     if (!site || site.userId !== row.userId) throw new ConvexError("Site not found");
     const design = await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", site._id)).first();
-    if (!design || design.buildEpoch !== (site.buildEpoch ?? 0)) throw new ConvexError("A saved SkillUI design package is required before building");
+    if (!design || design.buildEpoch !== (site.buildEpoch ?? 0) || !isMeasured(design)) throw new ConvexError(NOT_MEASURED);
     if ((await currentPlan(ctx, row.userId)).key === "free") throw new ConvexError("Choose a paid plan to build");
     const { holdId } = await holdCredits(ctx, row.userId, "generate");
     const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
     await ctx.db.patch(id, { holdId, assistantId, events: [...row.events, { label: "Agent started building your website", at: Date.now() }] });
     return {
+      siteName: site.name,
       messages: buildMessages(site.name, null, [], "Build the website from the saved onboarding brief.", null, "build", await memoryNote(ctx, row.userId)),
       result: { siteId: site._id, holdId, assistantId, requestKind: "generate" as const, epoch: site.buildEpoch ?? 0 },
     };
@@ -719,10 +739,22 @@ export const expire = internalMutation({
     const reason = "The build stopped responding. Try again.";
     const message = await ctx.db.get(assistantId);
     if (message?.status === "pending") {
-      // A build the design reviewer is checking outlives this clock, because
-      // each step of the check is an action of its own. While the check is
-      // moving the watchdog waits for it; once it has gone quiet for longer
-      // than a step can run, the watchdog speaks for it.
+      // A build the layout check is holding outlives this clock, because each
+      // step of the check is an action of its own. While the check is moving
+      // the watchdog waits for it; once it has gone quiet for longer than a
+      // step can run, the watchdog speaks for it.
+      const gate = await ctx.db
+        .query("designGates")
+        .withIndex("by_message", (q) => q.eq("assistantId", assistantId))
+        .order("desc")
+        .first();
+      if (gateInFlight(gate)) {
+        await ctx.scheduler.runAfter(RUN_WATCHDOG_MS, internal.generate.expire, { assistantId, holdId });
+        return null;
+      }
+      if (gate?.status === "checking" || gate?.status === "reworking") {
+        await ctx.db.patch(gate._id, { status: "failed", error: reason, html: undefined, shell: undefined, pages: undefined, updatedAt: Date.now() });
+      }
       const review = await ctx.db
         .query("designReviews")
         .withIndex("by_message", (q) => q.eq("assistantId", assistantId))
@@ -779,7 +811,7 @@ function buildMessages(
   if (shown) {
     messages.push({
       role: "system",
-      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form. Maintain its saved SkillUI design structure.\n\n${shown}`,
+      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form. Keep it matching its saved measured design reference.\n\n${shown}`,
     });
   }
   if (talkOnly) {
@@ -800,11 +832,13 @@ function buildMessages(
   return messages;
 }
 
-// The design agent's turn when the design reviewer sends its work back: the
-// same instructions a build reads, the site as it stands with the originals it
-// named, and the reviewer's fixes as the request.
-export function designAgentTurn(siteName: string, site: BuiltSite, clones: string | undefined, request: string) {
-  return buildMessages(siteName, { ...site, clones }, [], request, null, "build", null);
+// The design agent's turn when its work is sent back: the same instructions a
+// build reads, the measured design reference where a build reads it, the site
+// as it stands, and the fixes as the request.
+export function designAgentTurn(siteName: string, site: BuiltSite, clones: string | undefined, request: string, design?: string) {
+  const messages = buildMessages(siteName, { ...site, clones }, [], request, null, "build", null);
+  if (design) messages.splice(4, 0, { role: "system", content: design });
+  return messages;
 }
 
 type Route = ReturnType<typeof chatRoute>;
