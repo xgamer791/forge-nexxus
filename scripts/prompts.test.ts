@@ -185,6 +185,14 @@ describe("the contract sets a floor, not a mould", () => {
     expect(DESIGN_GOD).toContain("at least 44px");
   });
 
+  test("every icon, including a hamburger, comes from Phosphor or Lucide", () => {
+    expect(DESIGN_GOD).toContain("## Icons");
+    expect(DESIGN_GOD).toContain("https://phosphoricons.com/");
+    expect(DESIGN_GOD).toContain("https://lucide.dev/icons/");
+    expect(DESIGN_GOD).toContain("That includes a hamburger menu");
+    expect(DESIGN_GOD).toContain("the Icons section");
+  });
+
   test("a phone menu is not locked to a checkbox or the word Menu", () => {
     expect(DESIGN_GOD).toContain("JavaScript is available, so the menu is not a checkbox and it does not have to say Menu.");
     expect(DESIGN_GOD).not.toMatch(/runs no scripts/);

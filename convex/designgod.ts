@@ -7,15 +7,15 @@
 // never edited: where it and this file disagree, this file wins, and that is
 // how its guidance is bent to Forge rather than by changing it.
 //
-// Add new visual training here. Type, colour, layout, navigation and the floor
-// every page meets all live in this file.
+// Add new visual training here. Type, colour, layout, navigation, icons and the
+// floor every page meets all live in this file.
 
 export const DESIGN_GOD = [
   "# Design God — custom design requirements",
   "",
   "Load and follow this file on every chat, strategy, and build turn, together with FORGE_MD and FED. The image model does not load this file.",
   "",
-  "This file is Forge's house taste and a phone floor. Outside the Anti-slop section it is guidance, not law: defaults and good practice that you are free to depart from whenever this business is better served by something else, without apologising for it. Two things are not optional: the Anti-slop section, and the parts of the floor that make a page work (it fits a phone without scrolling sideways, and it is accessible). FED owns method: how to reach a palette, a layout and copy.",
+  "This file is Forge's house taste and a phone floor. Outside the Anti-slop section it is guidance, not law: defaults and good practice that you are free to depart from whenever this business is better served by something else, without apologising for it. Three things are not optional: the Anti-slop section, the Icons section, and the parts of the floor that make a page work (it fits a phone without scrolling sideways, and it is accessible). FED owns method: how to reach a palette, a layout and copy.",
   "",
   "## Type",
   "",
@@ -52,6 +52,10 @@ export const DESIGN_GOD = [
   "- Anything a thumb has to hit is at least 44px, with space around it.",
   "- On a phone, keep those destinations usable. A short row that fits is fine. A menu that opens is fine. JavaScript is available, so the menu is not a checkbox and it does not have to say Menu.",
   "- On a wide screen the nav's shape is yours: a bar with the name on the left and links on the right is one answer, not the answer. A header that stays on screen gives each section a scroll-margin-top so a heading never lands underneath it.",
+  "",
+  "## Icons",
+  "",
+  "Every icon comes from one of two free packs, and from nowhere else: Phosphor (https://phosphoricons.com/) or Lucide (https://lucide.dev/icons/). That includes a hamburger menu and every other icon on the page. Do not draw an icon, do not use an emoji as an icon, and do not use any other set.",
   "",
   "## Anti-slop",
   "",
