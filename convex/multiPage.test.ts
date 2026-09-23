@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import { answerDesignResearch, storeDesignPackage } from "./designWorkerMock";
 import { builtSite, parseReply } from "./generate";
 import { QUESTIONS } from "./onboardingQuestions";
 import { serializeSite } from "./pages";
@@ -12,8 +13,12 @@ import schema from "./schema";
 // stored, and the page that is served. Nothing is seeded past what a member
 // does; the scheduler runs for real.
 const modules = import.meta.glob("./**/*.*s");
-const fresh = () => convexTest(schema, modules);
-type T = ReturnType<typeof fresh>;
+function makeTest() {
+  return convexTest(schema, modules);
+}
+type T = ReturnType<typeof makeTest>;
+let active: T;
+const fresh = () => (active = makeTest());
 
 async function createBuilder(t: T, email: string) {
   const { userId, sessionId } = await t.run(async (ctx) => {
@@ -57,6 +62,8 @@ function stubProviders(build: (call: number) => string) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
+      const research = await answerDesignResearch(url, init, () => storeDesignPackage(active));
+      if (research) return research;
       const body = JSON.parse(String(init.body));
       calls.push({ url, body });
       if (/generateContent/.test(url)) {
@@ -226,20 +233,20 @@ describe("a build with pages, start to finish", () => {
     const site = await onboarded(t, member);
     await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add the founding year to the story" });
 
-    // The strategist, the onboarding build, then the edit.
+    // The strategist, the onboarding build, then the edit. Captured before the
+    // layout check's drain, which also runs the memory note.
     const edit = providers.builds().at(-1)!;
     const handed = edit.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
     expect(handed).toContain("```html shell\n" + SHELL);
     expect(handed).toContain('```html path="/about" title="Our story"');
     expect(handed).toContain("return the whole updated site, every block");
 
+    // The edit is saved when the layout check passes.
+    await t.finishAllScheduledFunctions(() => {});
     const versions = await t.run((ctx) => ctx.db.query("siteVersions").collect());
     expect(versions).toHaveLength(2);
     expect(versions[1].pages!.find((page) => page.path === "/about")!.body).toContain("Founded in 2019.");
     expect(await (await t.fetch(`/sites/${site.slug}/about`)).text()).toContain("Founded in 2019.");
-    // An answered turn reflects on itself afterwards; let it, so it cannot
-    // reach the next test's provider and take the reply meant for its build.
-    await t.finishAllScheduledFunctions(() => {});
   });
 
   test("a first build that stopped short of a whole site is asked again for one in blocks, not one document", async () => {

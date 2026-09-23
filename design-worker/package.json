@@ -1,0 +1,10 @@
+{
+  "name": "forge-design-worker",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "test": "node --test \"checks/*-check.mjs\"" },
+  "dependencies": {
+    "playwright": "1.59.1"
+  },
+  "engines": { "node": ">=22" }
+}

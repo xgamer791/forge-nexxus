@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { dnsRecordFor, normalizeHostname } from "./domains";
 import schema from "./schema";
 
@@ -31,6 +32,30 @@ async function createUser(
     return { userId, sessionId };
   });
   return { userId, as: t.withIdentity({ subject: `${userId}|${sessionId}` }) };
+}
+
+// Forge assigns the first address when a build is published. The one change
+// a member gets is what these tests use to land on a known host.
+async function publishThenRename(
+  t: ReturnType<typeof fresh>,
+  member: Awaited<ReturnType<typeof createUser>>,
+  siteId: Id<"sites">,
+  slug: string,
+) {
+  await t.run(async (ctx) => {
+    const site = (await ctx.db.get(siteId))!;
+    const versionId = await ctx.db.insert("siteVersions", {
+      userId: site.userId,
+      siteId,
+      html: "<!doctype html><html><head><title>Shop</title></head><body>Shop</body></html>",
+      summary: "Built",
+      requestKind: "generate",
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(siteId, { currentVersionId: versionId });
+  });
+  await member.as.mutation(api.sites.publish, { id: siteId });
+  await member.as.mutation(api.sites.setSlug, { id: siteId, slug });
 }
 
 describe("domains", () => {

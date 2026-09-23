@@ -12,7 +12,8 @@ type Message = { role: "system" | "user" | "assistant"; content: string };
 
 // On unless the deployment turns it off: `npx convex env set DESIGN_REVIEW 0`.
 export function designReviewOn() {
-  return !/^(0|off|false|no)$/i.test(process.env.DESIGN_REVIEW?.trim() ?? "");
+  // Retired: the per-site SkillUI package now drives design continuity.
+  return false;
 }
 
 // How many times the reviewer may send the work back before the build stops

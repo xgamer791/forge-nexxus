@@ -4,6 +4,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { answerDesignResearch, DESIGN_PROMPT, storeDesignPackage } from "./designWorkerMock";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
@@ -15,8 +16,12 @@ import schema from "./schema";
 // build, the model, the pictures, the save, the address. Nothing is seeded
 // past what a member does; the scheduler runs for real.
 const modules = import.meta.glob("./**/*.*s");
-const fresh = () => convexTest(schema, modules);
-type T = ReturnType<typeof fresh>;
+function makeTest() {
+  return convexTest(schema, modules);
+}
+type T = ReturnType<typeof makeTest>;
+let active: T;
+const fresh = () => (active = makeTest());
 
 async function createUser(t: T, fields: { isAnonymous?: boolean; email?: string }) {
   const { userId, sessionId } = await t.run(async (ctx) => {
@@ -81,6 +86,8 @@ function stubProviders(build: (call: number) => Response) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
+      const research = await answerDesignResearch(url, init, () => storeDesignPackage(active));
+      if (research) return research;
       const body = JSON.parse(String(init.body));
       calls.push({ url, body });
       if (/generateContent/.test(url)) {
@@ -165,7 +172,8 @@ describe("a brand new build, start to finish", () => {
     // A second press while the build is queued must not queue a second build.
     await member.as.mutation(api.onboarding.submit, { id });
     const queued = await scheduled(t);
-    expect(queued.filter((job) => job.name === "onboarding:build")).toHaveLength(1);
+    expect(queued.filter((job) => job.name === "onboarding:research")).toHaveLength(1);
+    expect(queued.filter((job) => job.name === "onboarding:build")).toHaveLength(0);
     expect(queued.filter((job) => job.name === "onboarding:expire")).toHaveLength(1);
 
     await drain(t);
@@ -179,6 +187,8 @@ describe("a brand new build, start to finish", () => {
       "Answers submitted",
       "Build brief saved and read",
       "Agent started building your website",
+      "Checking the layout against the design reference",
+      "Layout passed the design check",
       "Page written",
       "Pictures made for your site",
       "Website received from the agent",
@@ -189,6 +199,7 @@ describe("a brand new build, start to finish", () => {
     const buildCall = providers.chatCalls().find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
     expect(buildCall).toBeDefined();
     expect(buildCall.body.model).toBe("forge-test");
+    expect(buildCall.body.messages.some((m: any) => m.content === DESIGN_PROMPT)).toBe(true);
     const briefText = buildCall.body.messages.at(-1).content;
     expect(briefText).toContain("Harbor Roasters");
     expect(briefText).toContain("Small-batch coffee roasted on the pier");
@@ -233,7 +244,7 @@ describe("a brand new build, start to finish", () => {
     expect(runs[0].endedAt).toBeDefined();
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(
-      expect.arrayContaining(["queued", "held", "provider_request", "provider_response", "images", "images_done", "saving", "complete"]),
+      expect.arrayContaining(["queued", "research", "research_searching", "research_candidate", "research_inspecting", "research_measuring", "research_uploading", "research_done", "design_loaded", "held", "provider_request", "provider_response", "layout_check", "layout_verdict", "images", "images_done", "saving", "complete"]),
     );
 
     // The member lands on the finished screen, with Rebuild on offer.
@@ -292,7 +303,7 @@ describe("a brand new build, start to finish", () => {
     });
 
     // Nothing re-queues on its own: the failed attempt leaves no build behind.
-    expect((await scheduled(t)).filter((job) => job.name === "onboarding:build" && job.state !== "success")).toEqual([]);
+    expect((await scheduled(t)).filter((job) => (job.name === "onboarding:build" || job.name === "onboarding:research") && job.state !== "success")).toEqual([]);
 
     // Try building again is one more attempt, not a loop.
     dropping = false;
@@ -494,7 +505,7 @@ describe("a rebuild, start to finish", () => {
       canRebuild: false,
       draft: expect.objectContaining({ id, status: "queued" }),
     });
-    expect((await scheduled(t)).filter((job) => job.name === "onboarding:build" && job.state !== "success")).toHaveLength(1);
+    expect((await scheduled(t)).filter((job) => job.name === "onboarding:research" && job.state !== "success")).toHaveLength(1);
 
     await drain(t);
 
@@ -519,6 +530,8 @@ describe("a rebuild, start to finish", () => {
       "Rebuilding from your answers",
       "Build brief saved and read",
       "Agent started building your website",
+      "Checking the layout against the design reference",
+      "Layout passed the design check",
       "Page written",
       "Pictures made for your site",
       "Website received from the agent",
@@ -557,7 +570,7 @@ describe("a rebuild, start to finish", () => {
     await t.mutation(internal.onboarding.expire, { id, attempt: 2 });
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete", attempt: 2 });
     expect(await versions(t)).toHaveLength(1);
-    expect((await scheduled(t)).filter((job) => job.name === "onboarding:build" && job.state !== "success")).toEqual([]);
+    expect((await scheduled(t)).filter((job) => (job.name === "onboarding:build" || job.name === "onboarding:research") && job.state !== "success")).toEqual([]);
   });
 
   test("a thread build the platform stopped is failed by its watchdog, and a finished one is left alone", async () => {
@@ -877,6 +890,8 @@ describe("a rebuild while testing is a new San Antonio business", () => {
     const asked: string[] = [];
     const calls: Call[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const research = await answerDesignResearch(url, init, () => storeDesignPackage(t));
+      if (research) return research;
       const body = JSON.parse(String(init.body));
       calls.push({ url, body });
       if (/generateContent/.test(url)) {
@@ -926,6 +941,8 @@ describe("a rebuild while testing is a new San Antonio business", () => {
     const admin = await createBuilder(t, "lifewirecg@gmail.com");
     const member = await createBuilder(t, "m@example.com");
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const research = await answerDesignResearch(url, init, () => storeDesignPackage(t));
+      if (research) return research;
       if (/generateContent/.test(url)) {
         return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: PNG } }] } }] });
       }

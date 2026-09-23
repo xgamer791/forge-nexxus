@@ -20,6 +20,73 @@ export default defineSchema({
     prompt: v.string(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
+  // One design reference per site: the address it was measured from, the
+  // measured reference itself in file storage (every route at phone, tablet
+  // and desktop widths), and the builder's spec written from it. A row from
+  // before measuring (no `format`) keeps its address, so the site is measured
+  // again there with no new search.
+  siteDesignPackages: defineTable({
+    userId: v.id("users"),
+    siteId: v.id("sites"),
+    storageId: v.id("_storage"),
+    referenceUrl: v.string(),
+    prompt: v.string(),
+    inspectedPages: v.number(),
+    buildEpoch: v.number(),
+    createdAt: v.number(),
+    format: v.optional(v.literal("forge-measured-v1")),
+    routes: v.optional(v.array(v.string())),
+  }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
+  // A build held for the layout check: the site as the builder last wrote
+  // it, until the check passes it, sends it back, or stops it. The check's
+  // scores stay after the site is gone, for `designGate:inspect`.
+  designGates: defineTable({
+    userId: v.id("users"),
+    siteId: v.id("sites"),
+    runId: v.id("buildRuns"),
+    source: v.union(v.literal("thread"), v.literal("onboarding")),
+    assistantId: v.id("messages"),
+    holdId: v.id("creditHolds"),
+    requestKind,
+    epoch: v.number(),
+    onboardingId: v.optional(v.id("siteOnboarding")),
+    attempt: v.optional(v.number()),
+    rebuild: v.optional(v.boolean()),
+    siteName: v.string(),
+    prompt: v.optional(v.string()),
+    remember: v.optional(v.boolean()),
+    blockedNote: v.optional(v.string()),
+    html: v.optional(v.string()),
+    shell: v.optional(v.string()),
+    pages: v.optional(v.array(v.object({ path: v.string(), title: v.string(), body: v.string() }))),
+    summary: v.string(),
+    status: v.union(
+      v.literal("checking"),
+      v.literal("reworking"),
+      v.literal("passed"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    // Round 1 is the first check; each rework adds one.
+    round: v.number(),
+    // Steps in a row that came back with nothing to use.
+    trouble: v.number(),
+    // Why the last rework could not be used, for the next one to put right.
+    problem: v.optional(v.string()),
+    // The measured differences the last failed check sent back.
+    fixes: v.array(v.string()),
+    // Each round's outcome: the lowest region score and the regions below the bar.
+    results: v.array(v.object({
+      round: v.number(),
+      passed: v.boolean(),
+      lowest: v.number(),
+      failing: v.array(v.string()),
+      at: v.number(),
+    })),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]).index("by_message", ["assistantId"]),
   siteOnboarding: defineTable({
     userId: v.id("users"),
     siteId: v.optional(v.id("sites")),
@@ -41,9 +108,24 @@ export default defineSchema({
     holdId: v.optional(v.id("creditHolds")),
     assistantId: v.optional(v.id("messages")),
     events: v.array(v.object({ label: v.string(), at: v.number() })),
+    // Which step of a queued attempt is under way. The platform can lose a
+    // scheduled action across a deploy or a restart, so a step that goes
+    // quiet is started again (onboarding.rescue); and a second copy of a step
+    // -- a restart, a retry, a manual run -- does nothing while the first
+    // still holds it. Only the attempt it names reads it.
+    queueStep: v.optional(v.object({
+      attempt: v.number(),
+      step: v.union(v.literal("research"), v.literal("build")),
+      // Set while one copy of the step holds it.
+      lease: v.optional(v.string()),
+      // The step's last sign of life: queued, claimed, or a heartbeat.
+      beatAt: v.number(),
+      // How many times the rescue has started this attempt's step again.
+      restarts: v.number(),
+    })),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
+  }).index("by_user", ["userId"]).index("by_site", ["siteId"]).index("by_status_updated", ["status", "updatedAt"]),
   // A site is the thing a user builds. Its conversation is the build thread —
   // every prompt about the site lives there — so deleting the site deletes the
   // thread with it. Nothing is seeded: the drawer is empty until one is made.
@@ -259,6 +341,7 @@ export default defineSchema({
     status: v.union(
       v.literal("queued"),
       v.literal("started"),
+      v.literal("researching"),
       v.literal("calling"),
       v.literal("reviewing"),
       v.literal("images"),
@@ -335,15 +418,14 @@ export default defineSchema({
       completionTokens: v.optional(v.number()),
       reasoningTokens: v.optional(v.number()),
       providerError: v.optional(v.string()),
-      loopRepeats: v.optional(v.number()),
-      // Which round of the design check an event belongs to.
-      round: v.optional(v.number()),
-      // Older build logs still store these. Optional so those rows keep validating.
       city: v.optional(v.string()),
       page: v.optional(v.number()),
       total: v.optional(v.number()),
       mode: v.optional(v.string()),
       screens: v.optional(v.number()),
+      loopRepeats: v.optional(v.number()),
+      // Which round of the design check an event belongs to.
+      round: v.optional(v.number()),
     })),
   })
     .index("by_run", ["runId"])

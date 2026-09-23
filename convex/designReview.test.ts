@@ -2,18 +2,16 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import { answerDesignResearch, DESIGN_PROMPT, storeDesignPackage } from "./designWorkerMock";
 import {
   chromeHash,
-  DESIGN_REVIEWER,
+  designReviewOn,
   elided,
   lostPageStyles,
   needsReview,
   readVerdict,
   unnamedParts,
 } from "./designCheck";
-import { DESIGN_GOD } from "./designgod";
-import { FED } from "./fed";
-import { FORGE_MD } from "./forgeMd";
 import { parseReply, parseShellReply } from "./generate";
 import { QUESTIONS } from "./onboardingQuestions";
 import schema from "./schema";
@@ -23,8 +21,12 @@ import schema from "./schema";
 // design agent until the reviewer agrees. The scheduler runs for real, so a
 // check and its reworks run the way they would on Convex.
 const modules = import.meta.glob("./**/*.*s");
-const fresh = () => convexTest(schema, modules);
-type T = ReturnType<typeof fresh>;
+function makeTest() {
+  return convexTest(schema, modules);
+}
+type T = ReturnType<typeof makeTest>;
+let active: T;
+const fresh = () => (active = makeTest());
 
 async function createBuilder(t: T, email: string) {
   const { userId, sessionId } = await t.run(async (ctx) => {
@@ -96,15 +98,6 @@ const part = (equal: boolean, difference?: string) => ({
   differences: difference ? [difference] : [],
 });
 const AGREE = JSON.stringify({ equal: true, header: part(true), menu: part(true), footer: part(true), fixes: [] });
-const HEADER_FIX = "Make the header 96px tall with 40px side padding, as the original is.";
-const DISAGREE = JSON.stringify({
-  equal: false,
-  header: part(false, "the header is 64px tall with 16px side padding; the original's is 96px tall with 40px"),
-  menu: part(true),
-  footer: part(true),
-  fixes: [HEADER_FIX],
-});
-
 const PNG = btoa("not really a png, but bytes are bytes");
 const json = (payload: unknown, status = 200) =>
   new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
@@ -124,6 +117,8 @@ function stubAgents(agents: { build: (call: number) => string; review: (call: nu
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
+      const research = await answerDesignResearch(url, init, () => storeDesignPackage(active));
+      if (research) return research;
       const body = JSON.parse(String(init.body));
       const call = { url, body };
       calls.push(call);
@@ -166,7 +161,7 @@ afterEach(() => {
   process.env.DESIGN_REVIEW = "off";
 });
 
-// A member's first site, built from the questions and let through by the reviewer.
+// A member's first site, researched and saved. The Awwwards reviewer is retired.
 async function firstSite(t: T, member: Member) {
   const id = await answerEverything(member);
   await member.as.mutation(api.onboarding.submit, { id });
@@ -176,337 +171,79 @@ async function firstSite(t: T, member: Member) {
   return { id, site };
 }
 
-describe("a first build waits for the design reviewer", () => {
-  test("the reviewer sends the header back, the rework is checked again, and only then is the site saved", async () => {
+describe("a first build researches a measured design reference and saves", () => {
+  test("the worker runs once, the package is kept, and the retired reviewer is not called", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const agents = stubAgents({
-      build: (call) => (call === 1 ? siteReply() : reworkReply(shell(".bar{height:96px;padding:0 40px}"))),
-      review: (call) => (call === 1 ? DISAGREE : AGREE),
-    });
+    const agents = stubAgents({ build: () => siteReply(), review: () => AGREE });
 
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    // One build, one rework, and a verdict on each.
-    expect(agents.builds()).toHaveLength(2);
-    expect(agents.reviews()).toHaveLength(2);
-
-    // The reviewer is its own agent: its own instructions and the rules for
-    // reference, never the design agent's instructions or house rules.
-    const [first, second] = agents.reviews();
-    expect(first.body.messages[0].content).toBe(DESIGN_REVIEWER);
-    expect(systemOf(first)).toContain(DESIGN_GOD);
-    expect(systemOf(first)).not.toContain("You are Forge, the website-building agent");
-    expect(systemOf(first)).not.toContain(FORGE_MD);
-    expect(systemOf(first)).not.toContain(FED);
-    expect(first.body.model).toBe("forge-test");
-    expect(first.body.max_tokens).toBe(32000);
-    // It is shown what the design agent says it cloned, and the shell it built,
-    // before any picture has been made.
-    expect(lastUser(first)).toContain(fence("clones", CLONES));
-    expect(lastUser(first)).toContain(shell());
-    expect(lastUser(first)).toContain("forge-image:1");
-    expect(lastUser(first)).toContain("Round 1 of the design check.");
-    // The second round checks the fixes it asked for, then everything again.
-    expect(lastUser(second)).toContain("Round 2 of the design check.");
-    expect(lastUser(second)).toContain(`- ${HEADER_FIX}`);
-    expect(lastUser(second)).toContain(".bar{height:96px;padding:0 40px}");
-
-    // The design agent gets its own instructions back, its site and originals,
-    // and the fixes, and is asked for the shell alone.
-    const rework = agents.builds()[1];
-    expect(systemOf(rework)).toContain("You are Forge, the website-building agent");
-    expect(systemOf(rework)).toContain("Its header, dropdown menu and footer are clones of these originals");
-    expect(lastUser(rework)).toContain("did not agree they are equal");
-    expect(lastUser(rework)).toContain(`- ${HEADER_FIX}`);
-    expect(lastUser(rework)).toContain("every page you do not return stays exactly as it is");
-
-    // One version: the reworked shell, the pages as they were, the picture made,
-    // and the originals kept beside it.
-    const [version] = await versions(t);
-    expect(await versions(t)).toHaveLength(1);
-    expect(version.shell).toContain(".bar{height:96px;padding:0 40px}");
-    expect(version.shell).toContain(PAGE_STYLES);
-    expect(version.pages?.[0].body).toContain('<div class="menu-card">Pier Roast</div>');
-    expect(version.pages?.[0].body).not.toContain("forge-image:");
-    expect(version.clones).toBe(CLONES);
-
-    // The progress log says the work went back and then passed, before it was saved.
+    expect(agents.builds()).toHaveLength(1);
+    expect(agents.reviews()).toHaveLength(0);
+    expect(await reviews(t)).toEqual([]);
     const brief = (await t.run((ctx) => ctx.db.get(id)))!;
-    expect(brief.status).toBe("complete");
-    expect(brief.events.map((event) => event.label)).toEqual([
-      "Answers submitted",
-      "Build brief saved and read",
-      "Agent started building your website",
-      "Header, menu and footer sent back for changes",
-      "Header, menu and footer passed the design check",
-      "Page written",
-      "Pictures made for your site",
-      "Website received from the agent",
-      "Website saved and ready",
-    ]);
-
-    // The check is over: its verdicts stay, the site it held does not.
-    const [review] = await reviews(t);
-    expect(review).toMatchObject({ source: "onboarding", status: "passed", round: 2, clones: CLONES });
-    expect(review.shell).toBeUndefined();
-    expect(review.pages).toBeUndefined();
-    expect(review.verdicts.map((verdict) => [verdict.round, verdict.equal, verdict.header])).toEqual([[1, false, false], [2, true, true]]);
-
-    // The credits settle once, and the run reads as a finished build.
-    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
-    const [run] = await t.run((ctx) => ctx.db.query("buildRuns").collect());
-    expect(run).toMatchObject({ status: "complete", imageMade: 1 });
-    const events = await t.run((ctx) => ctx.db.query("buildEvents").withIndex("by_run", (q) => q.eq("runId", run._id)).collect());
+    expect(brief).toMatchObject({ status: "complete" });
+    expect(brief.error).toBeUndefined();
+    const design = await t.run((ctx) => ctx.db.query("siteDesignPackages").withIndex("by_site", (q) => q.eq("siteId", brief.siteId!)).unique());
+    expect(design).toMatchObject({ prompt: DESIGN_PROMPT, inspectedPages: 2 });
+    const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
-      "design_review", "design_verdict", "design_revision", "design_revision_done", "images", "saving", "complete",
+      "research", "research_searching", "research_candidate", "research_inspecting", "research_measuring", "research_uploading", "research_done", "design_loaded", "layout_check", "layout_verdict", "complete",
     ]));
-    expect(events.filter((event) => event.phase === "design_verdict").map((event) => event.detail?.round)).toEqual([1, 2]);
+    expect(await versions(t)).toHaveLength(1);
+    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
+    expect(systemOf(agents.builds()[0])).toContain(DESIGN_PROMPT);
+    expect(systemOf(agents.builds()[0])).not.toContain("```clones");
+    expect(brief.events.map((event) => event.label)).not.toContain("Header, menu and footer sent back for changes");
   });
 
-  test("a build the reviewer never agrees to is not saved, and its credits go back", async () => {
+  test("a missing worker fails the build before the model is asked and spends nothing", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    process.env.DESIGN_REVIEW_ROUNDS = "1";
-    const agents = stubAgents({
-      build: (call) => (call === 1 ? siteReply() : reworkReply(shell(".bar{height:80px}"))),
-      review: () => DISAGREE,
-    });
-
-    const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
-    await drain(t);
-
-    // One rework allowed: two verdicts, and then the build stops.
-    expect(agents.reviews()).toHaveLength(2);
-    expect(agents.builds()).toHaveLength(2);
-    expect(await versions(t)).toEqual([]);
-    const brief = (await t.run((ctx) => ctx.db.get(id)))!;
-    expect(brief.status).toBe("failed");
-    expect(brief.error).toBe(
-      "The header, menu and footer still didn't pass the design check after one round of changes, so this build wasn't saved. Try again. Your answers are saved.",
-    );
-    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "released"]]);
-    const [run] = await t.run((ctx) => ctx.db.query("buildRuns").collect());
-    expect(run).toMatchObject({ status: "failed", errorClass: "design_check" });
-    const [review] = await reviews(t);
-    expect(review).toMatchObject({ status: "failed", round: 2 });
-    expect(review.shell).toBeUndefined();
-  });
-
-  test("a reply that names no originals goes back without asking the reviewer to guess", async () => {
-    const t = fresh();
-    const member = await createBuilder(t, "m@example.com");
-    const agents = stubAgents({
-      build: (call) => (call === 1 ? siteReply({ clones: null }) : reworkReply(shell(".bar{height:96px}"))),
-      review: () => AGREE,
-    });
-
-    const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
-    await drain(t);
-
-    // No model was asked about a clone of nothing; the rework was asked for
-    // the originals, and the reviewer checked that.
-    expect(agents.reviews()).toHaveLength(1);
-    const rework = agents.builds()[1];
-    expect(lastUser(rework)).toContain("Your reply had no clones block.");
-    expect(lastUser(rework)).toContain("Name the Awwwards original you cloned for the header in the clones block");
-    expect(lastUser(rework)).toContain("Name the Awwwards original you cloned for the dropdown menu in the clones block");
-    expect(lastUser(rework)).toContain("Name the Awwwards original you cloned for the footer in the clones block");
-    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
-    const [version] = await versions(t);
-    expect(version.clones).toBe(CLONES);
-    expect(version.shell).toContain(".bar{height:96px}");
-  });
-
-  test("a rework that drops the pages' styles is not used, and the design agent is told what it dropped", async () => {
-    const t = fresh();
-    const member = await createBuilder(t, "m@example.com");
-    const agents = stubAgents({
-      build: (call) =>
-        call === 1 ? siteReply()
-          : call === 2 ? reworkReply(shell(".bar{height:96px}", "/* the rest of the styles are unchanged */"))
-            : call === 3 ? reworkReply(shell(".bar{height:96px}", ".hours{display:grid}"))
-              : reworkReply(shell(".bar{height:96px}")),
-      review: (call) => (call === 1 ? DISAGREE : AGREE),
-    });
-
-    const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
-    await drain(t);
-
-    expect(agents.builds()).toHaveLength(4);
-    // Each go is told why the one before it was not used, and neither of the
-    // unusable ones reached the reviewer.
-    expect(lastUser(agents.builds()[2])).toContain(
-      "Your last rework could not be used: the shell has a comment standing in for part of it (/* the rest of the styles are unchanged */).",
-    );
-    expect(lastUser(agents.builds()[3])).toContain("Your last rework could not be used: the shell dropped the styles the pages use for .menu-card. Keep every one of them.");
-    expect(agents.reviews()).toHaveLength(2);
-    const [version] = await versions(t);
-    expect(version.shell).toContain(PAGE_STYLES);
-    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
-  });
-
-  test("a build cancelled during its check ends the check without asking the reviewer", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const t = fresh();
-    const member = await createBuilder(t, "m@example.com");
+    delete process.env.DESIGN_WORKER_URL;
+    delete process.env.DESIGN_WORKER_TOKEN;
     const agents = stubAgents({ build: () => siteReply(), review: () => AGREE });
-
     const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
-    // The build runs by hand, so the check it schedules waits.
-    await t.action(internal.onboarding.build, { id, attempt: 1 });
-    const [open] = await reviews(t);
-    expect(open).toMatchObject({ status: "checking", round: 1 });
-
-    await member.as.mutation(api.onboarding.cancel, {});
-    await t.action(internal.designReview.check, { id: open._id });
-
-    expect(agents.reviews()).toHaveLength(0);
-    const [ended] = await reviews(t);
-    expect(ended.status).toBe("cancelled");
-    expect(ended.shell).toBeUndefined();
-    expect(await versions(t)).toEqual([]);
-    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "released"]]);
-  });
-
-  test("the onboarding watchdog waits while the check is moving and speaks once it goes quiet", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const t = fresh();
-    const member = await createBuilder(t, "m@example.com");
-    const agents = stubAgents({ build: () => siteReply(), review: () => AGREE });
-
-    const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
-    await t.action(internal.onboarding.build, { id, attempt: 1 });
-    const [open] = await reviews(t);
-
-    // Heard from just now: the watchdog leaves the build building.
-    await t.mutation(internal.onboarding.expire, { id, attempt: 1 });
-    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "building" });
-    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "held"]]);
-
-    // Quiet for longer than a step can run: the watchdog ends it.
-    await t.run((ctx) => ctx.db.patch(open._id, { updatedAt: Date.now() - 11 * 60_000 }));
-    await t.mutation(internal.onboarding.expire, { id, attempt: 1 });
-    const brief = (await t.run((ctx) => ctx.db.get(id)))!;
-    expect(brief.status).toBe("failed");
-    expect(brief.error).toBe("The build stopped responding. Your answers are saved. Try building again.");
-    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "released"]]);
-    const [ended] = await reviews(t);
-    expect(ended.status).toBe("failed");
-    expect(ended.shell).toBeUndefined();
-
-    // A check that wakes up after that does nothing.
-    await t.action(internal.designReview.check, { id: open._id });
-    expect(agents.reviews()).toHaveLength(0);
-    expect(await versions(t)).toEqual([]);
+    await drain(t);
+    const before = (await member.as.query(api.billing.summary, {}))!.credits;
+    try {
+      await member.as.mutation(api.onboarding.submit, { id });
+      await drain(t);
+      expect(agents.builds()).toHaveLength(0);
+      const brief = (await t.run((ctx) => ctx.db.get(id)))!;
+      expect(brief.status).toBe("failed");
+      expect(brief.error).toContain("Design research is not configured");
+      expect(await versions(t)).toEqual([]);
+      expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(before);
+    } finally {
+      process.env.DESIGN_WORKER_URL = "https://design-worker.test";
+      process.env.DESIGN_WORKER_TOKEN = "test-design-worker-token";
+    }
   });
 });
 
-describe("an edit waits for the reviewer only when it changes the header, menu or footer", () => {
-  test("a page-only edit is saved at once; a new header is checked first", async () => {
-    const t = fresh();
-    const member = await createBuilder(t, "m@example.com");
-    const edits: string[] = [];
-    // The second verdict waits to be let go, so the thread can be read while
-    // the reviewer is still reading the new header.
-    let letGo!: () => void;
-    const held = new Promise<void>((resolve) => { letGo = resolve; });
-    const agents = stubAgents({
-      build: (call) => (call === 1 ? siteReply() : edits.shift()!),
-      review: async (call) => {
-        if (call === 2) await held;
-        return AGREE;
-      },
-    });
-    const { site } = await firstSite(t, member);
-    expect(agents.reviews()).toHaveLength(1);
-
-    // Same shell, new home page: nothing for the reviewer to look at.
-    edits.push(siteReply({ summary: "Added this week's roast.", home: HOME.replace("Pier Roast", "Pier Roast, and this week's Kenya") }));
-    await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add this week's roast" });
-    expect(agents.reviews()).toHaveLength(1);
-    expect(await versions(t)).toHaveLength(2);
-    // The edit was told what the header, menu and footer were cloned from.
-    expect(systemOf(agents.builds()[1])).toContain(fence("clones", CLONES));
-
-    // A new header waits: the reply stays pending while the reviewer reads it.
-    edits.push(siteReply({ summary: "Moved the menu into the header.", shell: shell(".bar{position:sticky;top:0}") }));
-    const { messageId } = await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Keep the menu on screen" });
-    const pending = (await t.run((ctx) => ctx.db.get(messageId)))!;
-    expect(pending.status).toBe("pending");
-    expect(pending.body).toBe("Checking the header, menu and footer…");
-    expect(await versions(t)).toHaveLength(2);
-
-    letGo();
-    await drain(t);
-    expect(agents.reviews()).toHaveLength(2);
-    const landed = (await t.run((ctx) => ctx.db.get(messageId)))!;
-    expect(landed.status).toBeUndefined();
-    expect(landed.body).toBe("Moved the menu into the header.");
-    expect(landed.versionId).toBeDefined();
-    const saved = (await t.run((ctx) => ctx.db.get(landed.versionId!)))!;
-    expect(saved.shell).toContain(".bar{position:sticky;top:0}");
-    expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "settled"], ["edit", "settled"]]);
-  });
-
-  test("an edit the reviewer never agrees to leaves the site as it was and says why in the thread", async () => {
-    const t = fresh();
-    const member = await createBuilder(t, "m@example.com");
-    let reviewed = 0;
-    const agents = stubAgents({
-      build: (call) => (call === 1 ? siteReply() : siteReply({ shell: shell(".bar{height:40px}") })),
-      review: () => (++reviewed === 1 ? AGREE : DISAGREE),
-    });
-    const { site } = await firstSite(t, member);
-    process.env.DESIGN_REVIEW_ROUNDS = "0";
-
-    const { messageId } = await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "A slimmer header" });
-    await drain(t);
-
-    expect(agents.reviews()).toHaveLength(2);
-    const said = (await t.run((ctx) => ctx.db.get(messageId)))!;
-    expect(said.status).toBeUndefined();
-    expect(said.versionId).toBeUndefined();
-    expect(said.body).toBe("The header, menu and footer still didn't pass the design check, so this build wasn't saved. Try again.");
-    const after = (await t.run((ctx) => ctx.db.get(site._id)))!;
-    expect(after.currentVersionId).toBe(site.currentVersionId);
-    expect(await versions(t)).toHaveLength(1);
-    expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "released"]]);
-  });
-
-  test("the thread watchdog waits while the check is moving and speaks once it goes quiet", async () => {
+describe("an edit uses the saved measured design reference", () => {
+  test("a later page is saved at once and told to follow the reference", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const agents = stubAgents({
-      build: (call) => (call === 1 ? siteReply() : siteReply({ shell: shell(".bar{height:120px}") })),
+      build: (call) => (call === 1 ? siteReply() : siteReply({ summary: "Added this week's roast.", home: HOME.replace("Pier Roast", "Pier Roast, and this week's Kenya") })),
       review: () => AGREE,
     });
     const { site } = await firstSite(t, member);
+    expect(agents.reviews()).toHaveLength(0);
 
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const { messageId } = await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "A taller header" });
-    const open = (await reviews(t)).find((review) => review.source === "thread")!;
-    expect(open.status).toBe("checking");
+    await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add this week's roast" });
+    await drain(t);
 
-    await t.mutation(internal.generate.expire, { assistantId: messageId, holdId: open.holdId });
-    expect(await t.run((ctx) => ctx.db.get(messageId))).toMatchObject({ status: "pending" });
-
-    await t.run((ctx) => ctx.db.patch(open._id, { updatedAt: Date.now() - 11 * 60_000 }));
-    await t.mutation(internal.generate.expire, { assistantId: messageId, holdId: open.holdId });
-    const said = (await t.run((ctx) => ctx.db.get(messageId)))!;
-    // The turn already answered, so the thread is where this is said.
-    expect(said.status).toBeUndefined();
-    expect(said.body).toBe("The build stopped responding. Try again.");
-    expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "released"]]);
-    expect((await reviews(t)).find((review) => review._id === open._id)?.status).toBe("failed");
-    expect(agents.reviews()).toHaveLength(1);
+    expect(agents.reviews()).toHaveLength(0);
+    expect(await reviews(t)).toEqual([]);
+    expect(await versions(t)).toHaveLength(2);
+    expect(systemOf(agents.builds()[1])).toContain(DESIGN_PROMPT);
+    expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "settled"]]);
   });
 });
 
@@ -541,15 +278,15 @@ describe("the check's own reading", () => {
     expect(elided("<style>/* the header's bar */.bar{}</style><!--forge-page-->")).toBeNull();
   });
 
-  test("a new site is always checked; an edit only when its shell changed", async () => {
+  test("the retired reviewer never holds a build", async () => {
     const site = { shell: shell(), pages: [{ path: "/", title: "Home", body: HOME }] };
     const before = await chromeHash(site);
-    expect(await needsReview("generate", null, site)).toBe(true);
+    expect(designReviewOn()).toBe(false);
+    expect(await needsReview("generate", null, site)).toBe(false);
     expect(await needsReview("edit", before, { ...site, pages: [{ path: "/", title: "Home", body: "<main>New</main>" }] })).toBe(false);
-    // Whitespace and comments are not a new header.
-    expect(await needsReview("edit", before, { ...site, shell: site.shell.replace("<!--forge-page-->", "\n  <!--forge-page-->\n") })).toBe(false);
-    expect(await needsReview("edit", before, { ...site, shell: shell(".bar{height:96px}") })).toBe(true);
-    process.env.DESIGN_REVIEW = "0";
+    expect(await needsReview("edit", before, { ...site, shell: shell(".bar{height:96px}") })).toBe(false);
+    process.env.DESIGN_REVIEW = "on";
+    expect(designReviewOn()).toBe(false);
     expect(await needsReview("generate", null, site)).toBe(false);
   });
 
