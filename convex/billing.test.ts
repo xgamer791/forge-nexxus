@@ -52,7 +52,7 @@ describe("periods", () => {
       granted: 300,
       cancelAtPeriodEnd: false,
     };
-    expect(projected(sub, start + 1000)).toBe(sub);
+    expect(projected(sub, start + 1000)).toEqual(sub);
     const twoLater = addMonth(addMonth(start));
     const later = projected(sub, twoLater + 5);
     expect(later.periodStart).toBe(twoLater);
@@ -369,7 +369,7 @@ describe("billing", () => {
   test("cancel schedules the free plan for the period end; resume undoes it", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
-    await expect(member.as.action(api.billing.cancel, {})).rejects.toThrow("already on the free plan");
+    await expect(member.as.action(api.billing.cancel, {})).rejects.toThrow("You're already off a paid plan");
     await t.mutation(internal.billing.grantPlan, { email: "m@example.com", plan: "starter" });
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
       plan: { key: "starter" },
@@ -440,7 +440,7 @@ describe("billing", () => {
     );
     await expect(member.as.action(api.billing.checkout, {})).rejects.toThrow("Choose a plan");
     await expect(member.as.action(api.billing.checkout, { plan: "free" })).rejects.toThrow(
-      "Downgrading",
+      "Cancelling happens from Plan & credits",
     );
     const guest = await createUser(t, { isAnonymous: true });
     await expect(guest.as.action(api.billing.checkout, { plan: "pro" })).rejects.toThrow("Sign in");
@@ -479,8 +479,10 @@ describe("admins", () => {
       // An upgrade carries the leftover over, as any other upgrade does.
       expect(summary.credits).toBe((ultra.monthlyCredits ?? 0) + OPENING);
       // A downgrade — a cancelled card, a Stripe deletion — does not stick.
+      // The summary reads the admin rule directly, so it stays on the top plan
+      // even before the next ensure writes the row back.
       await t.mutation(internal.billing.grantPlan, { email: "boss@example.com", plan: "free" });
-      expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe("free");
+      expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe(ultra.key);
       await t.mutation(internal.billing.ensure, { userId: user.userId });
       expect((await user.as.query(api.billing.summary, {}))!.plan.key).toBe(ultra.key);
     } finally {

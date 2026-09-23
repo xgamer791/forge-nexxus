@@ -187,12 +187,10 @@ describe("the contract sets a floor, not a mould", () => {
     expect(DESIGN_GOD).toContain("at least 44px");
   });
 
-  test("the reply can still name cloned header, menu and footer originals", () => {
-    // The reply format that carries the declaration is the contract's to say.
-    expect(contract).toContain("then a \\`\\`\\`clones block, then the shell");
-    expect(contract).toContain("Header: Site name, https://its-address");
-    expect(contract).toContain("Dropdown menu: Site name, https://its-address");
-    expect(contract).toContain("Footer: Site name, https://its-address");
+  test("the reply follows the saved SkillUI reference instead of naming Awwwards clones", () => {
+    expect(contract).toContain("The saved SkillUI design reference is required for every build and edit");
+    expect(contract).not.toContain("```clones");
+    expect(contract).not.toContain("https://www.awwwards.com/");
     expect(DESIGN_GOD).not.toContain("https://www.awwwards.com/");
     expect(DESIGN_GOD).not.toContain("## Header, menu and footer");
   });

@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import { answerDesignResearch, storeDesignPackage } from "./designWorkerMock";
 import { builtSite, parseReply } from "./generate";
 import { QUESTIONS } from "./onboardingQuestions";
 import { serializeSite } from "./pages";
@@ -12,8 +13,12 @@ import schema from "./schema";
 // stored, and the page that is served. Nothing is seeded past what a member
 // does; the scheduler runs for real.
 const modules = import.meta.glob("./**/*.*s");
-const fresh = () => convexTest(schema, modules);
-type T = ReturnType<typeof fresh>;
+function makeTest() {
+  return convexTest(schema, modules);
+}
+type T = ReturnType<typeof makeTest>;
+let active: T;
+const fresh = () => (active = makeTest());
 
 async function createBuilder(t: T, email: string) {
   const { userId, sessionId } = await t.run(async (ctx) => {
@@ -57,6 +62,8 @@ function stubProviders(build: (call: number) => string) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
+      const research = await answerDesignResearch(url, init, () => storeDesignPackage(active));
+      if (research) return research;
       const body = JSON.parse(String(init.body));
       calls.push({ url, body });
       if (/generateContent/.test(url)) {

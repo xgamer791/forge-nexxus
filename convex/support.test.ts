@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import { insertDesignPackage } from "./designWorkerMock";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { SUPPORT_EMAIL, wantsReport } from "./support";
@@ -51,6 +52,7 @@ async function seedBuiltSite(t: T, userId: Id<"users">) {
     const siteId = await ctx.db.insert("sites", { userId, conversationId, name: "Bakery on Main", status: "draft", createdAt: Date.now(), updatedAt: Date.now() });
     const versionId = await ctx.db.insert("siteVersions", { userId, siteId, html: PAGE, summary: "First", requestKind: "generate", createdAt: Date.now() });
     await ctx.db.patch(siteId, { currentVersionId: versionId });
+    await insertDesignPackage(ctx, userId, siteId);
     return { siteId, conversationId };
   });
 }

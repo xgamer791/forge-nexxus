@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import { insertDesignPackage } from "./designWorkerMock";
 import type { Id } from "./_generated/dataModel";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
@@ -45,6 +46,7 @@ async function seedBuiltSite(t: T, userId: Id<"users">) {
     const siteId = await ctx.db.insert("sites", { userId, conversationId, name: "Bakery", status: "draft", createdAt: now, updatedAt: now });
     const versionId = await ctx.db.insert("siteVersions", { userId, siteId, html: PAGE, summary: "First", requestKind: "generate", createdAt: now });
     await ctx.db.patch(siteId, { currentVersionId: versionId });
+    await insertDesignPackage(ctx, userId, siteId);
     return { siteId, conversationId };
   });
 }
@@ -317,6 +319,7 @@ describe("a turn", () => {
       const conversationId = await ctx.db.insert("conversations", { userId: member.userId, title: "Bakery", updatedAt: now });
       const siteId = await ctx.db.insert("sites", { userId: member.userId, conversationId, name: "Bakery", status: "draft", createdAt: now, updatedAt: now });
       const id = await ctx.db.insert("siteOnboarding", { userId: member.userId, siteId, answers: [], step: 0, revision: 0, assets: [], status: "building", attempt: 1, dismissed: false, events: [], createdAt: now, updatedAt: now });
+      await insertDesignPackage(ctx, member.userId, siteId);
       return { siteId, id };
     });
     const job = await t.mutation(internal.generate.beginOnboarding, { id, attempt: 1 });

@@ -136,8 +136,16 @@ export async function researchDesign(
         await trace.note({ phase: `research_${event.phase}`, label, status: "researching",
           detail: { ...(city ? { city } : {}), ...(page ? { page, total } : {}),
             ...(event.phase === "skillui" ? { mode: "ultra", screens: 12 } : {}) } });
-      } else if (event.type === "complete") {
-        result = event;
+      } else if (event.type === "complete" && typeof event.storageId === "string" &&
+          typeof event.referenceUrl === "string" && typeof event.prompt === "string" &&
+          Number.isInteger(event.inspectedPages)) {
+        // The worker's line also carries `type`. Only the package fields are saved.
+        result = {
+          storageId: event.storageId as Id<"_storage">,
+          referenceUrl: event.referenceUrl,
+          prompt: event.prompt,
+          inspectedPages: event.inspectedPages,
+        };
       } else if (event.type === "error") {
         throw new Error(`Design research failed: ${String(event.reason).slice(0, 180)}`);
       }

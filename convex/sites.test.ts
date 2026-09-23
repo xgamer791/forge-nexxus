@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { planFor } from "./plans";
-import { BADGE_TEXT, siteHostFor, slugProblem, slugify } from "./sites";
+import { siteHostFor, slugProblem, slugify, withScreenFloor } from "./sites";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -174,66 +174,66 @@ describe("publishing", () => {
     );
     const first = await build(t, siteId);
     const published = await member.as.mutation(api.sites.publish, { id: siteId });
-    expect(published).toEqual({
-      slug: "bakery-on-main",
-      url: "https://bakery-on-main.sites.forgenexxus.com",
-    });
+    // The name is not the address. Forge assigns one when the build is published.
+    expect(published.slug).toMatch(/^[a-z]+-[a-z]+-[a-z0-9]{4}$/);
+    const slug = published.slug;
+    const url = `https://${slug}.sites.forgenexxus.com`;
+    expect(published.url).toBe(url);
+    const servedPage = withScreenFloor(PAGE);
     const [site] = await member.as.query(api.sites.list, {});
     expect(site).toMatchObject({
       status: "published",
-      slug: "bakery-on-main",
+      slug,
       publishedVersionId: first,
-      publishedUrl: "https://bakery-on-main.sites.forgenexxus.com",
-      address: "https://bakery-on-main.sites.forgenexxus.com",
-      host: "bakery-on-main.sites.forgenexxus.com",
+      publishedUrl: url,
+      address: url,
+      host: `${slug}.sites.forgenexxus.com`,
     });
     expect((await member.as.query(api.sites.currentHtml, { siteId }))?.published).toBe(true);
 
-    const served = await t.fetch("/sites/bakery-on-main");
+    const served = await t.fetch(`/sites/${slug}`);
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toContain("text/html");
     // No policy is sent: a published page runs its scripts and submits its forms.
     expect(served.headers.get("content-security-policy")).toBe(null);
-    // Every plan that has an address also takes the badge off, so what is
-    // served is the build itself.
-    expect(await served.text()).toBe(PAGE);
-    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE);
+    // Every plan that has an address also takes the badge off. The screen
+    // floor is added as the page is served.
+    expect(await served.text()).toBe(servedPage);
+    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(servedPage);
     expect((await t.fetch("/sites/nobody-home")).status).toBe(404);
 
     // A newer draft build does not change what is served until published again.
     await build(t, siteId, PAGE.replace("Shop", "Shop v2"));
-    expect(await (await t.fetch("/sites/bakery-on-main")).text()).toBe(PAGE);
+    expect(await (await t.fetch(`/sites/${slug}`)).text()).toBe(servedPage);
     expect((await member.as.query(api.sites.currentHtml, { siteId }))?.published).toBe(false);
     await member.as.mutation(api.sites.publish, { id: siteId });
-    expect(await (await t.fetch("/sites/bakery-on-main")).text()).toContain("Shop v2");
+    expect(await (await t.fetch(`/sites/${slug}`)).text()).toContain("Shop v2");
 
     await member.as.mutation(api.sites.unpublish, { id: siteId });
-    expect((await t.fetch("/sites/bakery-on-main")).status).toBe(404);
+    expect((await t.fetch(`/sites/${slug}`)).status).toBe(404);
     const [draft] = await member.as.query(api.sites.list, {});
     // The address is kept and still shown while the site is a draft; only the
     // live URL goes away.
     expect(draft).toMatchObject({
       status: "draft",
-      slug: "bakery-on-main",
+      slug,
       publishedUrl: null,
-      address: "https://bakery-on-main.sites.forgenexxus.com",
+      address: url,
     });
-    expect(await member.as.mutation(api.sites.publish, { id: siteId })).toMatchObject({ slug: "bakery-on-main" });
+    expect(await member.as.mutation(api.sites.publish, { id: siteId })).toMatchObject({ slug });
     delete process.env.CONVEX_SITE_URL;
   });
 
-  test("a free plan's build carries the badge in the preview it does get", async () => {
+  test("a free plan has no preview, and a plan with an address shows the build without the badge", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Bakery" });
     await build(t, siteId);
-    const badged = (await member.as.query(api.sites.currentHtml, { siteId }))!.html;
-    expect(badged).toContain(BADGE_TEXT);
-    expect(badged.endsWith("</body></html>")).toBe(true);
-    expect(badged.replace(/<a href="[^"]*" rel="noopener" style="[^"]*">Built with Forge<\/a>/, "")).toBe(PAGE);
-    // A plan with an address takes the badge off every build at once.
+    expect(await member.as.query(api.sites.currentHtml, { siteId })).toBeNull();
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
-    expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(PAGE);
+    const html = (await member.as.query(api.sites.currentHtml, { siteId }))!.html;
+    expect(html).toBe(withScreenFloor(PAGE));
+    expect(html).not.toContain("Built with Forge");
   });
 
   test("addresses are unique across accounts, and only the owner publishes", async () => {
@@ -248,8 +248,9 @@ describe("publishing", () => {
     await build(t, b.siteId);
     const first = await alice.as.mutation(api.sites.publish, { id: a.siteId });
     const second = await bob.as.mutation(api.sites.publish, { id: b.siteId });
-    expect(first.slug).toBe("shop");
-    expect(second.slug).toMatch(/^shop-[a-z0-9]{4}$/);
+    expect(first.slug).toMatch(/^[a-z]+-[a-z]+-[a-z0-9]{4}$/);
+    expect(second.slug).toMatch(/^[a-z]+-[a-z]+-[a-z0-9]{4}$/);
+    expect(first.slug).not.toBe(second.slug);
     await expect(bob.as.mutation(api.sites.publish, { id: a.siteId })).rejects.toThrow("Site not found");
     await expect(bob.as.mutation(api.sites.unpublish, { id: a.siteId })).rejects.toThrow("Site not found");
     expect(await bob.as.query(api.sites.currentHtml, { siteId: a.siteId })).toBeNull();
@@ -267,7 +268,7 @@ describe("publishing", () => {
     expect(siteHostFor("bakery")).toBe("bakery.sites.forgenexxus.com");
   });
 
-  test("a member chooses the address and can change it once", async () => {
+  test("Forge assigns the address, and a member can change it once", async () => {
     const t = fresh();
     const member = await createUser(t, { email: "m@example.com" });
     const other = await createUser(t, { email: "o@example.com" });
@@ -278,22 +279,32 @@ describe("publishing", () => {
     ).rejects.toThrow("A site address comes with the Starter plan");
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "starter" });
     await t.mutation(internal.billing.grantPlan, { userId: other.userId, plan: "starter" });
+    await expect(
+      member.as.mutation(api.sites.setSlug, { id: siteId, slug: "The Bakery!" }),
+    ).rejects.toThrow("Forge gives this site its address when the build finishes");
+    await build(t, siteId);
+    const assigned = (await member.as.mutation(api.sites.publish, { id: siteId })).slug;
     const mine = await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "The Bakery!" });
     expect(mine).toEqual({
       slug: "the-bakery",
       host: "the-bakery.sites.forgenexxus.com",
       url: "https://the-bakery.sites.forgenexxus.com",
     });
-    // Chosen before publishing, and kept by the publish that follows.
-    await build(t, siteId);
     expect(await member.as.mutation(api.sites.publish, { id: siteId })).toMatchObject({
       slug: "the-bakery",
     });
-    // Nobody else can take it, and saying it again is not a clash with itself.
+    // Nobody else can take it. Until their own build has an address, there is
+    // nothing for them to change.
     const theirs = await other.as.mutation(api.sites.create, { name: "Other" });
     await expect(
       other.as.mutation(api.sites.setSlug, { id: theirs.siteId, slug: "the-bakery" }),
+    ).rejects.toThrow("when the build finishes");
+    await build(t, theirs.siteId);
+    await other.as.mutation(api.sites.publish, { id: theirs.siteId });
+    await expect(
+      other.as.mutation(api.sites.setSlug, { id: theirs.siteId, slug: "the-bakery" }),
     ).rejects.toThrow("taken");
+    // Saying the current address again is not a second change.
     await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "the-bakery" });
     await expect(
       member.as.mutation(api.sites.setSlug, { id: siteId, slug: "www" }),
@@ -309,10 +320,10 @@ describe("publishing", () => {
       slug: "the-bakery",
       available: false,
     });
-    // Moving the address moves the site; the old one stops answering.
-    await member.as.mutation(api.sites.setSlug, { id: siteId, slug: "bakery-on-main" });
-    expect((await t.fetch("/", { headers: { host: "bakery-on-main.sites.forgenexxus.com" } })).status).toBe(200);
-    expect((await t.fetch("/", { headers: { host: "the-bakery.sites.forgenexxus.com" } })).status).toBe(404);
+    // The one change already happened, so a further move is refused and the
+    // assigned host has stopped answering.
+    expect((await t.fetch("/", { headers: { host: "the-bakery.sites.forgenexxus.com" } })).status).toBe(200);
+    expect((await t.fetch("/", { headers: { host: `${assigned}.sites.forgenexxus.com` } })).status).toBe(404);
     await expect(
       member.as.mutation(api.sites.setSlug, { id: siteId, slug: "bakery-third-address" }),
     ).rejects.toThrow("already been changed");
@@ -324,7 +335,7 @@ describe("publishing", () => {
       problem: "This site's address has already been changed",
     });
     expect(await member.as.query(api.sites.list, {})).toEqual([
-      expect.objectContaining({ addressChangeAvailable: false, slug: "bakery-on-main" }),
+      expect.objectContaining({ addressChangeAvailable: false, slug: "the-bakery" }),
     ]);
   });
 
@@ -334,12 +345,12 @@ describe("publishing", () => {
     await t.mutation(internal.billing.grantPlan, { userId: member.userId, plan: "pro" });
     const { siteId } = await member.as.mutation(api.sites.create, { name: "Shop" });
     await build(t, siteId);
-    await member.as.mutation(api.sites.publish, { id: siteId });
+    const published = await member.as.mutation(api.sites.publish, { id: siteId });
     await member.as.mutation(api.domains.add, { siteId, hostname: "www.shop.example" });
     const host = (hostname: string) => t.fetch("/", { headers: { host: hostname } });
-    expect(await (await host("shop.sites.forgenexxus.com")).text()).toBe(PAGE);
+    expect(await (await host(`${published.slug}.sites.forgenexxus.com`)).text()).toBe(withScreenFloor(PAGE));
     // A domain that resolves here is served while verification catches up.
-    expect(await (await host("www.shop.example")).text()).toBe(PAGE);
+    expect(await (await host("www.shop.example")).text()).toBe(withScreenFloor(PAGE));
     expect((await host("nobody.sites.forgenexxus.com")).status).toBe(404);
     expect((await host("not-added.example")).status).toBe(404);
     await member.as.mutation(api.sites.unpublish, { id: siteId });
