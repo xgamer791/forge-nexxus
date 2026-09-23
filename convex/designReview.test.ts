@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { answerDesignResearch, DESIGN_PROMPT, storeDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, auditCalls, crewCall, DESIGN_PROMPT, partReply, resetAuditScript, storeDesignPackage } from "./designWorkerMock";
 import {
   chromeHash,
   designReviewOn,
@@ -109,7 +109,9 @@ const systemOf = (call: Call) =>
 const lastUser = (call: Call) => call.body.messages.filter((message: any) => message.role === "user").at(-1)?.content ?? "";
 
 // The design agent and the design reviewer, told apart by their instructions.
-// The strategist and the memory note are answered so they stay out of the way.
+// The strategist and the memory note are answered so they stay out of the way,
+// and a first build's crew builders get their parts (the auditors are the
+// double's).
 function stubAgents(agents: { build: (call: number) => string; review: (call: number) => string | Promise<string> }) {
   const calls: Call[] = [];
   let builds = 0;
@@ -129,12 +131,15 @@ function stubAgents(agents: { build: (call: number) => string; review: (call: nu
       if (/private website strategist/.test(system)) return answer("Lead with the roastery.");
       if (/You maintain Forge's memory/.test(system)) return answer('{"add":[],"forget":[],"replace":{}}');
       if (/You are Forge's design reviewer/.test(system)) return answer(await agents.review(++reviews));
+      const crew = crewCall(body);
+      if (crew) return answer(partReply(crew));
       return answer(agents.build(++builds));
     }),
   );
   const chat = () => calls.filter((call) => /chat\/completions/.test(call.url));
   return {
-    builds: () => chat().filter((call) => !/You are Forge's design reviewer|private website strategist|You maintain Forge's memory/.test(systemOf(call))),
+    builds: () => chat().filter((call) => !crewCall(call.body) && !/You are Forge's design reviewer|private website strategist|You maintain Forge's memory/.test(systemOf(call))),
+    crew: () => chat().filter((call) => crewCall(call.body)),
     reviews: () => chat().filter((call) => /You are Forge's design reviewer/.test(systemOf(call))),
   };
 }
@@ -155,6 +160,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  resetAuditScript();
   for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_BUILD_MODEL", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL", "DESIGN_REVIEW_ROUNDS"]) {
     delete process.env[name];
   }
@@ -171,8 +177,8 @@ async function firstSite(t: T, member: Member) {
   return { id, site };
 }
 
-describe("a first build researches a measured design reference and saves", () => {
-  test("the worker runs once, the package is kept, and the retired reviewer is not called", async () => {
+describe("a first build researches a SkillUI Ultra design reference and saves", () => {
+  test("the worker runs once, the package is kept, the crew and its auditors build it, and the retired reviewer is not called", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const agents = stubAgents({ build: () => siteReply(), review: () => AGREE });
@@ -181,22 +187,28 @@ describe("a first build researches a measured design reference and saves", () =>
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    expect(agents.builds()).toHaveLength(1);
+    expect(agents.builds()).toHaveLength(0);
+    expect(agents.crew()).toHaveLength(4);
+    expect(auditCalls()).toHaveLength(4);
     expect(agents.reviews()).toHaveLength(0);
     expect(await reviews(t)).toEqual([]);
     const brief = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(brief).toMatchObject({ status: "complete" });
     expect(brief.error).toBeUndefined();
     const design = await t.run((ctx) => ctx.db.query("siteDesignPackages").withIndex("by_site", (q) => q.eq("siteId", brief.siteId!)).unique());
-    expect(design).toMatchObject({ prompt: DESIGN_PROMPT, inspectedPages: 2 });
+    expect(design).toMatchObject({ prompt: DESIGN_PROMPT, inspectedPages: 1, format: "skillui-ultra-v1" });
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
-      "research", "research_searching", "research_candidate", "research_inspecting", "research_measuring", "research_uploading", "research_done", "design_loaded", "layout_check", "layout_verdict", "complete",
+      "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
+      "design_loaded", "draft_start", "crew_page", "crew_built", "crew_agreed", "crew_page_done", "draft_done", "complete",
     ]));
+    expect(events.map((event) => event.phase)).not.toContain("layout_check");
     expect(await versions(t)).toHaveLength(1);
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
-    expect(systemOf(agents.builds()[0])).toContain(DESIGN_PROMPT);
-    expect(systemOf(agents.builds()[0])).not.toContain("```clones");
+    for (const call of agents.crew()) {
+      expect(systemOf(call)).toContain(DESIGN_PROMPT);
+      expect(systemOf(call)).not.toContain("```clones");
+    }
     expect(brief.events.map((event) => event.label)).not.toContain("Header, menu and footer sent back for changes");
   });
 
@@ -225,12 +237,12 @@ describe("a first build researches a measured design reference and saves", () =>
   });
 });
 
-describe("an edit uses the saved measured design reference", () => {
-  test("a later page is saved at once and told to follow the reference", async () => {
+describe("an edit uses the saved SkillUI Ultra design reference", () => {
+  test("an edit is told to follow the reference, checked by its auditors, and saved", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const agents = stubAgents({
-      build: (call) => (call === 1 ? siteReply() : siteReply({ summary: "Added this week's roast.", home: HOME.replace("Pier Roast", "Pier Roast, and this week's Kenya") })),
+      build: () => siteReply({ summary: "Added this week's roast.", home: HOME.replace("Pier Roast", "Pier Roast, and this week's Kenya") }),
       review: () => AGREE,
     });
     const { site } = await firstSite(t, member);
@@ -242,7 +254,11 @@ describe("an edit uses the saved measured design reference", () => {
     expect(agents.reviews()).toHaveLength(0);
     expect(await reviews(t)).toEqual([]);
     expect(await versions(t)).toHaveLength(2);
-    expect(systemOf(agents.builds()[1])).toContain(DESIGN_PROMPT);
+    expect(agents.builds()).toHaveLength(1);
+    expect(systemOf(agents.builds()[0])).toContain(DESIGN_PROMPT);
+    // The edit's own auditors: the shell changed, so the header and footer,
+    // and both halves of the page it touched.
+    expect(auditCalls().slice(4).map((call) => `${call.path} ${call.part}`).sort()).toEqual(["/ body1", "/ body2", "/ footer", "/ header"]);
     expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "settled"]]);
   });
 });

@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { answerDesignResearch, storeDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, crewCall, partReply, storeDesignPackage } from "./designWorkerMock";
 import { QUESTIONS } from "./onboardingQuestions";
 import schema from "./schema";
 
@@ -34,10 +34,6 @@ const ANSWERS = [
 ];
 const PNG = btoa("not really a png, but bytes are bytes");
 const json = (payload: unknown) => new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
-const page = (title: string) =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title><style>body{margin:0}</style></head>` +
-  `<body><header><h1>${title}</h1></header><main><img src="forge-image:1" data-forge-image="Morning light on the roastery counter" ` +
-  `data-forge-aspect="16:9" alt="The roastery counter" width="1600" height="900"></main></body></html>`;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -48,7 +44,8 @@ afterEach(() => {
   delete process.env.AI_IMAGE_API_KEY;
 });
 
-// The design worker and the model, counted.
+// The design worker and the crew's builders, counted: a one-page site is one
+// crew of four builders (the auditors are the double's).
 function stubProviders(t: T) {
   process.env.AI_BASE_URL = "https://api.deepseek.com/v1";
   process.env.AI_API_KEY = "sk-test-secret-key";
@@ -66,8 +63,10 @@ function stubProviders(t: T) {
     const system = body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
     if (/private website strategist/.test(system)) return json({ choices: [{ message: { content: "Lead with the roastery." } }] });
     if (/maintain Forge's memory/.test(system)) return json({ choices: [{ message: { content: '{"add":[],"forget":[],"replace":{}}' } }] });
+    const call = crewCall(body);
+    if (!call) throw new Error("A call no crew member made");
     count.builds += 1;
-    return json({ choices: [{ message: { content: `Built a warm page.\n\n\`\`\`html\n${page("Harbor Roasters")}\n\`\`\`` } }] });
+    return json({ choices: [{ message: { content: partReply(call) } }] });
   }));
   return count;
 }
@@ -147,7 +146,7 @@ describe("a queued build the platform lost", () => {
     await t.finishAllScheduledFunctions(() => {});
     const done = await row(t, id);
     expect(done.status).toBe("complete");
-    expect(count).toEqual({ research: 1, builds: 1 });
+    expect(count).toEqual({ research: 1, builds: 4 });
     const events = await t.run(async (ctx) => (await ctx.db.query("buildEvents").collect()).map((event) => event.phase));
     expect(events).toContain("rescued");
   });

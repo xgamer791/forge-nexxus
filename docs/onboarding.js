@@ -58,17 +58,17 @@ const ENABLED = true;
     }
     return rows;
   }
-  // Whether the design agent is reworking what the design check sent back,
-  // read from the run's own log: a rework is the latest step since a check.
-  function reworking(draft) {
-    if (!belongsToDraft(draft)) return false;
-    const phases = (trace?.events ?? []).map(event => event.phase);
-    return phases.lastIndexOf('design_revision') > phases.lastIndexOf('design_review');
+  // The page the build's crew is on, from the run's own log: every crew event
+  // names its page and how many there are. Null before the first, or on a
+  // site of one page.
+  function crewPage(events) {
+    const latest = [...events].reverse().find(event => /^(crew|draft)_/.test(event.phase ?? '') && event.detail?.page && event.detail?.total);
+    return latest && latest.detail.total > 1 ? `page ${latest.detail.page} of ${latest.detail.total}` : null;
   }
   // Where the build has got to, as one of the four stages the page drawing
   // shows. Nothing here guesses at a percentage: a stage only moves when the
-  // server says the build did. The design check belongs to writing: the page
-  // is not finished until the header, menu and footer pass it.
+  // server says the build did. The design audit belongs to writing: a page is
+  // not finished until its auditors agree it matches the design reference.
   function buildStage(draft, events) {
     const phase = belongsToDraft(draft) ? trace?.latest?.status : null;
     if (phase === 'researching') {
@@ -78,8 +78,9 @@ const ENABLED = true;
     if (draft.status === 'queued' || phase === 'queued') return { step: 1, label: 'Waiting for the build to start…' };
     if (draft.status === 'saving' || phase === 'saving') return { step: 4, label: 'Saving your website…' };
     if (phase === 'images') return { step: 3, label: 'Making the pictures…' };
-    if (phase === 'reviewing') return { step: 2, label: 'Checking the header, menu and footer…' };
-    if (phase === 'calling') return { step: 2, label: reworking(draft) ? 'Reworking the header, menu and footer…' : 'Writing your website…' };
+    const page = crewPage(events);
+    if (phase === 'reviewing') return { step: 2, label: page ? `Checking ${page} against the design reference…` : 'Checking your website against the design reference…' };
+    if (phase === 'calling') return { step: 2, label: page ? `Writing ${page}…` : 'Writing your website…' };
     const has = label => events.some(event => event.label === label);
     return has('Pictures made for your site') ? { step: 4, label: 'Putting it together…' }
       : has('Page written') ? { step: 3, label: 'Making the pictures…' }
@@ -286,7 +287,7 @@ const ENABLED = true;
     const title = live ? 'Your website is published.' : done ? 'Your website is ready.' : failed ? 'Let’s try that again.' : 'Your idea is taking shape.';
     const detail = live ? 'It is on the web at this address, and every change you make lands there.'
       : done ? (site && !state.isFree ? 'Publish it and Forge gives it an address of its own.' : 'Your first version is saved. Make it yours from your dashboard.')
-      : failed ? draft.error : 'This takes a few minutes. You can close Forge and come back.';
+      : failed ? draft.error : 'Each page is written and checked in turn, so this can take a while. You can close Forge and come back.';
     // Billing is the way on when the build stopped for credits or a plan;
     // otherwise the answers are, so that is what the failed screen offers.
     const aboutBilling = failed && /credit|plan|limit/i.test(draft.error ?? '');

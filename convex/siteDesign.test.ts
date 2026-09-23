@@ -2,8 +2,11 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { internal } from "./_generated/api";
-import { answerDesignResearch, DESIGN_PROMPT, DESIGN_REFERENCE_URL, resetDesignWorkerScript, setDesignWorkerScript, storeDesignPackage } from "./designWorkerMock";
-import { assertDesignRules } from "./siteDesign";
+import {
+  answerDesignResearch, DESIGN_FOUNDATION, DESIGN_PROMPT, DESIGN_REFERENCE_URL, resetDesignRoutes, resetDesignWorkerScript,
+  setDesignRoutes, setDesignWorkerScript, storeDesignPackage,
+} from "./designWorkerMock";
+import { assertDesignRules, isSkillUI } from "./siteDesign";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -32,11 +35,41 @@ describe("saved design reference", () => {
     };
     expect(await t.mutation(internal.siteDesign.save, { ...args, epoch: 1 })).toBe(false);
     expect(await t.mutation(internal.siteDesign.save, args)).toBe(true);
-    expect(await t.query(internal.siteDesign.forSite, { siteId })).toMatchObject({
-      storageId, prompt: "Original design structure", inspectedPages: 6, buildEpoch: 2,
+    const saved = await t.query(internal.siteDesign.forSite, { siteId });
+    expect(saved).toMatchObject({
+      storageId, prompt: "Original design structure", inspectedPages: 6, buildEpoch: 2, format: "skillui-ultra-v1", routes: ["/"],
     });
+    expect(isSkillUI(saved)).toBe(true);
+    expect(isSkillUI({ format: "forge-measured-v1" })).toBe(false);
+    expect(isSkillUI({ format: undefined })).toBe(false);
     await t.run(async ctx => { await ctx.db.patch(siteId, { buildEpoch: 3 }); });
     expect(await t.mutation(internal.siteDesign.save, args)).toBe(false);
+  });
+
+  test("keeps five pages at most, the home page first, and refuses a package without one", async () => {
+    const t = convexTest(schema, modules);
+    const { siteId, onboardingId, storageId } = await t.run(async ctx => {
+      const userId = await ctx.db.insert("users", { email: "cap@example.com" });
+      const conversationId = await ctx.db.insert("conversations", { userId, title: "Cap", updatedAt: Date.now() });
+      const siteId = await ctx.db.insert("sites", { userId, conversationId, name: "Cap", status: "draft", createdAt: Date.now(), updatedAt: Date.now() });
+      const onboardingId = await ctx.db.insert("siteOnboarding", {
+        userId, siteId, answers: ["Cap", "Tacos"], step: 10, revision: 1,
+        assets: [], status: "queued", attempt: 1, dismissed: false, events: [], createdAt: Date.now(), updatedAt: Date.now(),
+      });
+      return { siteId, onboardingId, storageId: await ctx.storage.store(new Blob(["PK"])) };
+    });
+    const args = {
+      siteId, onboardingId, attempt: 1, epoch: 0, storageId, referenceUrl: "https://example.com/", prompt: "Extract",
+      inspectedPages: 7, foundation: ":root{--color-ink:#111}",
+    };
+    expect(await t.mutation(internal.siteDesign.save, { ...args, routes: ["/menu", "/about"] })).toBe(false);
+    expect(await t.mutation(internal.siteDesign.save, {
+      ...args, routes: ["/food-menu", "/", "/drink-menu", "/specials", "/events", "/party", "/cater"],
+    })).toBe(true);
+    expect(await t.query(internal.siteDesign.forSite, { siteId })).toMatchObject({
+      routes: ["/", "/food-menu", "/drink-menu", "/specials", "/events"],
+      foundation: ":root{--color-ink:#111}",
+    });
   });
 
   test("rejects reference assets and non-Fontshare font URLs in built pages", () => {
@@ -81,10 +114,11 @@ async function queuedResearch(t: ReturnType<typeof convexTest>) {
   return ids;
 }
 
-describe("measured design research", () => {
+describe("SkillUI Ultra design research", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     resetDesignWorkerScript();
+    resetDesignRoutes();
     process.env.DESIGN_WORKER_URL = "https://design-worker.test";
     process.env.DESIGN_WORKER_TOKEN = "test-design-worker-token";
   });
@@ -97,15 +131,31 @@ describe("measured design research", () => {
     await t.action(internal.onboarding.research, { id, attempt: 1 });
     expect(calls).toEqual(["https://design-worker.test/research"]);
     expect(await t.query(internal.siteDesign.forSite, { siteId })).toMatchObject({
-      referenceUrl: DESIGN_REFERENCE_URL, prompt: DESIGN_PROMPT, inspectedPages: 2, buildEpoch: 0,
+      referenceUrl: DESIGN_REFERENCE_URL, prompt: DESIGN_PROMPT, inspectedPages: 1, buildEpoch: 0,
+      format: "skillui-ultra-v1", foundation: DESIGN_FOUNDATION, routes: ["/"],
     });
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
-      "research", "research_searching", "research_candidate", "research_inspecting", "research_measuring", "research_uploading", "research_done",
+      "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
     ]));
+    expect(events.find((event) => event.phase === "research_skillui")).toMatchObject({
+      label: "Reading the reference's design with SkillUI Ultra, 1 screen",
+      detail: { mode: "ultra", screens: 1 },
+    });
     const jobs = await t.run(async (ctx) => (await ctx.db.system.query("_scheduled_functions").collect()).map((job) => job.name));
     expect(jobs).toContain("onboarding:build");
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "queued" });
+  });
+
+  test("the pages the worker discovers are capped at five before anything is built from them", async () => {
+    const t = convexTest(schema, modulesForResearch);
+    setDesignRoutes(["/", "/food-menu", "/drink-menu", "/specials", "/events", "/party", "/cater"]);
+    stubWorker(t, []);
+    const { id, siteId } = await queuedResearch(t);
+    await t.action(internal.onboarding.research, { id, attempt: 1 });
+    expect((await t.query(internal.siteDesign.forSite, { siteId }))?.routes).toEqual(["/", "/food-menu", "/drink-menu", "/specials", "/events"]);
+    const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
+    expect(events.find((event) => event.phase === "research_discovering")?.label).toBe("Chose 5 pages from the reference");
   });
 
   test("a missing worker fails closed and never calls fetch", async () => {

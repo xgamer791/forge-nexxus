@@ -3,22 +3,26 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { joinCarry, MOST_RESUMES, nextPage, readTurn, STEP_TRIES } from "./buildDraft";
-import { answerDesignResearch, DESIGN_PROMPT, designPrompt, resetDesignRoutes, setDesignRoutes, storeDesignPackage } from "./designWorkerMock";
-import { readDraftReply } from "./generate";
-import { CARRY_ON, draftTurn, MOST_RESTARTS } from "./onboarding";
+import { nextPage, STEP_TRIES } from "./buildDraft";
+import {
+  AUDITOR, auditorTurn, builderTurn, CARRY_ON, joinCarry, newCrew, nextFor, pageFrom, PART_REWORKS, readAudit, readPart, shellFrom, type CrewPart,
+} from "./crew";
+import {
+  answerDesignResearch, auditCalls, crewCall, DESIGN_FOUNDATION, DESIGN_PROMPT, designPrompt, partReply, resetAuditScript, resetDesignRoutes,
+  setAuditScript, setDesignRoutes, storeDesignPackage, verdict, type CrewCall,
+} from "./designWorkerMock";
+import { DESIGN_GOD } from "./designgod";
+import { MOST_RESTARTS, NEW_IMAGERY, PAGE_STEP_MS } from "./onboarding";
 import { QUESTIONS } from "./onboardingQuestions";
-import { pagePlan } from "./pages";
+import { MAX_PAGES, pagePlan } from "./pages";
 import { REQUEST_COSTS } from "./plans";
 import schema from "./schema";
-import { routeSpec } from "./siteDesign";
 
-// A measured site in pages, written a page at a time: each step is an action
-// of its own, every page is saved the moment it closes, a page the clock stops
-// is carried on from where it stopped, and the next step is queued the moment
-// one ends. These drive the real chain -- the scheduler, the model's replies,
-// the layout check and the save -- against a seven-page reference like the
-// Taquería El Farolito rebuild that ran out of time in one action.
+// Every first build and rebuild is written a page at a time by a crew: a
+// builder and an auditor for the header, two of each for the body and one of
+// each for the footer. These drive the real chain -- the scheduler, the
+// builders' replies, the auditors' verdicts and the save -- against a
+// reference whose pages the discovery agent capped at five.
 const modules = import.meta.glob("./**/*.*s");
 function makeTest() {
   return convexTest(schema, modules);
@@ -27,8 +31,8 @@ type T = ReturnType<typeof makeTest>;
 let active: T;
 const fresh = () => (active = makeTest());
 
-const ROUTES = ["/", "/food-menu", "/drink-menu", "/specials", "/events", "/party", "/cater"];
-const REFERENCE = "https://harbor-reference.example/";
+const SEVEN = ["/", "/food-menu", "/drink-menu", "/specials", "/events", "/party", "/cater"];
+const FIVE = SEVEN.slice(0, MAX_PAGES);
 const KEY = "sk-test-secret-key";
 const PNG = btoa("not really a png, but bytes are bytes");
 const ANSWERS = [
@@ -45,22 +49,6 @@ const ANSWERS = [
   "Tacos al pastor — $3.50\nHorchata — $4",
 ];
 
-const PICTURE =
-  '<img src="forge-image:1" data-forge-image="Tacos al pastor on the comal, warm evening light" ' +
-  'data-forge-aspect="16:9" alt="Tacos al pastor" width="1600" height="900">';
-const NAV = ROUTES.map((path) => `<a href="${path}">${path === "/" ? "Home" : path.slice(1)}</a>`).join(" ");
-const SHELL =
-  '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Taquería El Farolito</title>' +
-  '<meta name="description" content="Tacos in Plano"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-  `<style>body{margin:0}</style></head><body><nav>${NAV}</nav><!--forge-page--><footer>Taquería El Farolito</footer></body></html>`;
-// Which build a page came from, so a rebuild is a different design.
-let edition = "first";
-const markup = (path: string) =>
-  `<section class="page"><h1>${path === "/" ? "Taquería El Farolito" : path.slice(1)}</h1>${PICTURE}<p>The ${edition} ${path} page.</p></section>`;
-const first = () =>
-  `Built the frame and the home page.\n\n\`\`\`html shell\n${SHELL}\n\`\`\`\n\n\`\`\`html path="/" title="Taquería El Farolito"\n${markup("/")}\n\`\`\``;
-const page = (path: string) => `Built ${path}.\n\n\`\`\`html path="${path}" title="${path.slice(1)}"\n${markup(path)}\n\`\`\``;
-
 const encoder = new TextEncoder();
 const json = (payload: unknown, status = 200) =>
   new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
@@ -74,13 +62,19 @@ const streamed = (...events: string[]) =>
       controller.close();
     },
   }), { status: 200, headers: { "content-type": "text/event-stream" } });
-// A reply that sends what it has and then only keeps the line open, until the
-// step's own clock stops it.
-const stalled = (init: RequestInit, ...events: string[]) =>
+// A reply still going when its step's clock runs out: what it has said is read,
+// the provider keeps the connection alive, and then the clock -- faked, with
+// `clockTimers()` -- reaches the end of the step and the call is aborted there.
+const clockTimers = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+const outlivesStep = (init: RequestInit, ...events: string[]) =>
   new Response(new ReadableStream<Uint8Array>({
     start(controller) {
       for (const event of events) controller.enqueue(encoder.encode(event));
-      const tick = setInterval(() => controller.enqueue(encoder.encode(": keep-alive\n\n")), 20);
+      let ticks = 0;
+      const tick = setInterval(() => {
+        controller.enqueue(encoder.encode(": keep-alive\n\n"));
+        if (++ticks === 3) vi.advanceTimersByTime(PAGE_STEP_MS);
+      }, 20);
       init.signal?.addEventListener("abort", () => {
         clearInterval(tick);
         controller.error(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
@@ -88,47 +82,38 @@ const stalled = (init: RequestInit, ...events: string[]) =>
     },
   }), { status: 200, headers: { "content-type": "text/event-stream" } });
 
-// What a build call was asking for: the first turn, one page, a page carried
-// on, or -- on a one-page reference -- the whole site in one reply.
-type Asked = { kind: "first" | "page" | "carry" | "one"; path: string; messages: any[] };
-const ASK = /^Write page \d+ of \d+ now: (\S+), and nothing else\./;
-function asked(body: any): Asked {
-  const messages = body.messages;
-  const last = messages.at(-1).content as string;
-  if (last === CARRY_ON) return { kind: "carry", path: messages.at(-3).content.match(ASK)?.[1] ?? "/", messages };
-  const path = last.match(ASK)?.[1];
-  if (path) return { kind: "page", path, messages };
-  const firstTurn = messages.some((m: any) => m.role === "system" && /This turn writes the shell and the home page/.test(m.content));
-  return { kind: firstTurn ? "first" : "one", path: "/", messages };
-}
+// Which build a page came from, so a rebuild is a different design.
+let edition = "first";
 
-function stubProviders(answer: (turn: Asked, init: RequestInit) => Response) {
-  const turns: Asked[] = [];
+// One fetch for the worker, the auditors (answered by the double), the
+// pictures, the strategist, the memory note and the crew's builders, which
+// `answer` speaks for. Every builder call is recorded.
+function stubProviders(answer: (call: CrewCall, init: RequestInit) => Response = (call) => said(partReply(call, edition))) {
+  const builders: CrewCall[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
       const worker = await answerDesignResearch(url, init, () => storeDesignPackage(active));
       if (worker) return worker;
-      const body = JSON.parse(String(init.body));
       if (/generateContent/.test(url)) {
         return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: PNG } }] } }] });
       }
+      const body = JSON.parse(String(init.body));
       const system = body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
       if (/private website strategist/.test(system)) return said("Lead with the al pastor.");
       if (/maintain Forge's memory/.test(system)) return said('{"add":[],"forget":[],"replace":{}}');
-      const turn = asked(body);
-      turns.push(turn);
-      return answer(turn, init);
+      const call = crewCall(body);
+      if (!call) throw new Error("A call no crew member made");
+      builders.push(call);
+      return answer(call, init);
     }),
   );
-  return turns;
+  return builders;
 }
-// The ordinary model: every turn answered whole and at once.
-const answers = (turn: Asked) => said(turn.kind === "page" ? page(turn.path) : first());
 
 async function createBuilder(t: T) {
   const { userId, sessionId } = await t.run(async (ctx) => {
-    const userId = await ctx.db.insert("users", { email: "m@example.com" });
+    const userId = await ctx.db.insert("users", { email: `m${Math.random().toString(36).slice(2, 8)}@example.com` });
     const sessionId = await ctx.db.insert("authSessions", { userId, expirationTime: Date.now() + 86_400_000 });
     return { userId, sessionId };
   });
@@ -179,534 +164,569 @@ async function toDraft(t: T, member: Member) {
   return { id, draft };
 }
 
+// Submit and let the scheduler run everything.
+async function build(t: T, member: Member) {
+  const id = await answerEverything(member);
+  await member.as.mutation(api.onboarding.submit, { id });
+  await drain(t);
+  return id;
+}
+
 beforeEach(() => {
   process.env.AI_BASE_URL = "https://ai.example/v1/";
   process.env.AI_API_KEY = KEY;
   process.env.AI_MODEL = "forge-test";
   process.env.AI_IMAGE_API_KEY = "img-test-secret-key";
   process.env.CONVEX_SITE_URL = "https://forge-test.convex.site";
-  setDesignRoutes(ROUTES);
+  setDesignRoutes(SEVEN);
   edition = "first";
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   resetDesignRoutes();
+  resetAuditScript();
   for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL"]) delete process.env[name];
 });
 
-describe("the pieces a step is made of", () => {
-  test("the measured routes become the pages to write, home first", () => {
-    expect(pagePlan(["/food-menu", "/", "/Food-Menu/", "/drink-menu.html", "/../x"])).toEqual(["/", "/food-menu", "/drink-menu"]);
-    expect(pagePlan(["/"])).toEqual(["/"]);
-    expect(pagePlan(undefined)).toEqual(["/"]);
+const part = (fields: Partial<CrewPart> & Pick<CrewPart, "name">): CrewPart => ({ agreed: false, round: 0, tries: 0, fixes: [], ...fields });
+
+describe("the crew's pieces", () => {
+  test("a build plans five pages at most, home first", () => {
+    expect(MAX_PAGES).toBe(5);
+    expect(pagePlan(SEVEN)).toEqual(FIVE);
+    expect(pagePlan(["/cater", "/Food-Menu/", "/", "/food-menu", "/../x"])).toEqual(["/", "/cater", "/food-menu"]);
   });
 
-  test("a later turn reads only its own route's measurements", () => {
-    const spec = designPrompt(ROUTES);
-    const events = routeSpec(spec, ["/events"]);
-    expect(events.startsWith(DESIGN_PROMPT)).toBe(true);
-    expect(events).toContain(`ROUTES: build exactly these pages and no others: ${ROUTES.join(", ")}.`);
-    expect(events).toContain("ROUTE /events\n- desktop 1440px: the /events page is 3200px tall.");
-    expect(events).not.toContain("ROUTE /food-menu");
-    expect(events).not.toContain("ROUTE /\n");
-    // A spec in another shape, or without the route, goes whole.
-    expect(routeSpec(spec, ["/nowhere"])).toBe(spec);
-    expect(routeSpec(DESIGN_PROMPT, ["/"])).toBe(DESIGN_PROMPT);
+  test("a crew starts at its builders, and on a later page the shared header and footer start at their auditors", () => {
+    const home = newCrew("/", false);
+    expect(home.parts.map((each) => [each.name, nextFor(each)])).toEqual([["header", "build"], ["body1", "build"], ["body2", "build"], ["footer", "build"]]);
+    const later = newCrew("/food-menu", true);
+    expect(later.parts.map((each) => [each.name, nextFor(each)])).toEqual([["header", "audit"], ["body1", "build"], ["body2", "build"], ["footer", "audit"]]);
+    expect(nextFor(part({ name: "body1", markup: "<section></section>" }))).toBe("audit");
+    expect(nextFor(part({ name: "body1", markup: "<section></section>", fixes: ["Make the opening full height."] }))).toBe("build");
+    expect(nextFor(part({ name: "body1", markup: "<section></section>", agreed: true }))).toBe("done");
   });
 
-  test("a reply is read block by block, and the block it stopped inside is named", () => {
-    const text = `${first()}\n\n\`\`\`html path="/food-menu" title="Food menu"\n<section>half a menu`;
-    const reply = readDraftReply(text);
-    expect(reply.summary).toBe("Built the frame and the home page.");
-    expect(reply.shell).toEqual({ body: SHELL, closed: true });
-    expect(reply.pages.map((block) => [block.path, block.closed])).toEqual([["/", true], ["/food-menu", false]]);
-    expect(reply.open).toMatchObject({ shell: false, path: "/food-menu" });
-    expect(text.slice(reply.open!.at)).toBe('```html path="/food-menu" title="Food menu"\n<section>half a menu');
+  test("a builder's part is read whole and clean, or comes back as what to put right", () => {
+    const read = (reply: string, name: "header" | "body1" | "body2" | "footer", adjusting = false) =>
+      readPart(reply, { part: name, adjusting, path: "/food-menu" }) as { markup?: string; title?: string; problem?: string };
+    expect(read('Built it.\n\n```html part="header"\n<style>.site-header{}</style><header class="site-header">x</header>\n```', "header"))
+      .toEqual({ markup: '<style>.site-header{}</style><header class="site-header">x</header>' });
+    expect(read('Built it.\n\n```html part="body1" title="Food menu"\n<section><h1>Menu</h1></section>\n```', "body1"))
+      .toEqual({ markup: "<section><h1>Menu</h1></section>", title: "Food menu" });
+    expect(read("I would build a warm header.", "header")).toEqual({ problem: 'the reply had no ```html part="header" block in it. Send the header in one.' });
+    expect(read('```html part="header"\n<header>cut', "header")).toEqual({ problem: "the header stopped before its block closed. Write it out in full and close the fence." });
+    expect(read('```html part="header"\n<div>no header</div>\n```', "header")).toEqual({ problem: "the header has no <header> element. Put the whole header in one." });
+    expect(read('```html part="footer"\n<!doctype html><html><body><footer></footer></body></html>\n```', "footer"))
+      .toEqual({ problem: "the footer is a whole document. Send only the footer: Forge writes the <html>, <head> and <body> around it." });
+    expect(read('```html part="body2"\n<main><section></section></main>\n```', "body2"))
+      .toEqual({ problem: "Forge puts the page's <main> around the sections. Send only your <section> elements." });
+    expect(read('```html part="body2"\n<style>.b{}</style>\n```', "body2")).toEqual({ problem: "the bottom half has styles and no sections. Write the sections themselves." });
+    expect(read('```html part="body1"\n<section>a</section><!-- the rest is unchanged -->\n```', "body1").problem)
+      .toMatch(/^the top half has a comment standing in for part of it/);
+    // A later page's chrome is CSS for that page alone.
+    expect(read('```html part="header"\n<style>body:has(main[data-forge-route="/food-menu"]) .site-header{background:#fff}</style>\n```', "header", true))
+      .toEqual({ markup: '<style>body:has(main[data-forge-route="/food-menu"]) .site-header{background:#fff}</style>' });
+    expect(read('```html part="header"\n<header>new</header>\n```', "header", true).problem).toMatch(/^send only a <style> element/);
+    expect(read('```html part="header"\n<style>.site-header{background:#fff}</style>\n```', "header", true).problem).toMatch(/^scope every rule to this page/);
   });
 
-  test("a turn keeps whole blocks, and the page it was stopped inside to carry on", () => {
-    const empty = { routes: ROUTES, pages: [], shell: undefined };
-    const read = (text: string, draft: Parameters<typeof readTurn>[1]["draft"], target: string, cut: boolean) =>
-      readTurn(text, { draft, target, cut, referenceUrl: REFERENCE, imagery: false });
-    const cutText = `${first()}\n\n\`\`\`html path="/food-menu" title="Food menu"\n<section>half`;
-    const turn = read(cutText, empty, "/", true);
-    expect(turn.shell).toBe(SHELL);
-    expect(turn.summary).toBe("Built the frame and the home page.");
-    expect(turn.pages.map((kept) => kept.path)).toEqual(["/"]);
-    expect(turn.partial).toEqual({ path: "/food-menu", text: '```html path="/food-menu" title="Food menu"\n<section>half' });
-    // Stopped inside the shell, the whole first reply is what goes on.
-    const early = "Built it.\n\n```html shell\n<!doctype html><html><head>";
-    expect(read(early, empty, "/", true)).toEqual({ pages: [], partial: { path: "/", text: early } });
-    // A reply that ended on its own without its last fence finished that block.
-    const framed = { routes: ROUTES, pages: [], shell: SHELL };
-    expect(read(page("/food-menu").slice(0, -3), framed, "/food-menu", false).pages.map((kept) => kept.path)).toEqual(["/food-menu"]);
-    // A page that breaks the design rules is not kept, and says why.
-    const google = page("/food-menu").replace("<section", '<link href="https://fonts.googleapis.com/css2?family=Inter" rel="stylesheet"><section');
-    expect(read(google, framed, "/food-menu", false)).toMatchObject({ pages: [], problem: expect.stringContaining("Fontshare") });
-    // A page the reference does not have is not a page of this site.
-    expect(read(page("/about"), framed, "/food-menu", false)).toMatchObject({ pages: [], problem: expect.stringContaining("no page at /food-menu") });
+  test("an auditor's verdict is read for agreement and fixes, and one that asks for nothing to change is not a verdict", () => {
+    expect(readAudit('{"agree": true, "differences": [], "fixes": []}')).toEqual({ agree: true, differences: [], fixes: [] });
+    expect(readAudit('Here it is:\n```json\n{"agree": "false", "differences": ["480px tall; the reference fills the screen"], "fixes": ["Make the opening 100svh."]}\n```'))
+      .toEqual({ agree: false, differences: ["480px tall; the reference fills the screen"], fixes: ["Make the opening 100svh."] });
+    expect(readAudit('{"agree": false, "differences": ["The footer has two columns; the reference has four."]}'))
+      .toEqual({ agree: false, differences: ["The footer has two columns; the reference has four."], fixes: ["The footer has two columns; the reference has four."] });
+    expect(readAudit('{"agree": false, "differences": [], "fixes": []}')).toBeNull();
+    expect(readAudit("It looks close.")).toBeNull();
   });
 
-  test("carrying a page on joins it where it stopped, and never doubles it", () => {
-    const carried = '```html path="/events" title="Events"\n<section class="events"><h1>Events at El Farolito</h1><p>Every Friday night';
-    const rest = ": live mariachi.</p></section>\n```";
+  test("a builder is handed the reference, the crew, the foundation and the brief, and a part sent back gets its own reply and the fixes", () => {
+    const base = [{ role: "system" as const, content: "RULES" }, { role: "user" as const, content: "Build the website from the saved onboarding brief." }];
+    const common = { base, extract: DESIGN_PROMPT, foundation: DESIGN_FOUNDATION, brief: "BRIEF", siteName: "Taquería El Farolito", routes: FIVE };
+    const header = builderTurn({ ...common, path: "/", part: part({ name: "header" }) });
+    expect(header[0].content).toBe("RULES");
+    expect(header.some((m) => m.role === "system" && m.content === DESIGN_PROMPT)).toBe(true);
+    expect(header.some((m) => m.role === "system" && /This turn is page 1 of 5: \/\./.test(m.content) && /written one page at a time by a crew/.test(m.content))).toBe(true);
+    expect(header.some((m) => m.role === "system" && m.content.includes(DESIGN_FOUNDATION))).toBe(true);
+    expect(header.some((m) => m.content === "File: website-build-brief.md\n\nBRIEF")).toBe(true);
+    expect(header.at(-1)!.content).toMatch(/^You are the header builder\./);
+    expect(header.at(-1)!.content).toContain(`every page of this site by its path: ${FIVE.join(", ")}`);
+
+    const rest = builderTurn({ ...common, path: "/", part: part({ name: "body2" }), top: "<section><h1>Tacos</h1></section>" });
+    expect(rest.at(-1)!.content).toContain("The top of this page, as written:\n```html\n<section><h1>Tacos</h1></section>\n```");
+    expect(rest.at(-1)!.content).toContain('part="body2"');
+
+    const later = builderTurn({
+      ...common, path: "/specials", part: part({ name: "body1" }), written: { shell: "<!doctype html><html>SHELL</html>", home: { path: "/", title: "Home", body: "HOME PAGE" } },
+    });
+    expect(later.at(-1)!.content).toContain("The site so far, as written and approved.");
+    expect(later.at(-1)!.content).toContain("HOME PAGE");
+
+    const sentBack = builderTurn({
+      ...common, path: "/", part: part({ name: "footer", markup: "<footer>old</footer>", round: 1, fixes: ["Give the footer four columns."], problem: "the footer came back empty. Write it out in full." }),
+    });
+    expect(sentBack.at(-2)).toEqual({ role: "assistant", content: '```html part="footer"\n<footer>old</footer>\n```' });
+    expect(sentBack.at(-1)!.content).toContain("- Give the footer four columns.");
+    expect(sentBack.at(-1)!.content).toContain("Your last reply for this part could not be used: the footer came back empty. Write it out in full.");
+
+    const chrome = builderTurn({
+      ...common, path: "/specials", part: part({ name: "header", markup: "", round: 1, fixes: ["Make the header solid white on this page."] }),
+      written: { shell: "<!doctype html><html>SHELL</html>" },
+    });
+    expect(chrome.at(-1)!.content).toContain("- Make the header solid white on this page.");
+    expect(chrome.at(-1)!.content).toContain('body:has(main[data-forge-route="/specials"])');
+  });
+
+  test("a part its step's clock stopped goes back as the builder's own words, with the ask to carry on after anything to put right", () => {
+    const base = [{ role: "system" as const, content: "RULES" }];
+    const common = { base, extract: DESIGN_PROMPT, foundation: DESIGN_FOUNDATION, brief: "BRIEF", siteName: "Taquería El Farolito", routes: FIVE, path: "/" };
+    const carry = 'Built the opening.\n\n```html part="body1" title="Home"\n<section class="a-open"><h1>Al pastor';
+    const turn = builderTurn({ ...common, part: part({ name: "body1", partial: carry, problem: "the top half came back empty. Write it out in full." }), carry });
+    expect(turn.slice(-2)).toEqual([{ role: "assistant", content: carry }, { role: "user", content: CARRY_ON }]);
+    expect(turn.at(-3)!.content).toMatch(/^You are the builder for the top of this page/);
+    expect(turn.at(-3)!.content).toContain("Your last reply for this part could not be used: the top half came back empty.");
+    // Sent back and then stopped part way: the fixes, then the carry.
+    const reworked = builderTurn({ ...common, part: part({ name: "footer", markup: "<footer>old</footer>", round: 1, fixes: ["Four columns."] }), carry: "```html part=\"footer\"\n<footer" });
+    expect(reworked.at(-3)!.content).toContain("- Four columns.");
+    expect(reworked.at(-2)).toEqual({ role: "assistant", content: "```html part=\"footer\"\n<footer" });
+  });
+
+  test("carrying a part on joins it where it stopped, and never doubles it", () => {
+    const carried = 'Built the opening.\n\n```html part="body1" title="Home"\n<section class="a-open"><h1>Al pastor, carved to order on the trompo';
+    const rest = " every night.</h1></section>\n```";
     expect(joinCarry(carried, rest)).toBe(carried + rest);
-    // A continuation that opens its fence again loses that line.
-    expect(joinCarry(carried, `\`\`\`html path="/events" title="Events"\n${rest}`)).toBe(carried + rest);
-    // One that starts the block over replaces what was there.
-    const over = '<section class="events"><h1>Events at El Farolito</h1><p>Every Friday night: live mariachi.</p></section>\n```';
-    expect(joinCarry(carried, over)).toBe(`\`\`\`html path="/events" title="Events"\n${over}`);
+    // A fence the model opened again loses its line.
+    expect(joinCarry(carried, `\`\`\`html part="body1" title="Home"\n${rest}`)).toBe(carried + rest);
+    // The part started over from its first line replaces what was there.
+    const over = '<section class="a-open"><h1>Al pastor, carved to order on the trompo every night.</h1></section>\n```';
+    expect(joinCarry(carried, over)).toBe(`Built the opening.\n\n\`\`\`html part="body1" title="Home"\n${over}`);
+    // So does a whole reply started over: its sentence, then the part's fence.
+    const again = `Built the opening again.\n\n\`\`\`html part="body1" title="Home"\n${over}`;
+    expect(joinCarry(carried, again)).toBe(again);
+    // CSS carried on is carried on, not taken for a new reply.
+    const style = '```html part="header"\n<style>.site-header{display:flex;';
+    expect(joinCarry(style, "padding:var(--space-2)}</style><header class=\"site-header\">H</header>\n```"))
+      .toBe(`${style}padding:var(--space-2)}</style><header class="site-header">H</header>\n\`\`\``);
   });
 
-  test("the next page is one part-written, then home with the shell, then the rest in measured order", () => {
-    const home = { path: "/", title: "Home", body: markup("/") };
-    expect(nextPage({ routes: ROUTES, pages: [], shell: undefined })).toBe("/");
-    expect(nextPage({ routes: ROUTES, pages: [home], shell: SHELL })).toBe("/food-menu");
-    expect(nextPage({ routes: ROUTES, pages: [home], shell: SHELL, partial: { path: "/events", text: "x", resumes: 1 } })).toBe("/events");
-    expect(nextPage({ routes: ["/", "/party"], pages: [home, { path: "/party", title: "Party", body: "x" }], shell: SHELL })).toBeNull();
+  test("an auditor gets its own instructions, the builders' rules, the reference and the work, never a builder's instructions", () => {
+    const turn = auditorTurn({
+      extract: DESIGN_PROMPT, foundation: DESIGN_FOUNDATION, siteName: "Taquería El Farolito", routes: FIVE, path: "/specials", part: "body2",
+      work: { label: "The bottom half, as its builder wrote it:", markup: "<section>b</section>" },
+      context: [{ label: "The top half, for context.", markup: "<section>a</section>" }],
+      round: 2, lastFixes: ["Put the hours in three columns."],
+    });
+    expect(turn[0]).toEqual({ role: "system", content: AUDITOR });
+    expect(turn[1].content).toContain(DESIGN_GOD);
+    expect(turn[2].content).toBe(DESIGN_PROMPT);
+    const ask = turn[3].content;
+    expect(ask).toContain("page 4 of 5: /specials. You audit the rest of the page");
+    expect(ask).toContain("Round 2 of this part's audit.");
+    expect(ask).toContain("- Put the hours in three columns.");
+    expect(ask).toContain("<section>b</section>");
+    expect(ask).toContain("The top half, for context. It is not yours to judge.");
+    expect(turn.some((m) => /You are the (header builder|builder for)/.test(m.content))).toBe(false);
+  });
+
+  test("the shell is Forge's head, the foundation and the parts' own styles, and a page is its two halves in its <main>", () => {
+    const shell = shellFrom({
+      foundation: DESIGN_FOUNDATION,
+      header: '<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=switzer@400&display=swap"><meta name="description" content="Tacos in Plano"><style>:root{--font-display:x;--font-body:y}.site-header{}</style><header class="site-header">H</header><script>menu()</script>',
+      footer: '<style>.site-footer{}</style><footer class="site-footer">F</footer>',
+      siteName: "Taquería El Farolito",
+    });
+    expect(shell.startsWith("<!doctype html>\n<html lang=\"en\">\n<head>")).toBe(true);
+    expect(shell).toContain('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
+    expect(shell).toContain("<title><!--forge-title--></title>");
+    expect(shell).toContain('<meta name="description" content="Tacos in Plano">');
+    expect(shell).toContain(DESIGN_FOUNDATION);
+    // The header chose its own families for both roles, so Satoshi is not loaded.
+    expect(shell).not.toContain("f[]=satoshi");
+    const head = shell.slice(0, shell.indexOf("</head>"));
+    expect(head).toContain(".site-header{}");
+    expect(head).toContain(".site-footer{}");
+    expect(shell).toMatch(/<body>\n<header class="site-header">H<\/header><script>menu\(\)<\/script>\n<!--forge-page-->\n<footer class="site-footer">F<\/footer>\n<\/body>\n<\/html>$/);
+    // No families of its own: the foundation's Satoshi, and the site's name for a description.
+    const plain = shellFrom({ foundation: undefined, header: "<header>H</header>", footer: "<footer>F</footer>", siteName: "Harbor & Co" });
+    expect(plain).toContain("f[]=satoshi");
+    expect(plain).toContain('<meta name="description" content="Harbor &amp; Co">');
+
+    const crew = newCrew("/specials", true);
+    crew.parts = crew.parts.map((each) => ({
+      ...each,
+      agreed: true,
+      markup: each.name === "header" ? '<style>body:has(main[data-forge-route="/specials"]) .site-header{}</style>' : each.name === "footer" ? "" : `<section>${each.name}</section>`,
+      ...(each.name === "body1" ? { title: "This week's specials" } : {}),
+    }));
+    expect(pageFrom(crew, { siteName: "Taquería El Farolito", chromeInShell: false })).toEqual({
+      path: "/specials",
+      title: "This week's specials",
+      body: '<style>body:has(main[data-forge-route="/specials"]) .site-header{}</style>\n<main id="main" data-forge-route="/specials">\n<section>body1</section>\n<section>body2</section>\n</main>',
+    });
   });
 });
 
-describe("what each turn is asked", () => {
-  const BASE = [
-    { role: "system" as const, content: "HOUSE RULES" },
-    { role: "user" as const, content: "Build the website from the saved onboarding brief." },
-  ];
-  const spec = designPrompt(ROUTES);
-  const home = { path: "/", title: "Taquería El Farolito", body: markup("/") };
-  const menu = { path: "/food-menu", title: "Food menu", body: markup("/food-menu") };
-  const turn = (input: Partial<Parameters<typeof draftTurn>[0]>) =>
-    draftTurn({ base: BASE, spec, routes: ROUTES, siteName: "Taquería El Farolito", brief: "BRIEF", target: "/", ...input });
-
-  test("the first turn writes the shell and the home page, from the whole spec", () => {
-    const messages = turn({ siteName: 'Taquería "El Farolito"' });
-    expect(messages.slice(0, 2)).toEqual(BASE);
-    expect(messages[2]).toEqual({ role: "system", content: spec });
-    expect(messages[3].content).toContain("written a page at a time");
-    expect(messages[3].content).toContain(ROUTES.join(", "));
-    expect(messages[4].content).toContain("This turn writes the shell and the home page, and nothing else");
-    expect(messages[4].content).toContain(`path="/" title="Taquería 'El Farolito'"`);
-    expect(messages.at(-1)).toEqual({ role: "user", content: "File: website-build-brief.md\n\nBRIEF" });
-    expect(messages.some((message) => message.role === "assistant")).toBe(false);
-  });
-
-  test("a later turn is handed the site so far as it was written, and asked for one page", () => {
-    const messages = turn({ target: "/drink-menu", written: { summary: "Built the frame and the home page.", shell: SHELL, pages: [home, menu] } });
-    expect(messages[2].content).toContain("ROUTE /drink-menu");
-    expect(messages[2].content).not.toContain("ROUTE /food-menu");
-    expect(messages.some((message) => /This turn writes the shell/.test(message.content))).toBe(false);
-    const [file, written, ask] = messages.slice(-3);
-    expect(file).toEqual({ role: "user", content: "File: website-build-brief.md\n\nBRIEF" });
-    expect(written).toEqual({
-      role: "assistant",
-      content:
-        `Built the frame and the home page.\n\n\`\`\`html shell\n${SHELL}\n\`\`\`\n\n` +
-        `\`\`\`html path="/" title="Taquería El Farolito"\n${markup("/")}\n\`\`\`\n\n` +
-        `\`\`\`html path="/food-menu" title="Food menu"\n${markup("/food-menu")}\n\`\`\``,
-    });
-    expect(ask.role).toBe("user");
-    expect(ask.content).toMatch(/^Write page 3 of 7 now: \/drink-menu, and nothing else\./);
-    expect(ask.content).toContain("do not return, repeat or change them");
-    expect(ask.content).toContain('```html path="/drink-menu" title="Drink Menu"');
-    // What was wrong with the last reply goes with the ask.
-    const again = turn({ target: "/drink-menu", written: { shell: SHELL, pages: [home] }, problem: "the page came back empty. Write the whole page." });
-    expect(again.at(-1)!.content).toContain("Your last reply for this page could not be used: the page came back empty.");
-  });
-
-  test("a page carried on goes back as the model's own words, with the ask to continue", () => {
-    const carry = '```html path="/drink-menu" title="Drinks"\n<section>Horchata, jamaica';
-    const messages = turn({ target: "/drink-menu", written: { shell: SHELL, pages: [home, menu] }, carry });
-    expect(messages.at(-3)!.content).toMatch(/^Write page 3 of 7 now: \/drink-menu/);
-    expect(messages.slice(-2)).toEqual([{ role: "assistant", content: carry }, { role: "user", content: CARRY_ON }]);
-    // The first turn carried on answers the brief itself.
-    const opening = "Built it.\n\n```html shell\n<!doctype html>";
-    const firstAgain = turn({ carry: opening });
-    expect(firstAgain.at(-3)!.content).toContain("website-build-brief.md");
-    expect(firstAgain.slice(-2)).toEqual([{ role: "assistant", content: opening }, { role: "user", content: CARRY_ON }]);
-  });
-
-  test("a site too big to show whole keeps the shell and the home page, and names the rest", () => {
-    const big = (path: string) => ({ path, title: path, body: "x".repeat(120000) });
-    const written = turn({ target: "/cater", written: { shell: SHELL, pages: [home, big("/food-menu"), big("/drink-menu")] } }).at(-2)!.content;
-    expect(written).toContain('path="/"');
-    expect(written).toContain('path="/food-menu"');
-    expect(written).not.toContain('path="/drink-menu"');
-    expect(written).toContain("Also written and saved, not shown here: /drink-menu.");
-  });
-});
-
-describe("checkpoints", () => {
-  test("a draft is fingerprinted to its measure, saves pages as they close, and a stale copy saves nothing", async () => {
-    hold();
+describe("a site written by its crews, start to finish", () => {
+  test("seven discovered pages become five, each written by its crew and kept only once all four auditors agree", async () => {
     const t = fresh();
     const member = await createBuilder(t);
-    stubProviders(answers);
-    const { id, draft } = await toDraft(t, member);
-    const design = (await t.run((ctx) => ctx.db.query("siteDesignPackages").first()))!;
-    expect(draft).toMatchObject({
-      status: "writing", attempt: 1, routes: ROUTES, pages: [], step: 0, tries: 0, rebuild: false, model: "forge-test",
-      designId: design._id, designStorageId: design.storageId, onboardingId: id,
-    });
-    expect(draft.shell).toBeUndefined();
-    expect(await brief(t, id)).toMatchObject({ status: "building" });
-    expect(await holds(t)).toEqual([["generate", "held"]]);
-
-    const claimed = (await t.mutation(internal.buildDraft.claim, { id: draft._id }))!;
-    // One copy at a time: a second finds it held.
-    expect(await t.mutation(internal.buildDraft.claim, { id: draft._id })).toBeNull();
-    const home = { path: "/", title: "Taquería El Farolito", body: markup("/") };
-    expect(await t.mutation(internal.buildDraft.keep, { id: draft._id, lease: "not-mine", shell: SHELL, pages: [home] })).toBeNull();
-    const kept = (await t.mutation(internal.buildDraft.keep, { id: draft._id, lease: claimed.lease, shell: SHELL, summary: "Built it.", pages: [home] }))!;
-    expect(kept).toMatchObject({ shell: SHELL, summary: "Built it.", pages: [home], tries: 0 });
-    // A page the reference does not have is never kept.
-    await t.mutation(internal.buildDraft.keep, { id: draft._id, lease: claimed.lease, pages: [{ path: "/about", title: "About", body: "<p>x</p>" }] });
-
-    // Loaded again from the table, as the next step finds it.
-    const saved = await load(t, draft._id);
-    expect(saved).toMatchObject({ shell: SHELL, pages: [home], lease: claimed.lease, step: 1 });
-    expect(nextPage(saved)).toBe("/food-menu");
-    const inspected = (await t.query(internal.buildDraft.inspect, {}))[0];
-    expect(inspected).toMatchObject({ status: "writing", written: ["/"], remaining: ROUTES.slice(1), partial: null, step: 1 });
-    expect(JSON.stringify(inspected)).not.toContain("<section");
-  });
-
-  test("with its clock short a step stops at the page boundary and queues the next; with time it writes on and hands the site over", async () => {
-    hold();
-    const t = fresh();
-    const member = await createBuilder(t);
-    const turns = stubProviders(answers);
-    const { id, draft } = await toDraft(t, member);
-
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1000 });
-    // One turn -- the shell and the home page -- then the boundary.
-    expect(turns.map((turn) => turn.kind)).toEqual(["first"]);
-    let row = await load(t, draft._id);
-    expect(row).toMatchObject({ shell: SHELL, step: 1, tries: 0 });
-    expect(row.pages.map((kept) => kept.path)).toEqual(["/"]);
-    expect(row.lease).toBeUndefined();
-    // The next step is already queued. Nobody has to press anything.
-    expect((await pending(t)).filter((name) => name === "buildDraft:write")).toHaveLength(1);
-    await dropScheduled(t);
-
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1000 });
-    expect(turns.map((turn) => turn.path)).toEqual(["/", "/food-menu"]);
-    expect((await load(t, draft._id)).pages.map((kept) => kept.path)).toEqual(["/", "/food-menu"]);
-    expect((await pending(t)).filter((name) => name === "buildDraft:write")).toHaveLength(1);
-    await dropScheduled(t);
-    expect(await t.run((ctx) => ctx.db.query("designGates").collect())).toEqual([]);
-
-    // A whole clock: every page left, then the layout check.
-    await t.action(internal.buildDraft.write, { id: draft._id });
-    expect(turns.map((turn) => turn.path)).toEqual(ROUTES);
-    row = await load(t, draft._id);
-    expect(row).toMatchObject({ status: "done", pages: [], step: 3 });
-    expect(row.shell).toBeUndefined();
-    const gates = await t.run((ctx) => ctx.db.query("designGates").collect());
-    expect(gates).toHaveLength(1);
-    expect(gates[0]).toMatchObject({ status: "checking", source: "onboarding", round: 1, shell: SHELL, onboardingId: id, attempt: 1 });
-    expect(gates[0].pages!.map((kept) => kept.path)).toEqual(ROUTES);
-    expect(await pending(t)).toContain("designGate:check");
-  });
-});
-
-describe("a seven-page measured rebuild, start to finish", () => {
-  test("its first draft is written across several actions with nobody pressing anything, then checked and saved once", async () => {
-    // Every page takes most of a step's clock, so each step writes one page
-    // and hands on. The scheduler runs every step itself.
-    vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
-    const t = fresh();
-    const member = await createBuilder(t);
-    const turns = stubProviders((turn) => {
-      vi.setSystemTime(Date.now() + 250_000);
-      return answers(turn);
-    });
-    const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
-    await drain(t);
+    const builders = stubProviders();
+    const id = await build(t, member);
     expect(await brief(t, id)).toMatchObject({ status: "complete", attempt: 1 });
-    const balance = (await member.as.query(api.billing.summary, {}))!.credits;
 
-    edition = "second";
-    const built = turns.length;
-    await member.as.mutation(api.onboarding.rebuild, {});
-    await drain(t);
-
-    // Seven steps, each an action the scheduler started on its own.
-    const drafts = await t.run((ctx) => ctx.db.query("buildDrafts").collect());
-    const rebuilt = drafts.find((row) => row.attempt === 2)!;
-    expect(rebuilt).toMatchObject({ status: "done", rebuild: true, step: 7, tries: 0, routes: ROUTES });
-    const steps = await t.run(async (ctx) =>
-      (await ctx.db.system.query("_scheduled_functions").collect()).filter((job) => job.name === "buildDraft:write" && job.args[0].id === rebuilt._id));
-    expect(steps.map((job) => job.state.kind)).toEqual(Array(7).fill("success"));
-    const asked = turns.slice(built);
-    expect(asked.map((turn) => [turn.kind, turn.path])).toEqual(ROUTES.map((path) => [path === "/" ? "first" : "page", path]));
-    // Each page was asked for with its own measurements and the site before it.
-    for (const [index, turn] of asked.entries()) {
-      if (turn.kind !== "page") continue;
-      const spec = turn.messages.find((m: any) => m.role === "system" && m.content.startsWith(DESIGN_PROMPT)).content;
-      expect(spec).toContain(`ROUTE ${turn.path}\n`);
-      for (const other of ROUTES.filter((path) => path !== turn.path)) expect(spec).not.toContain(`ROUTE ${other}\n`);
-      const written = turn.messages.at(-2);
-      expect(written.role).toBe("assistant");
-      for (const before of ROUTES.slice(0, index)) expect(written.content).toContain(`\`\`\`html path="${before}"`);
-      expect(written.content).not.toContain(`\`\`\`html path="${turn.path}"`);
+    const [draft] = await t.run((ctx) => ctx.db.query("buildDrafts").collect());
+    expect(draft).toMatchObject({ status: "done", routes: FIVE, tries: 0 });
+    // The home page's crew writes all four parts; every later page's writes the
+    // body and checks the shared header and footer there.
+    const written = builders.map((call) => `${call.path} ${call.part}`);
+    expect(written).toEqual([
+      "/ header", "/ body1", "/ footer", "/ body2",
+      ...FIVE.slice(1).flatMap((path) => [`${path} body1`, `${path} body2`]),
+    ]);
+    const audited = auditCalls().map((call) => `${call.path} ${call.part}`);
+    for (const path of FIVE) {
+      expect(audited.filter((entry) => entry.startsWith(`${path} `)).sort()).toEqual([`${path} body1`, `${path} body2`, `${path} footer`, `${path} header`]);
     }
-    // A rebuild owes new pictures: its home page was asked for them.
-    expect(asked[0].messages.some((m: any) => /Include at least one new subject-relevant photograph/.test(m.content))).toBe(true);
-
-    // The layout check ran once, on the whole draft, and passed it.
-    const gates = await t.run((ctx) => ctx.db.query("designGates").collect());
-    const gate = gates.find((row) => row.attempt === 2)!;
-    expect(gate).toMatchObject({ status: "passed", round: 1 });
-    expect(gate.results).toHaveLength(1);
-    const phases = await t.run(async (ctx) =>
-      (await ctx.db.query("buildEvents").withIndex("by_run_at", (q) => q.eq("runId", rebuilt.runId)).collect()).map((event) => event.phase));
-    expect(phases.filter((phase) => phase === "draft_page_done")).toHaveLength(8);
-    expect(phases.lastIndexOf("draft_page_done")).toBeLessThan(phases.indexOf("draft_done"));
-    expect(phases.indexOf("draft_done")).toBeLessThan(phases.indexOf("layout_check"));
-
-    // Saved once, every page in measured order, pictures made, published.
-    const [version] = await versions(t);
-    expect(await versions(t)).toHaveLength(1);
-    expect(version.shell).toBe(SHELL);
-    expect(version.pages!.map((kept) => kept.path)).toEqual(ROUTES);
-    for (const kept of version.pages!) {
-      expect(kept.body).toContain(`The second ${kept.path} page.`);
-      expect(kept.body).not.toContain("forge-image:");
+    // One page at a time: no page's crew starts before the last page is kept.
+    const order = builders.map((call) => FIVE.indexOf(call.path));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // The rest of the page is written after the top, and carries on from it.
+    for (const call of builders.filter((each) => each.part === "body2")) {
+      expect(call.messages.at(-1)!.content).toContain("The top of this page, as written:");
+      expect(call.messages.at(-1)!.content).toContain(`first ${call.path === "/" ? "home" : call.path.slice(1)}</h1>`);
     }
-    expect(version.summary).toBe("Built the frame and the home page.");
-    expect(await brief(t, id)).toMatchObject({ status: "complete", attempt: 2 });
+    // Every builder is handed the SkillUI Ultra extract and its foundation.
+    for (const call of builders) {
+      expect(call.messages.some((m) => m.role === "system" && m.content === designPrompt(SEVEN))).toBe(true);
+      expect(call.messages.some((m) => m.role === "system" && m.content.includes(DESIGN_FOUNDATION))).toBe(true);
+    }
+
+    // Saved once: the home page's header and footer in the shell, and every
+    // page in the order it was discovered.
+    const all = await versions(t);
+    expect(all).toHaveLength(1);
+    const [version] = all;
+    expect(version.shell).toContain('<header class="site-header">');
+    expect(version.shell).toContain('<footer class="site-footer">');
+    expect(version.shell).toContain(DESIGN_FOUNDATION);
+    expect(version.pages!.map((page) => page.path)).toEqual(FIVE);
+    for (const page of version.pages!) {
+      expect(page.body.startsWith(`<main id="main" data-forge-route="${page.path}">`)).toBe(true);
+      expect(page.body).not.toContain("forge-image:");
+    }
+    expect(version.summary).toBe("Built your 5-page website. Every page matched the design reference before it was kept.");
     const site = (await t.run((ctx) => ctx.db.query("sites").first()))!;
     expect(site).toMatchObject({ status: "published", currentVersionId: version._id });
     // One build's credits, held once across every step and settled once.
-    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"], ["generate", "settled"]]);
-    expect(await member.as.query(api.billing.summary, {})).toMatchObject({
-      reserved: 0,
-      credits: balance - REQUEST_COSTS.generate - REQUEST_COSTS.image,
-    });
-    // The member's log reads page by page.
+    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
+    // It landed without a second audit: its pages already had their auditors'.
+    const [gate] = await t.run((ctx) => ctx.db.query("designGates").collect());
+    expect(gate).toMatchObject({ status: "passed", audited: true, round: 1 });
+    expect(auditCalls()).toHaveLength(FIVE.length * 4);
+
     const labels = (await events(t)).map((event) => event.label);
     expect(labels).toEqual(expect.arrayContaining([
-      "Writing your 7 pages one at a time",
-      "Writing page 1 of 7: home, with the header, menu and footer",
-      "Wrote the header, menu and footer",
-      "Wrote page 1 of 7: home",
-      "Writing page 2 of 7: /food-menu",
-      "Wrote page 7 of 7: /cater",
-      "Wrote all 7 pages",
+      "Chose 5 pages from the reference",
+      "Writing your 5 pages one at a time, each with its own builders and auditors",
+      "Page 1 of 5, home: writing the header, the page and the footer",
+      "Page 1 of 5: writing the header",
+      "Page 1 of 5: the auditor agreed the header matches the reference",
+      "Kept page 1 of 5, home: all four auditors agreed it matches the reference",
+      "Page 2 of 5, /food-menu: writing the page, and checking the shared header and footer on it",
+      "Page 2 of 5: the auditor is checking the header against the reference",
+      "Kept page 5 of 5, /events: all four auditors agreed it matches the reference",
+      "Wrote all 5 pages, and every auditor agreed",
     ]));
-    // "Page written" moves the progress drawing on to the pictures, so no
-    // page of a draft says it.
-    expect(labels).not.toContain("Page written");
+    expect(labels.some((label) => /^Header builder: calling the model$/.test(label))).toBe(true);
+    expect(labels.some((label) => /^Bottom-half auditor: calling the model$/.test(label))).toBe(true);
   });
 
-  test("a page the step's clock stopped part way is carried on from that character, not started again", async () => {
-    setDesignRoutes(["/", "/food-menu"]);
-    hold();
+  test("a part its auditor sends back goes to its builder with its own reply and the fixes, and is audited again", async () => {
+    setDesignRoutes(["/"]);
     const t = fresh();
     const member = await createBuilder(t);
-    const menu = markup("/food-menu");
-    const cut = menu.indexOf("<p>");
-    const opening = `Built the menu.\n\n\`\`\`html path="/food-menu" title="Food menu"\n${menu.slice(0, cut)}`;
-    const turns = stubProviders((turn, init) => {
-      if (turn.kind === "first") return said(first());
-      if (turn.kind === "page") return stalled(init, delta({ reasoning_content: "Plan the menu." }), delta({ content: opening }));
-      return said(`${menu.slice(cut)}\n\`\`\``);
-    });
-    const { id, draft } = await toDraft(t, member);
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1000 });
-    await dropScheduled(t);
-    vi.useRealTimers();
-
-    // The step's clock runs out while the page is being written.
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1500 });
-    await drain(t);
-
-    expect(turns.map((turn) => [turn.kind, turn.path])).toEqual([["first", "/"], ["page", "/food-menu"], ["carry", "/food-menu"]]);
-    const carry = turns[2].messages;
-    const kept = `\`\`\`html path="/food-menu" title="Food menu"\n${menu.slice(0, cut)}`;
-    expect(carry.at(-3).content).toMatch(/^Write page 2 of 2 now: \/food-menu/);
-    expect(carry.slice(-2)).toEqual([{ role: "assistant", content: kept }, { role: "user", content: CARRY_ON }]);
-
-    // What the first reply wrote, then the rest: one page, whole.
-    const [version] = await versions(t);
-    const saved = version.pages!.find((kept) => kept.path === "/food-menu")!.body;
-    const plain = (html: string) => html.replace(/<img\b[^>]*>/g, "<img>");
-    expect(plain(saved)).toBe(plain(menu));
+    setAuditScript((call) => (call.part === "body1" && call.round === 1 ? verdict(false, ["Make the opening fill the first screen."]) : null));
+    const builders = stubProviders();
+    const id = await build(t, member);
     expect(await brief(t, id)).toMatchObject({ status: "complete" });
-
-    const log = await events(t);
-    expect(log.find((event) => event.phase === "draft_partial")).toMatchObject({
-      label: "Saved page 2 of 2 as far as it got: /food-menu",
-      detail: expect.objectContaining({ stopReason: "out_of_time", streamPhase: "writing", replyChars: kept.length, path: "/food-menu" }),
-    });
-    expect(log.map((event) => event.label)).toContain("Carrying on page 2 of 2 from where it stopped: /food-menu");
-    // A kept page is a checkpoint, never a stop.
-    expect(log.filter((event) => event.phase === "provider_stop")).toEqual([]);
-  });
-
-  test("a step whose clock runs out while the model is still thinking is tried again, and the build lands", async () => {
-    setDesignRoutes(["/", "/food-menu"]);
-    hold();
-    const t = fresh();
-    const member = await createBuilder(t);
-    let thinking = true;
-    const turns = stubProviders((turn, init) => {
-      if (turn.kind === "page" && thinking) {
-        thinking = false;
-        return stalled(init, delta({ reasoning_content: "Weigh the menu layout against the measured sections." }));
-      }
-      return answers(turn);
-    });
-    const { id, draft } = await toDraft(t, member);
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1000 });
-    await dropScheduled(t);
-    vi.useRealTimers();
-
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1200 });
-    await drain(t);
-
-    expect(turns.filter((turn) => turn.kind === "page").map((turn) => turn.path)).toEqual(["/food-menu", "/food-menu"]);
-    expect(await load(t, draft._id)).toMatchObject({ status: "done", tries: 0, lastStop: expect.objectContaining({ reason: "out_of_time", phase: "thinking" }) });
-    expect(await brief(t, id)).toMatchObject({ status: "complete" });
-    expect((await versions(t))[0].pages!.map((kept) => kept.path)).toEqual(["/", "/food-menu"]);
+    const tops = builders.filter((call) => call.part === "body1");
+    expect(tops).toHaveLength(2);
+    expect(tops[1].messages.at(-2)!.role).toBe("assistant");
+    expect(tops[1].messages.at(-2)!.content).toContain('```html part="body1"');
+    expect(tops[1].messages.at(-1)!.content).toContain("- Make the opening fill the first screen.");
+    const second = auditCalls().filter((call) => call.part === "body1")[1];
+    expect(second.round).toBe(2);
+    expect(second.messages.at(-1)!.content).toContain("Last round you asked for these fixes. Check that each one was made");
+    expect(second.messages.at(-1)!.content).toContain("- Make the opening fill the first screen.");
     const labels = (await events(t)).map((event) => event.label);
-    expect(labels).toContain("The build ran out of time while the model was thinking");
-    expect(labels).toContain("Writing page 2 of 2 again: /food-menu");
+    expect(labels).toContain("Page 1 of 1: the auditor sent the top half back with 1 change");
+    expect(labels).toContain("Page 1 of 1: making the auditor's change to the top half");
+    expect(labels).toContain("Kept page 1 of 1, home: all four auditors agreed it matches the reference");
+    expect((await versions(t))[0].summary).toBe("Built your one-page website. It matched the design reference before it was kept.");
+  });
+
+  test("a part its auditor never agrees to stops the build after three rounds of changes, and nothing is saved", async () => {
+    setDesignRoutes(["/"]);
+    const t = fresh();
+    const member = await createBuilder(t);
+    setAuditScript((call) => (call.part === "footer" ? verdict(false, ["The footer needs four columns."]) : null));
+    const builders = stubProviders();
+    const id = await build(t, member);
+    expect(auditCalls().filter((call) => call.part === "footer")).toHaveLength(PART_REWORKS + 1);
+    expect(builders.filter((call) => call.part === "footer")).toHaveLength(PART_REWORKS + 1);
+    expect(await brief(t, id)).toMatchObject({
+      status: "failed",
+      error: "The footer of the home page still didn't match the design reference after three rounds of changes, so this build wasn't saved and your credits were returned. Try again. Your answers are saved.",
+    });
+    expect(await versions(t)).toEqual([]);
+    expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "released"]]);
+    expect(await t.run((ctx) => ctx.db.query("designGates").collect())).toEqual([]);
+    const [draft] = await t.run((ctx) => ctx.db.query("buildDrafts").collect());
+    expect(draft).toMatchObject({ status: "failed", pages: [] });
+    expect((await events(t)).map((event) => event.label)).toContain("Stopped at page 1 of 1: the auditor still didn't agree on the footer after 3 rounds of changes");
+  });
+
+  test("on a later page the shared header is fixed for that page alone, with CSS, and the shell never changes", async () => {
+    setDesignRoutes(["/", "/food-menu"]);
+    const t = fresh();
+    const member = await createBuilder(t);
+    setAuditScript((call) => (call.path === "/food-menu" && call.part === "header" && call.round === 1 ? verdict(false, ["On this page the header sits on white, not over the picture."]) : null));
+    const builders = stubProviders();
+    const id = await build(t, member);
+    expect(await brief(t, id)).toMatchObject({ status: "complete" });
+    const chrome = builders.filter((call) => call.path === "/food-menu" && call.part === "header");
+    expect(chrome).toHaveLength(1);
+    expect(chrome[0].messages.at(-1)!.content).toContain("- On this page the header sits on white, not over the picture.");
+    const [version] = await versions(t);
+    const menu = version.pages!.find((page) => page.path === "/food-menu")!;
+    expect(menu.body).toContain('<style>body:has(main[data-forge-route="/food-menu"]) .site-header{background:var(--color-paper)}</style>');
+    expect(version.pages!.find((page) => page.path === "/")!.body).not.toContain("body:has(");
+    expect(version.shell).not.toContain("body:has(");
+    expect((await events(t)).map((event) => event.label)).toContain("Page 2 of 2: fitting the shared header to this page");
+  });
+
+  test("a builder's reply that cannot be used is named in the log, and its next turn is told what to put right", async () => {
+    setDesignRoutes(["/"]);
+    const t = fresh();
+    const member = await createBuilder(t);
+    let first = true;
+    const builders = stubProviders((call) => {
+      if (call.part === "header" && first) {
+        first = false;
+        return said('Built it.\n\n```html part="header"\n<div class="site-header">no landmark</div>\n```');
+      }
+      return said(partReply(call));
+    });
+    const id = await build(t, member);
+    expect(await brief(t, id)).toMatchObject({ status: "complete" });
+    const headers = builders.filter((call) => call.part === "header");
+    expect(headers).toHaveLength(2);
+    expect(headers[1].messages.at(-1)!.content).toContain("Your last reply for this part could not be used: the header has no <header> element. Put the whole header in one.");
+    expect((await events(t)).map((event) => event.label)).toContain("Page 1 of 1: the header came back unusable: the header has no <header> element.");
+  });
+
+  test("a rebuild's home page must ask for new pictures", async () => {
+    setDesignRoutes(["/"]);
+    const t = fresh();
+    const member = await createBuilder(t);
+    stubProviders();
+    await build(t, member);
+    edition = "second";
+    let bare = true;
+    const builders = stubProviders((call) => {
+      if (call.part === "body1" && bare) {
+        bare = false;
+        return said('Built the opening.\n\n```html part="body1" title="Home"\n<section><h1>Tacos</h1></section>\n```');
+      }
+      return said(partReply(call, edition));
+    });
+    const id = await member.as.mutation(api.onboarding.rebuild, {});
+    await drain(t);
+    expect(await brief(t, id)).toMatchObject({ status: "complete", attempt: 2 });
+    const tops = builders.filter((call) => call.part === "body1");
+    expect(tops[0].messages.at(-1)!.content).toContain(NEW_IMAGERY);
+    expect(tops[1].messages.at(-1)!.content).toContain("a rebuild needs new pictures, and this page asked for none.");
+    const [version] = await versions(t);
+    expect(version.pages![0].body).toContain("second home");
   });
 });
 
-describe("when a draft cannot go on", () => {
-  test("a page that keeps failing stops the build after a few steps, says why, and gives the credits back", async () => {
-    setDesignRoutes(["/", "/food-menu"]);
+describe("when a crew cannot go on", () => {
+  test("a part whose replies keep dropping stops the build after a few tries, says why, and gives the credits back", async () => {
+    setDesignRoutes(["/"]);
     const t = fresh();
     const member = await createBuilder(t);
-    // The model starts thinking about the menu and the connection goes, every time.
-    const turns = stubProviders((turn) => (turn.kind === "page" ? streamed(delta({ reasoning_content: "Planning the menu." })) : said(first())));
-    const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
-    await drain(t);
-
-    // Each step asks twice -- a dropped reply gets one fresh go -- and there are three steps.
-    expect(turns.filter((turn) => turn.kind === "page")).toHaveLength(STEP_TRIES * 2);
+    const builders = stubProviders((call) => (call.part === "body1" ? streamed(delta({ reasoning_content: "Planning the opening." })) : said(partReply(call))));
+    const id = await build(t, member);
+    // Each try asks twice -- a dropped reply gets one fresh go -- and there are three.
+    expect(builders.filter((call) => call.part === "body1")).toHaveLength(STEP_TRIES * 2);
     const row = await brief(t, id);
-    expect(row.status).toBe("failed");
-    expect(row.error).toBe("The connection to the model dropped before it started writing your website. Try again. Your answers are saved.");
+    expect(row).toMatchObject({ status: "failed", error: "The connection to the model dropped before it started writing your website. Try again. Your answers are saved." });
     expect(await versions(t)).toEqual([]);
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "released"]]);
     const [draft] = await t.run((ctx) => ctx.db.query("buildDrafts").collect());
-    expect(draft).toMatchObject({ status: "failed", tries: STEP_TRIES, pages: [], lastStop: expect.objectContaining({ reason: "dropped", phase: "thinking" }) });
-    expect(draft.shell).toBeUndefined();
+    expect(draft).toMatchObject({ status: "failed", pages: [] });
+    expect(draft.crew).toBeUndefined();
     const [run] = await t.run((ctx) => ctx.db.query("buildRuns").collect());
-    expect(run).toMatchObject({ status: "failed", errorClass: "stream_dropped" });
-    expect((await events(t)).map((event) => event.label)).toContain("Stopped at page 2 of 2: /food-menu");
+    expect(run).toMatchObject({ status: "failed" });
+    expect((await events(t)).map((event) => event.label)).toContain("Stopped at page 1 of 1: the top half came back unusable 3 times in a row");
     expect((await pending(t)).filter((name) => name === "buildDraft:write")).toEqual([]);
   });
 
-  test("once its tries are spent, a draft whose clock ran out while thinking says so, in the words any build uses", async () => {
-    hold();
+  test("a provider that refuses the request stops the build at once rather than asking again", async () => {
+    setDesignRoutes(["/"]);
     const t = fresh();
     const member = await createBuilder(t);
-    stubProviders(answers);
-    const { id, draft } = await toDraft(t, member);
-    const { lease } = (await t.mutation(internal.buildDraft.claim, { id: draft._id }))!;
-    await t.run((ctx) => ctx.db.patch(draft._id, { tries: STEP_TRIES - 1 }));
-    const outcome = await t.mutation(internal.buildDraft.stepped, {
-      id: draft._id,
-      lease,
-      outcome: "nothing",
-      reason: "The model was still thinking your website through when the build ran out of time. Try again.",
-      stop: { reason: "out_of_time", phase: "thinking", reasoningChars: 90000 },
-    });
-    expect(outcome).toBe("failed");
-    const row = await brief(t, id);
-    expect(row).toMatchObject({
-      status: "failed",
-      error: "The model was still thinking your website through when the build ran out of time. Try again. Your answers are saved.",
-    });
-    expect(row.holdId).toBeUndefined();
-    expect(await holds(t)).toEqual([["generate", "released"]]);
-    expect(await load(t, draft._id)).toMatchObject({ status: "failed", lastStop: expect.objectContaining({ reason: "out_of_time", phase: "thinking" }) });
-    const [run] = await t.run((ctx) => ctx.db.query("buildRuns").collect());
-    expect(run).toMatchObject({ status: "failed", errorClass: "out_of_time" });
+    const builders = stubProviders((call) =>
+      call.part === "body1" ? new Response(JSON.stringify({ error: { message: "Model Not Exist" } }), { status: 400 }) : said(partReply(call)));
+    const id = await build(t, member);
+    expect(builders.filter((call) => call.part === "body1")).toHaveLength(1);
+    expect((await brief(t, id)).error).toContain("answered 400: Model Not Exist");
+    expect(await versions(t)).toEqual([]);
   });
 
-  test("a reply that cannot be used is named in the log, and the next step is told what to put right", async () => {
-    setDesignRoutes(["/", "/food-menu"]);
+  test("an auditor that gives no verdict it can act on is asked again, and one that never does stops the build", async () => {
+    setDesignRoutes(["/"]);
     const t = fresh();
     const member = await createBuilder(t);
-    let empty = true;
-    const turns = stubProviders((turn) => {
-      if (turn.kind === "page" && empty) {
-        empty = false;
-        return said('Built the menu.\n\n```html path="/food-menu" title="Food menu"\n\n```');
-      }
-      return answers(turn);
+    setAuditScript((call) => (call.part === "header" ? "It looks close enough to me." : null));
+    stubProviders();
+    const id = await build(t, member);
+    expect(auditCalls().filter((call) => call.part === "header")).toHaveLength(STEP_TRIES);
+    expect(await brief(t, id)).toMatchObject({ status: "failed", error: "The design auditor didn't return a verdict. Your answers are saved." });
+    expect((await events(t)).map((event) => event.label)).toContain("Page 1 of 1: the auditor's verdict on the header couldn't be read");
+  });
+
+  test("a step whose clock runs short saves what its crew finished and queues the next, which carries on from there", async () => {
+    setDesignRoutes(["/"]);
+    vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+    const t = fresh();
+    const member = await createBuilder(t);
+    let slow = true;
+    const builders = stubProviders((call) => {
+      // The first builders take nearly the whole step between them.
+      if (slow) vi.setSystemTime(Date.now() + 130_000);
+      return said(partReply(call));
     });
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
+    await t.action(internal.onboarding.research, { id, attempt: 1 });
+    await t.action(internal.onboarding.build, { id, attempt: 1 });
+    const [draft] = await t.run((ctx) => ctx.db.query("buildDrafts").collect());
+    await dropScheduled(t);
+
+    await t.action(internal.buildDraft.write, { id: draft._id });
+    let row = await load(t, draft._id);
+    expect(row.lease).toBeUndefined();
+    expect(row.crew!.parts.filter((each) => each.markup !== undefined).map((each) => each.name).sort()).toEqual(["body1", "footer", "header"]);
+    expect(row.crew!.parts.every((each) => !each.agreed)).toBe(true);
+    expect(auditCalls()).toEqual([]);
+    expect(await pending(t)).toContain("buildDraft:write");
+    await dropScheduled(t);
+
+    slow = false;
+    await t.action(internal.buildDraft.write, { id: draft._id });
     await drain(t);
-    const pages = turns.filter((turn) => turn.kind === "page");
-    expect(pages).toHaveLength(2);
-    expect(pages[1].messages.at(-1).content).toContain("Your last reply for this page could not be used: the page came back empty. Write the whole page.");
-    const labels = (await events(t)).map((event) => event.label);
-    expect(labels).toContain("Page 2 of 2 could not be used: the page came back empty.");
-    expect(labels).toContain("Writing page 2 of 2 again: /food-menu");
+    row = await load(t, draft._id);
+    expect(row).toMatchObject({ status: "done", step: 2, tries: 0 });
+    // Nothing written was written twice.
+    expect(builders.map((call) => call.part).sort()).toEqual(["body1", "body2", "footer", "header"]);
     expect(await brief(t, id)).toMatchObject({ status: "complete" });
   });
 
-  test("a page that keeps stopping part way, or a draft that takes too many steps, stops rather than going round", async () => {
+  test("a part the step's clock stops while it is being written is kept as far as it got, and carried on from that character", async () => {
+    setDesignRoutes(["/"]);
     hold();
     const t = fresh();
     const member = await createBuilder(t);
-    stubProviders(answers);
-    const { id, draft } = await toDraft(t, member);
-    await t.run((ctx) => ctx.db.patch(draft._id, {
-      shell: SHELL,
-      pages: [{ path: "/", title: "Home", body: markup("/") }],
-      partial: { path: "/food-menu", text: '```html path="/food-menu"\n<section>', resumes: MOST_RESUMES },
-    }));
-    const { lease } = (await t.mutation(internal.buildDraft.claim, { id: draft._id }))!;
-    const outcome = await t.mutation(internal.buildDraft.stepped, {
-      id: draft._id, lease, outcome: "partial", partial: { path: "/food-menu", text: '```html path="/food-menu"\n<section><h1>More' },
+    const whole = partReply({ role: "builder", part: "body1", path: "/", round: 0, messages: [] });
+    const cut = whole.indexOf("<h1>");
+    const opening = whole.slice(0, cut);
+    const builders = stubProviders((call, init) => {
+      if (call.part !== "body1") return said(partReply(call));
+      if (call.messages.at(-1)!.content === CARRY_ON) return said(whole.slice(cut));
+      return outlivesStep(init, delta({ reasoning_content: "Plan the opening." }), delta({ content: opening }));
     });
-    expect(outcome).toBe("failed");
-    expect(await brief(t, id)).toMatchObject({ status: "failed", error: "Your website couldn’t be completed. Your answers are saved. Try building again." });
-    expect((await events(t)).map((event) => event.label)).toContain("Stopped at page 2 of 7: it kept stopping part way");
+    const { id, draft } = await toDraft(t, member);
+    clockTimers();
 
-    // A second member's draft that has already taken its most steps.
-    const other = await createBuilder(t);
-    const second = await toDraft(t, other);
-    await t.run((ctx) => ctx.db.patch(second.draft._id, { step: ROUTES.length * 4 + 2 }));
-    await t.action(internal.buildDraft.write, { id: second.draft._id });
-    expect(await brief(t, second.id)).toMatchObject({ status: "failed" });
-    expect((await events(t)).map((event) => event.label)).toContain("Stopped before every page was written");
-  });
+    await t.action(internal.buildDraft.write, { id: draft._id });
+    const row = await load(t, draft._id);
+    const top = row.crew!.parts.find((each) => each.name === "body1")!;
+    expect(top).toMatchObject({ partial: opening, tries: 0 });
+    expect(top.markup).toBeUndefined();
+    expect(row).toMatchObject({ status: "writing", tries: 0 });
+    expect(row.lease).toBeUndefined();
+    expect(await pending(t)).toContain("buildDraft:write");
+    const log = await events(t);
+    expect(log.find((event) => event.phase === "crew_carried")).toMatchObject({
+      label: "Page 1 of 1: saved the top half as far as it got, to carry on from there",
+      detail: expect.objectContaining({ part: "body1", stopReason: "out_of_time", streamPhase: "writing", replyChars: opening.length }),
+    });
+    // A kept part is a checkpoint, never a stop.
+    expect(log.filter((event) => event.phase === "provider_stop")).toEqual([]);
 
-  test("a provider that refuses the request stops the build at once rather than asking again", async () => {
-    setDesignRoutes(["/", "/food-menu"]);
-    const t = fresh();
-    const member = await createBuilder(t);
-    const turns = stubProviders((turn) =>
-      turn.kind === "page" ? new Response(JSON.stringify({ error: { message: "Model Not Exist" } }), { status: 400 }) : said(first()));
-    const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
+    await dropScheduled(t);
+    vi.useRealTimers();
+    await t.action(internal.buildDraft.write, { id: draft._id });
     await drain(t);
-    expect(turns.filter((turn) => turn.kind === "page")).toHaveLength(1);
-    expect((await brief(t, id)).error).toContain("answered 400: Model Not Exist");
-    expect(await t.run(async (ctx) => (await ctx.db.query("buildDrafts").first())!.tries)).toBe(1);
+    const tops = builders.filter((call) => call.part === "body1");
+    expect(tops).toHaveLength(2);
+    expect(tops[1].messages.slice(-2)).toEqual([{ role: "assistant", content: opening }, { role: "user", content: CARRY_ON }]);
+    // What the first reply wrote, then the rest: one part, whole.
+    const [version] = await versions(t);
+    expect(version.pages![0].body.match(/<h1>/g)).toHaveLength(1);
+    expect(version.pages![0].body).toContain('<section class="a-open"><h1>first home</h1>');
+    expect(await brief(t, id)).toMatchObject({ status: "complete" });
+    expect((await events(t)).map((event) => event.label)).toContain("Page 1 of 1: carrying on the top half from where it stopped");
   });
 
-  test("a step the platform lost is started again from the last saved page, and a draft that keeps going quiet stops", async () => {
+  test("a step whose clock runs out before any reply could be kept counts for nothing, however often, and the build lands", async () => {
+    setDesignRoutes(["/"]);
     hold();
     const t = fresh();
     const member = await createBuilder(t);
-    const turns = stubProviders(answers);
+    let slow = true;
+    const builders = stubProviders((call, init) =>
+      slow ? outlivesStep(init, delta({ reasoning_content: `Weigh the ${call.part} against the reference.` })) : said(partReply(call)));
     const { id, draft } = await toDraft(t, member);
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1000 });
-    // The step it queued is lost: nothing runs it, and nothing beats.
-    await dropScheduled(t);
+    clockTimers();
+
+    // More steps than a build may miss in a row, every one of them ended by
+    // the clock while the builders were still thinking.
+    for (let step = 1; step <= STEP_TRIES + 1; step += 1) {
+      await t.action(internal.buildDraft.write, { id: draft._id });
+      await dropScheduled(t);
+      const row = await load(t, draft._id);
+      expect(row).toMatchObject({ status: "writing", step, tries: 0, lastStop: expect.objectContaining({ reason: "out_of_time", phase: "thinking" }) });
+      expect(row.crew!.parts.every((each) => each.tries === 0 && each.markup === undefined)).toBe(true);
+    }
+    expect(await brief(t, id)).toMatchObject({ status: "building" });
+    const log = await events(t);
+    expect(log.find((event) => event.phase === "crew_clock")).toMatchObject({
+      level: "warn",
+      label: expect.stringMatching(/^(Header|Top-half|Footer) builder: still thinking when its turn ended, so Forge asks again$/),
+    });
+    expect(log.filter((event) => event.phase === "provider_stop" || event.phase === "draft_failed")).toEqual([]);
+
+    slow = false;
+    vi.useRealTimers();
+    await t.action(internal.buildDraft.write, { id: draft._id });
+    await drain(t);
+    expect(await brief(t, id)).toMatchObject({ status: "complete" });
+    expect(await load(t, draft._id)).toMatchObject({ status: "done", tries: 0 });
+    expect(builders.filter((call) => call.part === "body2")).toHaveLength(1);
+  });
+
+  test("a step the platform lost is started again from the last saved part, and a draft that keeps going quiet stops", async () => {
+    setDesignRoutes(["/", "/food-menu"]);
+    hold();
+    const t = fresh();
+    const member = await createBuilder(t);
+    stubProviders();
+    const { id, draft } = await toDraft(t, member);
     const quiet = (seconds: number) => t.run((ctx) => ctx.db.patch(draft._id, { beatAt: Date.now() - seconds * 1000 }));
 
     await t.mutation(internal.buildDraft.rescue, {});
@@ -715,16 +735,10 @@ describe("when a draft cannot go on", () => {
     await t.mutation(internal.buildDraft.rescue, {});
     expect(await pending(t)).toEqual(["buildDraft:write"]);
     expect(await load(t, draft._id)).toMatchObject({ restarts: 1 });
-    expect((await events(t)).map((event) => event.label)).toContain("Started page 2 of 7 again: nothing had been heard from it for 120s");
+    expect((await events(t)).map((event) => event.label)).toContain("Started page 1 of 2 again: nothing had been heard from it for 120s");
     await dropScheduled(t);
 
-    // Restarted, it carries on from the saved page rather than from nothing.
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1000 });
-    expect(turns.map((turn) => turn.path)).toEqual(["/", "/food-menu"]);
-    expect(await load(t, draft._id)).toMatchObject({ restarts: 0 });
-    await dropScheduled(t);
-
-    for (let restart = 1; restart <= MOST_RESTARTS; restart += 1) {
+    for (let restart = 2; restart <= MOST_RESTARTS; restart += 1) {
       await quiet(120);
       await t.mutation(internal.buildDraft.rescue, {});
       await dropScheduled(t);
@@ -732,8 +746,7 @@ describe("when a draft cannot go on", () => {
     expect(await brief(t, id)).toMatchObject({ status: "building" });
     await quiet(120);
     await t.mutation(internal.buildDraft.rescue, {});
-    const stopped = await brief(t, id);
-    expect(stopped).toMatchObject({ status: "failed", error: "The build stopped responding. Your answers are saved. Try building again." });
+    expect(await brief(t, id)).toMatchObject({ status: "failed", error: "The build stopped responding. Your answers are saved. Try building again." });
     expect(await holds(t)).toEqual([["generate", "released"]]);
     expect(await load(t, draft._id)).toMatchObject({ status: "failed", pages: [] });
   });
@@ -742,62 +755,104 @@ describe("when a draft cannot go on", () => {
     hold();
     const t = fresh();
     const member = await createBuilder(t);
-    stubProviders(answers);
+    stubProviders();
     const { id, draft } = await toDraft(t, member);
     const long = Date.now() - 600_000;
     await t.run((ctx) => ctx.db.patch(id, { updatedAt: long }));
     await t.mutation(internal.onboarding.expire, { id, attempt: 1 });
     expect(await brief(t, id)).toMatchObject({ status: "building" });
     expect(await pending(t)).toEqual(["onboarding:expire"]);
-
     await t.run((ctx) => ctx.db.patch(draft._id, { beatAt: long }));
     await t.mutation(internal.onboarding.expire, { id, attempt: 1 });
     expect(await brief(t, id)).toMatchObject({ status: "failed", error: "The build stopped responding. Your answers are saved. Try building again." });
     expect(await load(t, draft._id)).toMatchObject({ status: "failed", pages: [] });
   });
 
-  test("a member who cancels mid-draft stops it: the next step writes nothing and nothing reaches the layout check", async () => {
+  test("a draft that has taken its most steps stops rather than going round", async () => {
     hold();
     const t = fresh();
     const member = await createBuilder(t);
-    const turns = stubProviders(answers);
+    const builders = stubProviders();
+    const { id, draft } = await toDraft(t, member);
+    await t.run((ctx) => ctx.db.patch(draft._id, { step: FIVE.length * 10 + 2 }));
+    await t.action(internal.buildDraft.write, { id: draft._id });
+    expect(builders).toEqual([]);
+    expect(await brief(t, id)).toMatchObject({ status: "failed" });
+    expect((await events(t)).map((event) => event.label)).toContain("Stopped before every page was written");
+  });
+
+  test("a member who cancels mid-draft stops it: the next step writes nothing and nothing lands", async () => {
+    hold();
+    const t = fresh();
+    const member = await createBuilder(t);
+    const builders = stubProviders();
     const { draft } = await toDraft(t, member);
-    await t.action(internal.buildDraft.write, { id: draft._id, budgetMs: 1000 });
+    const claimed = (await t.mutation(internal.buildDraft.claim, { id: draft._id }))!;
+    await t.mutation(internal.buildDraft.muster, { id: draft._id, lease: claimed.lease, path: "/" });
+    await t.mutation(internal.buildDraft.partBuilt, { id: draft._id, lease: claimed.lease, part: "header", markup: "<header>H</header>" });
     await member.as.mutation(api.onboarding.cancel, {});
     expect(await load(t, draft._id)).toMatchObject({ status: "cancelled", pages: [] });
+    expect((await load(t, draft._id)).crew).toBeUndefined();
     await t.action(internal.buildDraft.write, { id: draft._id });
-    expect(turns).toHaveLength(1);
+    expect(builders).toEqual([]);
     expect(await t.run((ctx) => ctx.db.query("designGates").collect())).toEqual([]);
     expect(await holds(t)).toEqual([["generate", "released"]]);
   });
 
-  test("a step that finds the site measured again writes nothing against the old measure", async () => {
+  test("a copy that lost its hold saves nothing, and inspect shows each part's rounds and never a page", async () => {
     hold();
     const t = fresh();
     const member = await createBuilder(t);
-    const turns = stubProviders(answers);
+    stubProviders();
+    const { draft } = await toDraft(t, member);
+    const claimed = (await t.mutation(internal.buildDraft.claim, { id: draft._id }))!;
+    expect(await t.mutation(internal.buildDraft.claim, { id: draft._id })).toBeNull();
+    await t.mutation(internal.buildDraft.muster, { id: draft._id, lease: claimed.lease, path: "/" });
+    expect(await t.mutation(internal.buildDraft.partBuilt, { id: draft._id, lease: "not-mine", part: "header", markup: "<header>H</header>" })).toBeNull();
+    expect(await t.mutation(internal.buildDraft.partBuilt, { id: draft._id, lease: claimed.lease, part: "header", markup: "<header>H</header>" }))
+      .toMatchObject({ name: "header", markup: "<header>H</header>", agreed: false });
+    expect(await t.mutation(internal.buildDraft.partAudited, { id: draft._id, lease: claimed.lease, part: "header", agree: false, fixes: ["Taller."] }))
+      .toMatchObject({ state: "rework", part: { round: 1, fixes: ["Taller."] } });
+    const opening = 'Built the opening.\n```html part="body1" title="Home"\n<section class="a-hero"><h1>Al pastor';
+    expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease: "not-mine", part: "body1", text: opening })).toBeNull();
+    expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease: claimed.lease, part: "body1", text: opening }))
+      .toMatchObject({ name: "body1", partial: opening, tries: 0 });
+    const saved = await load(t, draft._id);
+    expect(nextPage(saved)).toBe("/");
+    const inspected = (await t.query(internal.buildDraft.inspect, {}))[0];
+    expect(inspected).toMatchObject({ status: "writing", routes: FIVE, written: [], crew: { path: "/" } });
+    expect(inspected.crew!.parts[0]).toEqual({ part: "header", agreed: false, round: 1, tries: 0, chars: 18, carried: null, fixes: 1 });
+    expect(inspected.crew!.parts[1]).toEqual({ part: "body1", agreed: false, round: 0, tries: 0, chars: null, carried: opening.length, fixes: 0 });
+    expect(JSON.stringify(inspected)).not.toContain("<header");
+    expect(JSON.stringify(inspected)).not.toContain("Al pastor");
+  });
+
+  test("a step that finds the site holding another design package writes nothing against the old one", async () => {
+    hold();
+    const t = fresh();
+    const member = await createBuilder(t);
+    const builders = stubProviders();
     const { id, draft } = await toDraft(t, member);
     const other = await storeDesignPackage(t);
     await t.run((ctx) => ctx.db.patch(draft.designId, { storageId: other }));
     await t.action(internal.buildDraft.write, { id: draft._id });
-    expect(turns).toEqual([]);
+    expect(builders).toEqual([]);
     expect(await brief(t, id)).toMatchObject({ status: "failed", error: "The saved design reference disappeared during the build. Your answers are saved." });
-    expect(await load(t, draft._id)).toMatchObject({ status: "failed" });
   });
 });
 
 describe("a one-page reference", () => {
-  test("is still written in one reply, with no draft at all", async () => {
+  test("is written by its crew like any other: four builders, four auditors, one page", async () => {
     setDesignRoutes(["/"]);
     const t = fresh();
     const member = await createBuilder(t);
-    const turns = stubProviders(answers);
-    const id = await answerEverything(member);
-    await member.as.mutation(api.onboarding.submit, { id });
-    await drain(t);
-    expect(turns.map((turn) => turn.kind)).toEqual(["one"]);
-    expect(await t.run((ctx) => ctx.db.query("buildDrafts").collect())).toEqual([]);
+    const builders = stubProviders();
+    const id = await build(t, member);
+    expect(builders.map((call) => call.part).sort()).toEqual(["body1", "body2", "footer", "header"]);
+    expect(auditCalls().map((call) => call.part).sort()).toEqual(["body1", "body2", "footer", "header"]);
     expect(await brief(t, id)).toMatchObject({ status: "complete" });
-    expect((await versions(t))[0].pages!.map((kept) => kept.path)).toEqual(["/"]);
+    expect((await versions(t))[0].pages!.map((page) => page.path)).toEqual(["/"]);
+    expect(await member.as.query(api.billing.summary, {})).toMatchObject({ reserved: 0 });
+    expect(REQUEST_COSTS.generate).toBeGreaterThan(0);
   });
 });

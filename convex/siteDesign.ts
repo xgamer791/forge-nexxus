@@ -3,47 +3,29 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
 import type { ProviderTrace } from "./diagnostics";
-import { normalizePath, siteParts, type BuiltSite } from "./pages";
+import { MAX_PAGES, normalizePath, pagePlan, siteParts, type BuiltSite } from "./pages";
 
-// A measured design reference: every route of the reference site at phone,
-// tablet and desktop widths, as the design worker measured it (see
-// design-worker/). A row without this format is from before measuring.
-export const MEASURED = "forge-measured-v1" as const;
-export function isMeasured(row: Pick<Doc<"siteDesignPackages">, "format"> | null | undefined) {
-  return row?.format === MEASURED;
+// A SkillUI Ultra design package: the `.skill` archive SkillUI extracted from
+// the reference site, screen by screen, for the pages the design worker's page
+// discovery agent chose (design-worker/). A row without this format -- none,
+// or the retired measured reference -- is from before SkillUI Ultra.
+export const SKILLUI = "skillui-ultra-v1" as const;
+export function isSkillUI(row: Pick<Doc<"siteDesignPackages">, "format"> | null | undefined) {
+  return row?.format === SKILLUI;
 }
 
-// What a build or an edit says when the site has no measured reference for
-// its current build: a site from before measuring, or one never researched.
-export const NOT_MEASURED = "This site's design reference hasn't been measured yet. Rebuild the site to measure it, then try again.";
+// What a build or an edit says when the site has no SkillUI Ultra reference
+// for its current build: a site from before it, or one never researched.
+export const NOT_EXTRACTED = "This site needs a new design reference before it can change. Rebuild the site to make one, then try again.";
 
+// The worker's stages, in the words of the member's progress log.
 const PHASES: Record<string, string> = {
   searching: "Searching for design references",
   candidate: "Comparing reference sites",
-  inspecting: "Inspecting pages and menus",
-  measuring: "Measuring the reference site's layout",
+  discovering: "Choosing up to five pages from the reference",
+  skillui: "Reading the reference's design with SkillUI Ultra",
   uploading: "Saving the design reference",
 };
-
-// The measured spec for the pages a turn writes: everything before the first
-// route -- what the reference decides, its routes, its type scale -- and then
-// those routes' own sections. A later turn writes one page, and the numbers
-// for pages it is not writing are only more to read before it starts. A spec
-// in another shape, or one without the route, goes whole.
-export function routeSpec(spec: string, paths: string[]) {
-  const lines = spec.split("\n");
-  const starts = lines.flatMap((line, index) => (/^ROUTE \S/.test(line) ? [index] : []));
-  if (!starts.length) return spec;
-  const kept = lines.slice(0, starts[0]);
-  let found = false;
-  starts.forEach((start, n) => {
-    const path = normalizePath(lines[start].slice("ROUTE ".length).trim());
-    if (path === null || !paths.includes(path)) return;
-    found = true;
-    kept.push(...lines.slice(start, starts[n + 1] ?? lines.length));
-  });
-  return found ? kept.join("\n").trimEnd() : spec;
-}
 
 export function assertDesignRules(site: BuiltSite, referenceUrl: string) {
   const html = siteParts(site).join("\n");
@@ -82,15 +64,19 @@ export const uploadUrl = internalMutation({
   },
 });
 
-// The spec is written from every route at every width, so it grows with the
-// reference; a document still has to stay under Convex's megabyte.
+// The extract is the package's SKILL, DESIGN, layout, component and
+// interaction references, cut to fit; a document still has to stay under
+// Convex's megabyte.
 const PROMPT_LIMIT = 400000;
+const FOUNDATION_LIMIT = 60000;
 
 export const save = internalMutation({
   args: {
     siteId: v.id("sites"), onboardingId: v.id("siteOnboarding"), attempt: v.number(), epoch: v.number(),
     storageId: v.id("_storage"), referenceUrl: v.string(), prompt: v.string(), inspectedPages: v.number(),
     routes: v.array(v.string()),
+    // The package's tokens as custom properties, for every page's <head>.
+    foundation: v.optional(v.string()),
     // The research's hold on its attempt (onboarding.claimStep). A copy that
     // lost it saves nothing.
     lease: v.optional(v.string()),
@@ -104,12 +90,16 @@ export const save = internalMutation({
         (site.buildEpoch ?? 0) !== args.epoch) return false;
     if (args.lease !== undefined && brief.queueStep?.lease !== args.lease) return false;
     if (!/^https:\/\//.test(args.referenceUrl) || !args.prompt.trim() || args.prompt.length > PROMPT_LIMIT ||
-        args.inspectedPages < 1 || !args.routes.includes("/")) return false;
+        (args.foundation?.length ?? 0) > FOUNDATION_LIMIT || args.inspectedPages < 1 ||
+        !args.routes.some((route) => normalizePath(route) === "/")) return false;
     await discardSiteDesign(ctx, site._id);
     await ctx.db.insert("siteDesignPackages", {
       userId: site.userId, siteId: site._id, storageId: args.storageId,
       referenceUrl: args.referenceUrl, prompt: args.prompt, inspectedPages: args.inspectedPages,
-      buildEpoch: args.epoch, createdAt: Date.now(), format: MEASURED, routes: args.routes,
+      buildEpoch: args.epoch, createdAt: Date.now(), format: SKILLUI,
+      // Five pages at most, the home page first, whatever the worker sent.
+      routes: pagePlan(args.routes),
+      ...(args.foundation?.trim() ? { foundation: args.foundation.trim() } : {}),
     });
     return true;
   },
@@ -160,10 +150,11 @@ async function readLines(response: Response, onLine: (event: any) => Promise<voi
   }
 }
 
-// The worker streams events as work happens. Only a complete measured
-// reference is accepted; a missing worker or a failed crawl stops the build,
-// never silently sends a model off to invent a reference. A site that already
-// has a reference address is measured there again, with no search.
+// The worker streams events as work happens. Only a complete SkillUI Ultra
+// package is accepted; a missing worker, a failed crawl or a SkillUI run that
+// produced nothing stops the build, and never silently sends a model off to
+// invent a reference. A site that already has a reference address is
+// extracted again there, with no search.
 export async function researchDesign(
   ctx: ActionCtx,
   input: { siteId: Id<"sites">; onboardingId: Id<"siteOnboarding">; attempt: number; epoch: number;
@@ -182,32 +173,38 @@ export async function researchDesign(
   if (!response.ok) throw new Error(`Design research worker answered ${response.status}`);
   await trace.note({
     phase: "research",
-    label: input.referenceUrl ? "Measuring the saved design reference again" : "Researching design references",
+    label: input.referenceUrl ? "Reading the saved reference's design again" : "Researching design references",
     status: "researching",
   });
-  let result = null as { storageId: Id<"_storage">; referenceUrl: string; prompt: string; inspectedPages: number; routes: string[] } | null;
+  let result = null as { storageId: Id<"_storage">; referenceUrl: string; prompt: string; inspectedPages: number; routes: string[]; foundation?: string } | null;
   await readLines(response, async (event) => {
     if (event.type === "progress" && typeof PHASES[event.phase] === "string") {
       const city = typeof event.detail?.city === "string" &&
         ["Los Angeles", "New York", "San Diego", "Miami"].includes(event.detail.city) ? event.detail.city : "";
       const page = Number.isInteger(event.detail?.page) && event.detail.page > 0 ? event.detail.page : 0;
       const total = Number.isInteger(event.detail?.total) && event.detail.total > 0 ? event.detail.total : 0;
+      const pages = Number.isInteger(event.detail?.pages) && event.detail.pages > 0 ? Math.min(event.detail.pages, MAX_PAGES) : 0;
+      const screens = Number.isInteger(event.detail?.screens) && event.detail.screens > 0 ? Math.min(event.detail.screens, MAX_PAGES) : 0;
       const label = event.phase === "searching" && city ? `Searching ${city} for design references`
-        : event.phase === "inspecting" && page && total ? `Inspecting reference page ${page} of ${total}`
+        : event.phase === "discovering" && pages ? `Chose ${pages === 1 ? "1 page" : `${pages} pages`} from the reference`
+        : event.phase === "skillui" && screens ? `Reading the reference's design with SkillUI Ultra, ${screens === 1 ? "1 screen" : `${screens} screens`}`
         : PHASES[event.phase];
       await trace.note({ phase: `research_${event.phase}`, label, status: "researching",
-        detail: { ...(city ? { city } : {}), ...(page ? { page, total } : {}) } });
+        detail: { ...(city ? { city } : {}), ...(page ? { page, total } : {}), ...(pages ? { total: pages } : {}),
+          ...(screens ? { mode: "ultra", screens } : {}) } });
     } else if (event.type === "complete" && typeof event.storageId === "string" &&
         typeof event.referenceUrl === "string" && typeof event.prompt === "string" &&
         Number.isInteger(event.inspectedPages) && Array.isArray(event.routes) &&
-        event.routes.every((route: unknown) => typeof route === "string")) {
-      // Only the reference's own fields go on to the save.
+        event.routes.every((route: unknown) => typeof route === "string") &&
+        (event.foundation === undefined || typeof event.foundation === "string")) {
+      // Only the package's own fields go on to the save.
       result = {
         storageId: event.storageId as Id<"_storage">,
         referenceUrl: event.referenceUrl,
         prompt: event.prompt,
         inspectedPages: event.inspectedPages,
         routes: event.routes,
+        ...(event.foundation ? { foundation: event.foundation } : {}),
       };
     } else if (event.type === "error") {
       throw new Error(`Design research failed: ${String(event.reason).slice(0, 180)}`);
@@ -215,7 +212,7 @@ export async function researchDesign(
   });
   const found = result;
   if (!found || !found.storageId || !found.referenceUrl || !found.prompt || !found.inspectedPages || !found.routes.length) {
-    throw new Error("The design worker didn't return a complete design reference");
+    throw new Error("The design worker didn't return a complete SkillUI Ultra package");
   }
   const saved = await ctx.runMutation(internal.siteDesign.save, {
     siteId: input.siteId,
@@ -227,6 +224,7 @@ export async function researchDesign(
     prompt: found.prompt,
     inspectedPages: found.inspectedPages,
     routes: found.routes,
+    ...(found.foundation ? { foundation: found.foundation } : {}),
     ...(lease ? { lease } : {}),
   });
   if (!saved) {
@@ -238,79 +236,7 @@ export async function researchDesign(
   return found.prompt;
 }
 
-export type AuditOutcome = {
-  passed: boolean;
-  fixes: string[];
-  // The lowest region score over every route and width, and the regions that
-  // fell short, as `route width region score`.
-  lowest: number;
-  failing: string[];
-};
-
-// The layout check, run by the design worker: each page of the site, served as
-// it would be, measured at every width and compared with the measured
-// reference, region by region. A worker that cannot say is a failure here,
-// never a pass.
-export async function auditDesign(
-  ctx: ActionCtx,
-  input: { storageId: Id<"_storage">; pages: { path: string; html: string }[] },
-  trace: ProviderTrace,
-  round: number,
-): Promise<AuditOutcome> {
-  const { base, token } = workerRoute();
-  const reference = await ctx.storage.getUrl(input.storageId);
-  if (!reference) throw new Error("The measured design reference is missing from storage");
-  const response = await fetch(`${base}/audit`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ reference, pages: input.pages }),
-    signal: AbortSignal.timeout(480000),
-  });
-  if (!response.ok) throw new Error(`The layout check answered ${response.status}`);
-  let outcome = null as AuditOutcome | null;
-  await readLines(response, async (event) => {
-    if (event.type === "progress" && event.phase === "rendering" && Number.isInteger(event.detail?.total)) {
-      const done = Number(event.detail.done) || 0;
-      if (done === event.detail.total || done % 3 === 0) {
-        await trace.note({ phase: "layout_check_progress", label: `Layout check, round ${round}: measured ${done} of ${event.detail.total} pages and widths`, status: "reviewing", detail: { round, page: done, total: event.detail.total } });
-      }
-    } else if (event.type === "complete" && typeof event.passed === "boolean" && Array.isArray(event.routes)) {
-      const failing: string[] = [];
-      let lowest = 1;
-      for (const route of event.routes) {
-        if (route.problem) {
-          failing.push(`${route.path} ${route.problem}`);
-          lowest = 0;
-          continue;
-        }
-        for (const [width, result] of Object.entries(route.viewports ?? {}) as [string, any][]) {
-          if (!result?.regions) {
-            failing.push(`${route.path} ${width} not measured`);
-            lowest = 0;
-            continue;
-          }
-          for (const [region, score] of Object.entries(result.regions) as [string, any][]) {
-            lowest = Math.min(lowest, Number(score.score) || 0);
-            if (!score.passed) failing.push(`${route.path} ${width} ${region} ${Math.round((Number(score.score) || 0) * 1000) / 10}`);
-          }
-        }
-      }
-      outcome = {
-        // No route, or no score for one, is not a pass.
-        passed: event.passed === true && event.routes.length > 0 && failing.length === 0,
-        fixes: Array.isArray(event.fixes) ? event.fixes.filter((fix: unknown) => typeof fix === "string").slice(0, 400) : [],
-        lowest,
-        failing: failing.slice(0, 200),
-      };
-    } else if (event.type === "error") {
-      throw new Error(`The layout check failed: ${String(event.reason).slice(0, 180)}`);
-    }
-  });
-  if (!outcome) throw new Error("The layout check returned no result");
-  return outcome;
-}
-
-// How long a step of the layout check can go without a word before it is
+// How long a step of the design audit can go without a word before it is
 // taken for dead. A step is one action, and an action has ten minutes.
 export const GATE_QUIET_MS = 630000;
 

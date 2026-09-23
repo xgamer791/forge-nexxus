@@ -4,11 +4,12 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { answerDesignResearch, DESIGN_PROMPT, storeDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, crewCall, DESIGN_PROMPT, storeDesignPackage, type CrewCall } from "./designWorkerMock";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
 import { QUESTIONS } from "./onboardingQuestions";
+import { siteParts } from "./pages";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
 
@@ -78,8 +79,14 @@ const delta = (fields: Record<string, unknown>, finish: string | null = null) =>
 
 type Call = { url: string; body: any };
 
-// One fetch for both providers. The strategist and the builder are told apart
-// by what they were asked; `build` is how the page answers, once per build.
+// The crew member a build call came from, while `build` answers it: a first
+// build or a rebuild is written by a crew, part by part (`built` answers each
+// part), while a thread turn is still one reply with the whole site.
+let asking: CrewCall | null = null;
+
+// One fetch for every provider. The strategist and the builders are told apart
+// by what they were asked; the auditors are answered by the design double; and
+// `build` is how the site answers, once per build call.
 function stubProviders(build: (call: number) => Response) {
   const calls: Call[] = [];
   let builds = 0;
@@ -103,14 +110,30 @@ function stubProviders(build: (call: number) => Response) {
         return json({ choices: [{ message: { content: '{"add":[],"forget":[],"replace":{}}' } }] });
       }
       builds += 1;
+      asking = crewCall(body);
       return build(builds);
     }),
   );
   return { calls, builds: () => builds, chatCalls: () => calls.filter((call) => /chat\/completions/.test(call.url)) };
 }
 
+// The site for `title`: one part of it for a crew member, the whole page for a
+// thread turn.
+const PICTURE = '<img src="forge-image:1" data-forge-image="Morning light on the roastery counter" data-forge-aspect="16:9" alt="The roastery counter" width="1600" height="900">';
+function crewPart(call: CrewCall, title: string) {
+  const markup = call.part === "header" ? `<style>.site-header{padding:16px}</style><header class="site-header"><a href="/">${title}</a></header>`
+    : call.part === "footer" ? `<footer class="site-footer">${title}, Port Ellen pier</footer>`
+    : call.part === "body1" ? `<section><h1>${title}</h1>${PICTURE}</section>`
+    : `<section><p>${title}, roasted on the pier.</p></section>`;
+  return `Built the ${call.part}.\n\n\`\`\`html part="${call.part}"${call.part === "body1" ? ` title="${title}"` : ""}\n${markup}\n\`\`\``;
+}
 const built = (title: string) =>
-  json({ choices: [{ message: { content: `Built a warm page for ${title}.\n\n\`\`\`html\n${page(title)}\n\`\`\`` } }] });
+  json({ choices: [{ message: { content: asking ? crewPart(asking, title) : `Built a warm page for ${title}.\n\n\`\`\`html\n${page(title)}\n\`\`\`` } }] });
+// The build brief a builder was handed, wherever it sits in its turn.
+const briefOf = (call: Call) => call.body.messages.find((m: any) => /^File: website-build-brief\.md/.test(m.content))!.content as string;
+// Everything a saved version is made of, as one string.
+const markupOf = (version: { html?: string; shell?: string; pages?: { path: string; title: string; body: string }[] }) => siteParts(version).join("\n");
+const ONE_PAGE = "Built your one-page website. It matched the design reference before it was kept.";
 
 async function answerEverything(member: Awaited<ReturnType<typeof createBuilder>>) {
   const id = await member.as.mutation(api.onboarding.start, {});
@@ -178,8 +201,8 @@ describe("a brand new build, start to finish", () => {
 
     await drain(t);
 
-    // Exactly one build ran, and it asked the model once.
-    expect(providers.builds()).toBe(1);
+    // Exactly one build ran: one page's crew, four builders, each asked once.
+    expect(providers.builds()).toBe(4);
     const brief = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(brief).toMatchObject({ status: "complete", attempt: 1, dismissed: false });
     expect(brief.error).toBeUndefined();
@@ -187,8 +210,7 @@ describe("a brand new build, start to finish", () => {
       "Answers submitted",
       "Build brief saved and read",
       "Agent started building your website",
-      "Checking the layout against the design reference",
-      "Layout passed the design check",
+      "Every page matched the design reference",
       "Page written",
       "Pictures made for your site",
       "Website received from the agent",
@@ -200,7 +222,7 @@ describe("a brand new build, start to finish", () => {
     expect(buildCall).toBeDefined();
     expect(buildCall.body.model).toBe("forge-test");
     expect(buildCall.body.messages.some((m: any) => m.content === DESIGN_PROMPT)).toBe(true);
-    const briefText = buildCall.body.messages.at(-1).content;
+    const briefText = briefOf(buildCall);
     expect(briefText).toContain("Harbor Roasters");
     expect(briefText).toContain("Small-batch coffee roasted on the pier");
     // The catalogue is what a products section is built from, so it has to
@@ -211,11 +233,11 @@ describe("a brand new build, start to finish", () => {
     // One version, with the picture made and stored in place of the request.
     const [version] = await versions(t);
     expect(await versions(t)).toHaveLength(1);
-    expect(version.html).not.toContain("forge-image:");
-    expect(version.html).toContain('<h1>Harbor Roasters</h1>');
+    expect(markupOf(version)).not.toContain("forge-image:");
+    expect(markupOf(version)).toContain('<h1>Harbor Roasters</h1>');
     const images = await t.run((ctx) => ctx.db.query("siteImages").collect());
     expect(images).toHaveLength(1);
-    expect(version.html).toContain(await t.run((ctx) => ctx.storage.getUrl(images[0].storageId)));
+    expect(markupOf(version)).toContain(await t.run((ctx) => ctx.storage.getUrl(images[0].storageId)));
 
     // The site is saved and published at its Forge address. The thread keeps the
     // summary and does not repeat the address above the prompt.
@@ -226,7 +248,7 @@ describe("a brand new build, start to finish", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ role: "assistant", versionId: version._id });
     expect(messages[0].status).toBeUndefined();
-    expect(messages[0].body).toBe("Built a warm page for Harbor Roasters.");
+    expect(messages[0].body).toBe(ONE_PAGE);
 
     // Superseded answer snapshots never reserve credits. The newest strategy,
     // the build and the picture are the only work that runs after this drain.
@@ -244,7 +266,11 @@ describe("a brand new build, start to finish", () => {
     expect(runs[0].endedAt).toBeDefined();
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(
-      expect.arrayContaining(["queued", "research", "research_searching", "research_candidate", "research_inspecting", "research_measuring", "research_uploading", "research_done", "design_loaded", "held", "provider_request", "provider_response", "layout_check", "layout_verdict", "images", "images_done", "saving", "complete"]),
+      expect.arrayContaining([
+        "queued", "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
+        "design_loaded", "held", "draft_start", "crew_page", "crew_build", "provider_request", "provider_response", "crew_built", "crew_audit", "crew_agreed",
+        "crew_page_done", "draft_done", "images", "images_done", "saving", "complete",
+      ]),
     );
 
     // The member lands on the finished screen, with Rebuild on offer.
@@ -268,17 +294,20 @@ describe("a brand new build, start to finish", () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     let dropping = true;
-    // The provider starts thinking, then the connection goes before the reply
-    // is finished -- the stream stopping, which is what a stall is here.
+    // The provider starts thinking about the top of the page, then the
+    // connection goes before the reply is finished -- the stream stopping,
+    // which is what a stall is here. The header and footer land.
     const providers = stubProviders(() =>
-      dropping ? streamed(": keep-alive\n\n", delta({ reasoning_content: "Planning the roastery page." })) : built("Harbor Roasters"));
+      dropping && asking?.part === "body1" ? streamed(": keep-alive\n\n", delta({ reasoning_content: "Planning the roastery page." })) : built("Harbor Roasters"));
 
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    // One fresh go after the first drop, and then the build says why.
-    expect(providers.builds()).toBe(2);
+    // Each of its three tries gets one fresh go after a drop, and then the
+    // build says why: six calls for the top half, one each for the header and
+    // footer, and the bottom half never starts without the top.
+    expect(providers.builds()).toBe(8);
     const failed = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(failed.status).toBe("failed");
     expect(failed.error).toContain("The connection to the model dropped before it started writing your website");
@@ -292,11 +321,11 @@ describe("a brand new build, start to finish", () => {
     // The debugger kept where each reply had got to when it stopped.
     const events = await t.run((ctx) => ctx.db.query("buildEvents").withIndex("by_run_at", (q) => q.eq("runId", run._id)).collect());
     const stops = events.filter((event) => event.phase === "provider_stop");
-    expect(stops).toHaveLength(2);
+    expect(stops).toHaveLength(6);
     for (const stop of stops) {
       expect(stop.detail).toMatchObject({ stream: true, stopReason: "dropped", streamPhase: "thinking", keepAlives: 1, reasoningChars: "Planning the roastery page.".length });
     }
-    expect(events.filter((event) => event.phase === "provider_retry")).toHaveLength(1);
+    expect(events.filter((event) => event.phase === "provider_retry")).toHaveLength(3);
     expect(await member.as.query(api.onboarding.state, {})).toMatchObject({
       hasWebsite: false,
       draft: expect.objectContaining({ id, status: "failed" }),
@@ -309,7 +338,7 @@ describe("a brand new build, start to finish", () => {
     dropping = false;
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
-    expect(providers.builds()).toBe(3);
+    expect(providers.builds()).toBe(12);
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete", attempt: 2 });
     expect(await versions(t)).toHaveLength(1);
     const runs = await t.run((ctx) => ctx.db.query("buildRuns").collect());
@@ -400,7 +429,7 @@ describe("a brand new build, start to finish", () => {
     // The build landed.
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete" });
     expect(await versions(t)).toHaveLength(1);
-    expect((await versions(t))[0].html).not.toContain("forge-image:");
+    expect(markupOf((await versions(t))[0])).not.toContain("forge-image:");
   });
 
   test("pointing chat at Gemini still sends high effort and keeps pictures on Lite", async () => {
@@ -452,7 +481,8 @@ describe("a brand new build, start to finish", () => {
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    expect(providers.builds()).toBe(1);
+    // The three builders that start together, each asked once and never again.
+    expect(providers.builds()).toBe(3);
     const failed = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(failed.status).toBe("failed");
     expect(failed.error).toContain("answered 400");
@@ -469,7 +499,8 @@ describe("a rebuild, start to finish", () => {
   test("the old site is scrapped first and a fresh one is built and published at the same address", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const providers = stubProviders((call) => built(call === 1 ? "Harbor Roasters" : "Harbor Roasters, rebuilt"));
+    let rebuilding = false;
+    const providers = stubProviders(() => built(rebuilding ? "Harbor Roasters, rebuilt" : "Harbor Roasters"));
 
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
@@ -483,6 +514,7 @@ describe("a rebuild, start to finish", () => {
     const oldBriefStorageId = first.briefStorageId!;
     const balance = (await member.as.query(api.billing.summary, {}))!.credits;
 
+    rebuilding = true;
     const briefId = await member.as.mutation(api.onboarding.rebuild, {});
     expect(briefId).toBe(id);
 
@@ -510,8 +542,8 @@ describe("a rebuild, start to finish", () => {
     await drain(t);
 
     // A fresh build, not an edit: the model never saw the old page.
-    expect(providers.builds()).toBe(2);
-    const rebuildCall = providers.chatCalls().at(-1)!;
+    expect(providers.builds()).toBe(8);
+    const rebuildCall = providers.chatCalls().filter((call) => crewCall(call.body)?.part === "body1").at(-1)!;
     const rebuiltContext = rebuildCall.body.messages.map((m: any) => m.content).join("\n");
     expect(rebuiltContext).not.toContain("Harbor Roasters</h1>");
     expect(rebuiltContext).not.toContain(oldImage.storageId);
@@ -530,8 +562,7 @@ describe("a rebuild, start to finish", () => {
       "Rebuilding from your answers",
       "Build brief saved and read",
       "Agent started building your website",
-      "Checking the layout against the design reference",
-      "Layout passed the design check",
+      "Every page matched the design reference",
       "Page written",
       "Pictures made for your site",
       "Website received from the agent",
@@ -540,13 +571,13 @@ describe("a rebuild, start to finish", () => {
     const [version] = await versions(t);
     expect(await versions(t)).toHaveLength(1);
     expect(version._id).not.toBe(oldVersion._id);
-    expect(version.html).toContain("<h1>Harbor Roasters, rebuilt</h1>");
-    expect(version.html).not.toContain("forge-image:");
+    expect(markupOf(version)).toContain("<h1>Harbor Roasters, rebuilt</h1>");
+    expect(markupOf(version)).not.toContain("forge-image:");
     const rebuilt = (await t.run((ctx) => ctx.db.get(siteId)))!;
     expect(rebuilt).toMatchObject({ status: "published", slug: before.slug, currentVersionId: version._id, publishedVersionId: version._id });
     const messages = await t.run((ctx) => ctx.db.query("messages").collect());
     expect(messages).toHaveLength(1);
-    expect(messages[0].body).toBe("Built a warm page for Harbor Roasters, rebuilt.");
+    expect(messages[0].body).toBe(ONE_PAGE);
     expect(await t.run((ctx) => ctx.db.query("siteImages").collect())).toHaveLength(1);
     expect((await holds(t)).every(([, status]) => status === "settled")).toBe(true);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({
@@ -618,17 +649,21 @@ describe("a rebuild, start to finish", () => {
     // go inside a ceiling worth answering in, and no more -- a third would
     // spend another minute to be told the same thing.
     const providers = stubProviders(() =>
-      json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking about the roastery…" } }] }),
+      asking?.part === "body1"
+        ? json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking about the roastery…" } }] })
+        : built("Harbor Roasters"),
     );
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    const builds = providers.chatCalls().filter((call) =>
-      call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)),
-    );
-    expect(builds).toHaveLength(2);
-    expect(builds[1].body.messages.some((m: any) => /still thinking/.test(m.content))).toBe(true);
+    // Each of the top half's three tries asks twice -- the second time inside
+    // a wider ceiling, told to keep its thinking short -- and no more.
+    const builds = providers.chatCalls().filter((call) => crewCall(call.body)?.part === "body1");
+    expect(builds).toHaveLength(6);
+    for (const [index, call] of builds.entries()) {
+      expect(call.body.messages.some((m: any) => /still thinking/.test(m.content))).toBe(index % 2 === 1);
+    }
     const row = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(row.status).toBe("failed");
     expect(row.error).toContain("only its reasoning");
@@ -645,18 +680,19 @@ describe("a rebuild, start to finish", () => {
     // comes back as thinking and no page at all. Forge widens it and asks
     // again rather than handing the member a failed build to retry by hand.
     process.env.AI_MAX_TOKENS = "6000";
-    const providers = stubProviders((call) =>
-      call === 1
-        ? json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking about the roastery…" } }] })
-        : built("Harbor Roasters"),
-    );
+    let thin = true;
+    const providers = stubProviders(() => {
+      if (asking?.part === "body1" && thin) {
+        thin = false;
+        return json({ choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "Thinking about the roastery…" } }] });
+      }
+      return built("Harbor Roasters");
+    });
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
 
-    const builds = providers.chatCalls().filter((call) =>
-      call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)),
-    );
+    const builds = providers.chatCalls().filter((call) => crewCall(call.body)?.part === "body1");
     expect(builds.map((call) => call.body.max_tokens)).toEqual([6000, 64000]);
     const row = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(row.status).toBe("complete");
@@ -698,23 +734,26 @@ describe("a rebuild, start to finish", () => {
     await drain(t);
   });
 
-  test("an identical design is retried without sending the discarded page to the model", async () => {
+  test("a rebuild's crew is never handed the discarded page, and only the accepted builds make pictures", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const providers = stubProviders(call => built(call < 3 ? "Harbor Roasters" : "A fresh Harbor"));
+    let rebuilding = false;
+    const providers = stubProviders(() => built(rebuilding ? "A fresh Harbor" : "Harbor Roasters"));
     const id = await answerEverything(member);
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
+    const firstCalls = providers.chatCalls().length;
+    rebuilding = true;
     await member.as.mutation(api.onboarding.rebuild, {});
     await drain(t);
-    expect(providers.builds()).toBe(3);
+    expect(providers.builds()).toBe(8);
     expect(await t.run(ctx => ctx.db.get(id))).toMatchObject({ status: "complete", answers: ANSWERS });
     expect(await versions(t)).toHaveLength(1);
-    expect((await versions(t))[0].html).toContain("A fresh Harbor");
-    const request = providers.chatCalls().at(-1)!.body.messages;
-    expect(JSON.stringify(request)).toContain("matched a discarded design");
-    expect(JSON.stringify(request)).not.toContain("Harbor Roasters</h1>");
-    expect(request.some((m: any) => m.role === "assistant")).toBe(false);
+    expect(markupOf((await versions(t))[0])).toContain("A fresh Harbor");
+    for (const call of providers.chatCalls().slice(firstCalls).filter((each) => crewCall(each.body))) {
+      expect(JSON.stringify(call.body.messages)).not.toContain("Harbor Roasters</h1>");
+      expect(JSON.stringify(call.body.messages)).toContain("This turn is a rebuild:");
+    }
     // Only the first build and the accepted rebuild made images.
     expect(providers.calls.filter(call => /generateContent/.test(call.url))).toHaveLength(2);
   });
@@ -729,7 +768,9 @@ describe("a rebuild, start to finish", () => {
     const before = (await member.as.query(api.billing.summary, {}))!;
     await member.as.mutation(api.onboarding.rebuild, {});
     await drain(t);
-    expect(providers.builds()).toBe(3);
+    // Its crew wrote the discarded design again, part for part; the site is
+    // refused before it lands, and nothing is charged for it.
+    expect(providers.builds()).toBe(8);
     const failed = (await t.run(ctx => ctx.db.get(id)))!;
     expect(failed.status).toBe("failed");
     expect(failed.error).toContain("repeated the discarded design");
@@ -835,7 +876,8 @@ describe("a rebuild starts the plan over, not just the page", () => {
   test("the scrapped page's strategy is not handed back to the next build", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    const providers = stubProviders(call => built(call === 1 ? "Harbor Roasters" : "A new Harbor"));
+    let rebuilding = false;
+    const providers = stubProviders(() => built(rebuilding ? "A new Harbor" : "Harbor Roasters"));
     const id = await answerEverything(member);
     await drain(t);
 
@@ -848,21 +890,18 @@ describe("a rebuild starts the plan over, not just the page", () => {
 
     await member.as.mutation(api.onboarding.submit, { id });
     await drain(t);
-    const firstBrief = providers
+    const firstBrief = briefOf(providers
       .chatCalls()
-      .find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!
-      .body.messages.at(-1).content;
+      .find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!);
     expect(firstBrief).toContain("three feature cards");
 
+    rebuilding = true;
     await member.as.mutation(api.onboarding.rebuild, {});
     // Cleared the moment the rebuild is queued, before the agent reads it.
     expect((await t.run((ctx) => ctx.db.get(id)))!.strategy).toBeUndefined();
     await drain(t);
 
-    const rebuiltBrief = providers
-      .chatCalls()
-      .at(-1)!
-      .body.messages.at(-1).content;
+    const rebuiltBrief = briefOf(providers.chatCalls().at(-1)!);
     expect(rebuiltBrief).not.toContain("three feature cards");
     expect(rebuiltBrief).toContain("Develop the strategy from the answers above");
     // The answers themselves survive — only the plan for the old page goes.
@@ -906,6 +945,7 @@ describe("a rebuild while testing is a new San Antonio business", () => {
           brand: "", references: "", content: "1 S Alamo St, San Antonio, TX. (210) 555-0100.", catalogue: "Mango paleta — $4",
         }) } }] });
       }
+      asking = crewCall(body);
       return built(/Lupita/.test(JSON.stringify(body.messages)) ? "Lupita's Paletas" : "Harbor Roasters");
     }));
     const id = await answerEverything(member);
@@ -930,10 +970,10 @@ describe("a rebuild while testing is a new San Antonio business", () => {
     const site = (await t.run((ctx) => ctx.db.get(row.siteId!)))!;
     expect(site.name).toBe("Lupita's Paletas");
 
-    const build = calls.filter((call) => /chat\/completions/.test(call.url)).at(-1)!.body.messages;
-    expect(build[0]).toEqual({ role: "system", content: FORGE_MD });
-    expect(build.at(-1).content).toContain("Mango paleta — $4");
-    expect(build.at(-1).content).not.toContain("Harbor Roasters");
+    const build = calls.filter((call) => /chat\/completions/.test(call.url)).at(-1)!;
+    expect(build.body.messages[0]).toEqual({ role: "system", content: FORGE_MD });
+    expect(briefOf(build)).toContain("Mango paleta — $4");
+    expect(briefOf(build)).not.toContain("Harbor Roasters");
   });
 
   test("an admin testing skips the questions and rebuilds with no site or answers at all", async () => {
@@ -954,6 +994,7 @@ describe("a rebuild while testing is a new San Antonio business", () => {
           content: "(210) 555-0142", catalogue: "Dozen pork tamales — $18",
         }) } }] });
       }
+      asking = crewCall(body);
       return built(/Rosa/.test(JSON.stringify(body.messages)) ? "Tamales Doña Rosa" : "Other");
     }));
 

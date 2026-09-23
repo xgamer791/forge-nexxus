@@ -20,11 +20,13 @@ export default defineSchema({
     prompt: v.string(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
-  // One design reference per site: the address it was measured from, the
-  // measured reference itself in file storage (every route at phone, tablet
-  // and desktop widths), and the builder's spec written from it. A row from
-  // before measuring (no `format`) keeps its address, so the site is measured
-  // again there with no new search.
+  // One design reference per site: the address SkillUI Ultra extracted it
+  // from, the whole `.skill` package in file storage, the extract every
+  // builder and auditor reads (`prompt`), the foundation stylesheet made from
+  // its tokens, and the pages the page discovery agent chose (five at most).
+  // A row from before SkillUI Ultra -- no `format`, or the retired measured
+  // one -- keeps its address, so the site is extracted again there with no
+  // new search.
   siteDesignPackages: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
@@ -34,12 +36,15 @@ export default defineSchema({
     inspectedPages: v.number(),
     buildEpoch: v.number(),
     createdAt: v.number(),
-    format: v.optional(v.literal("forge-measured-v1")),
+    format: v.optional(v.union(v.literal("forge-measured-v1"), v.literal("skillui-ultra-v1"))),
     routes: v.optional(v.array(v.string())),
+    foundation: v.optional(v.string()),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
-  // A build held for the layout check: the site as the builder last wrote
-  // it, until the check passes it, sends it back, or stops it. The check's
-  // scores stay after the site is gone, for `designGate:inspect`.
+  // A build held for its design audit: the site as the builder last wrote it,
+  // until the auditors agree it matches the SkillUI Ultra reference, send it
+  // back, or stop it. A first build's pages were each audited by their crew
+  // while they were written (`audited`), so it only lands here. The verdicts
+  // stay after the site is gone, for `designGate:inspect`.
   designGates: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
@@ -60,6 +65,9 @@ export default defineSchema({
     shell: v.optional(v.string()),
     pages: v.optional(v.array(v.object({ path: v.string(), title: v.string(), body: v.string() }))),
     summary: v.string(),
+    // Every page already has its auditors' agreement: a first build, whose
+    // crews audited each part as it was written.
+    audited: v.optional(v.boolean()),
     status: v.union(
       v.literal("checking"),
       v.literal("reworking"),
@@ -73,13 +81,15 @@ export default defineSchema({
     trouble: v.number(),
     // Why the last rework could not be used, for the next one to put right.
     problem: v.optional(v.string()),
-    // The measured differences the last failed check sent back.
+    // The fixes the auditors sent back on the last round.
     fixes: v.array(v.string()),
-    // Each round's outcome: the lowest region score and the regions below the bar.
+    // Each round's outcome: whether every auditor agreed, and the parts that
+    // did not, as `path part`. `lowest` is the retired layout check's score,
+    // kept only on rows from before the auditors.
     results: v.array(v.object({
       round: v.number(),
       passed: v.boolean(),
-      lowest: v.number(),
+      lowest: v.optional(v.number()),
       failing: v.array(v.string()),
       at: v.number(),
     })),
@@ -87,44 +97,73 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]).index("by_message", ["assistantId"]),
-  // A first build written a page at a time. A measured site in pages is more
-  // than one reply can write inside an action's ten minutes, so each step is
-  // an action of its own: it writes pages while its clock allows, saves each
-  // one here the moment its block closes, and hands on to the next step. A
-  // reply the step's clock stops part way through a page is kept as far as it
-  // got, and the next step carries it on from that character. Once every
-  // measured page is here the site goes to the layout check (designGates)
-  // exactly as a one-reply build would, and the markup leaves this row.
+  // A first build or a rebuild, written a page at a time by a crew. Each page
+  // has one builder and one auditor for its header, two of each for its body
+  // and one of each for its footer; each part is saved here the moment its
+  // builder writes it and again when its auditor answers, and the page is
+  // kept only once every auditor agrees it matches the SkillUI Ultra
+  // reference. Each step is an action of its own, and the next is queued the
+  // moment one ends. Once every page is here the site lands (designGates,
+  // `audited`), and the markup leaves this row.
   buildDrafts: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
     onboardingId: v.id("siteOnboarding"),
     attempt: v.number(),
     runId: v.id("buildRuns"),
-    // The build's own, for the hand-off to the layout check.
+    // The build's own, for the hand-off to the design gate once every page is kept.
     assistantId: v.id("messages"),
     holdId: v.id("creditHolds"),
     epoch: v.number(),
     siteName: v.string(),
     rebuild: v.boolean(),
-    // The measured reference the draft is written against. A step that finds
-    // the site holding any other reference writes nothing.
+    // The SkillUI Ultra package the draft is written and audited against. A
+    // step that finds the site holding any other package writes nothing.
     designId: v.id("siteDesignPackages"),
     designStorageId: v.id("_storage"),
-    // What every step is told the same way: the model the draft began on,
-    // which alone may carry on a page it stopped, and the member's memory note.
+    // What every step is told the same way: the model the draft began on, and
+    // the member's memory note.
     model: v.string(),
     memory: v.optional(v.string()),
-    // Every page the reference measured, home first, and what is written.
+    // Every page the discovery agent chose (five at most), home first, and
+    // the pages whose auditors have all agreed.
     routes: v.array(v.string()),
     shell: v.optional(v.string()),
     pages: v.array(v.object({ path: v.string(), title: v.string(), body: v.string() })),
     summary: v.optional(v.string()),
-    // A page the step's clock stopped while it was being written: its address,
-    // the reply as far as it got from the page's opening fence, and how many
-    // steps have carried it on.
+    // The crew on the current page. Every part keeps what its builder last
+    // wrote and what its auditor last asked for.
+    crew: v.optional(v.object({
+      path: v.string(),
+      parts: v.array(v.object({
+        name: v.union(v.literal("header"), v.literal("body1"), v.literal("body2"), v.literal("footer")),
+        // Unset until the builder has written. After the home page the header
+        // and footer start as "": the shared ones as they stand, which their
+        // auditors check on this page before anything is written for it.
+        markup: v.optional(v.string()),
+        // The page's title, as the builder for the top of the page named it.
+        title: v.optional(v.string()),
+        agreed: v.boolean(),
+        // Audits run on this part so far, and replies in a row that could
+        // not be used.
+        round: v.number(),
+        tries: v.number(),
+        // What the auditor asked for last, for the builder's next go, and --
+        // once the builder has made them -- for the auditor to check next.
+        fixes: v.array(v.string()),
+        asked: v.optional(v.array(v.string())),
+        // Why the last reply for this part could not be used.
+        problem: v.optional(v.string()),
+        // The builder's reply as far as it got when its step's clock stopped
+        // it part way, for the next step to carry on from that character.
+        partial: v.optional(v.string()),
+      })),
+    })),
+    // Retired: a page the old page-at-a-time writer's clock stopped part way.
+    // Only drafts from before the crews carry it.
     partial: v.optional(v.object({ path: v.string(), text: v.string(), resumes: v.number() })),
-    // Steps claimed so far, and steps in a row that finished nothing.
+    // Steps claimed so far, and steps in a row that moved nothing for any
+    // reason but the step's own clock.
     step: v.number(),
     tries: v.number(),
     // Why the last reply could not be used, for the next step to put right.
@@ -493,6 +532,10 @@ export default defineSchema({
       // step that wrote it.
       path: v.optional(v.string()),
       step: v.optional(v.number()),
+      // Which part of the page a crew event is about (header, body1, body2,
+      // footer), and whether its auditor agreed.
+      part: v.optional(v.string()),
+      agree: v.optional(v.boolean()),
     })),
   })
     .index("by_run", ["runId"])
