@@ -7,19 +7,19 @@
 // never edited: where it and this file disagree, this file wins, and that is
 // how its guidance is bent to Forge rather than by changing it.
 //
-// Add new visual training here. Type, colour, layout, navigation, icons, the
-// header, menu and footer, and the floor every page meets all live in this file.
+// Add new visual training here. Type, colour, layout, navigation and the floor
+// every page meets all live in this file.
 
 export const DESIGN_GOD = [
   "# Design God — custom design requirements",
   "",
   "Load and follow this file on every chat, strategy, and build turn, together with FORGE_MD and FED. The image model does not load this file.",
   "",
-  "This file is Forge's house taste and a phone floor. Outside the Anti-slop section it is guidance, not law: defaults and good practice that you are free to depart from whenever this business is better served by something else, without apologising for it. Five things are not optional: the Anti-slop section, the Icons section, the Type section, the Header, menu and footer section, and the parts of the floor that make a page work (it fits a phone without scrolling sideways, and it is accessible). FED owns method: how to reach a palette, a layout and copy.",
+  "This file is Forge's house taste and a phone floor. Outside the Anti-slop section it is guidance, not law: defaults and good practice that you are free to depart from whenever this business is better served by something else, without apologising for it. Two things are not optional: the Anti-slop section, and the parts of the floor that make a page work (it fits a phone without scrolling sideways, and it is accessible). FED owns method: how to reach a palette, a layout and copy.",
   "",
   "## Type",
   "",
-  "Choose type for this business the way FED describes, from Fontshare and nowhere else: https://www.fontshare.com/. Google Fonts and every other source are not permitted. One family is often enough; two works when they are clearly different and each has a job. Satoshi and Switzer are good starting points, not requirements. A Fontshare family the member names in the brief wins.",
+  "Choose type for this business the way FED describes. Fontshare and Google Fonts are both available. One family is often enough; two works when they are clearly different and each has a job. Satoshi and Switzer from Fontshare are good starting points, not requirements. A font the member names in the brief wins.",
   "",
   "Give every family a readable fallback, and size the layout so it holds before the webfont arrives. Two sites set in the same family should still not read the same: weight, size, case, measure and tracking are where a family becomes this business's.",
   "",
@@ -51,19 +51,7 @@ export const DESIGN_GOD = [
   "- It carries the destinations this business actually has, in its own words: \"Book a table\" and \"This week's roast\", not \"Services\" and \"Products\".",
   "- Anything a thumb has to hit is at least 44px, with space around it.",
   "- On a phone, keep those destinations usable. A short row that fits is fine. A menu that opens is fine. JavaScript is available, so the menu is not a checkbox and it does not have to say Menu.",
-  "- On a wide screen the header, the dropdown, and the footer are cloned as the Header, menu and footer section requires. A header that stays on screen gives each section a scroll-margin-top so a heading never lands underneath it.",
-  "",
-  "## Header, menu and footer",
-  "",
-  "The header, the dropdown menu, and the footer are chosen from https://www.awwwards.com/. Pick a beautiful design there for each one. Replicate it and clone it. Structure and spacing must match that original completely.",
-  "",
-  "A second and separate agent compares your header, your dropdown, and your footer to those originals. Only when that agent agrees they are equal in design and spacing is the task complete, and only then do you move on.",
-  "",
-  "Fonts and colors match the aesthetic of the site you are building. Families still come from Fontshare and nowhere else, the palette still comes from this business, and icons still come from Phosphor or Lucide.",
-  "",
-  "## Icons",
-  "",
-  "Every icon comes from one of two free packs, and from nowhere else: Phosphor (https://phosphoricons.com/) or Lucide (https://lucide.dev/icons/). That includes a hamburger menu and every other icon on the page. Do not draw an icon, do not use an emoji as an icon, and do not use any other set.",
+  "- On a wide screen the nav's shape is yours: a bar with the name on the left and links on the right is one answer, not the answer. A header that stays on screen gives each section a scroll-margin-top so a heading never lands underneath it.",
   "",
   "## Anti-slop",
   "",
