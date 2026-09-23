@@ -13,6 +13,7 @@ import type * as admins from "../admins.js";
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
 import type * as conversations from "../conversations.js";
+import type * as crons from "../crons.js";
 import type * as designGate from "../designGate.js";
 import type * as designReview from "../designReview.js";
 import type * as diagnostics from "../diagnostics.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   billing: typeof billing;
   conversations: typeof conversations;
+  crons: typeof crons;
   designGate: typeof designGate;
   designReview: typeof designReview;
   diagnostics: typeof diagnostics;

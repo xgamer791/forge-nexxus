@@ -108,9 +108,24 @@ export default defineSchema({
     holdId: v.optional(v.id("creditHolds")),
     assistantId: v.optional(v.id("messages")),
     events: v.array(v.object({ label: v.string(), at: v.number() })),
+    // Which step of a queued attempt is under way. The platform can lose a
+    // scheduled action across a deploy or a restart, so a step that goes
+    // quiet is started again (onboarding.rescue); and a second copy of a step
+    // -- a restart, a retry, a manual run -- does nothing while the first
+    // still holds it. Only the attempt it names reads it.
+    queueStep: v.optional(v.object({
+      attempt: v.number(),
+      step: v.union(v.literal("research"), v.literal("build")),
+      // Set while one copy of the step holds it.
+      lease: v.optional(v.string()),
+      // The step's last sign of life: queued, claimed, or a heartbeat.
+      beatAt: v.number(),
+      // How many times the rescue has started this attempt's step again.
+      restarts: v.number(),
+    })),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
+  }).index("by_user", ["userId"]).index("by_site", ["siteId"]).index("by_status_updated", ["status", "updatedAt"]),
   // A site is the thing a user builds. Its conversation is the build thread —
   // every prompt about the site lives there — so deleting the site deletes the
   // thread with it. Nothing is seeded: the drawer is empty until one is made.

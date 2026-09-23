@@ -8,7 +8,7 @@ import { requireMemberId } from "./access";
 import { designSource, siteParts, withParts, type BuiltSite } from "./pages";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import type { RequestKind } from "./plans";
-import { failOpenRun, openRun, providerTrace, recordLastSign, type ProviderTrace } from "./diagnostics";
+import { failOpenRun, openRun, providerTrace, recordEvent, recordLastSign, type ProviderTrace } from "./diagnostics";
 import { builtSite, callProvider, chatRoute, describe, parseReply } from "./generate";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
@@ -27,6 +27,17 @@ import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
 const TEXT_BUDGET_MS = 480000;
 const RETRY_FLOOR_MS = 120000;
 const WATCHDOG_MS = 570000;
+// While a queued attempt's step runs, its action beats at least this often.
+// An attempt quiet for longer has lost its step: the platform can drop a
+// scheduled action across a deploy or a restart, and nothing else would ever
+// start it again (see `rescue`).
+const HEARTBEAT_MS = 20000;
+const STEP_QUIET_MS = 90000;
+// How many times a lost step is started again before the attempt stops.
+const MOST_RESTARTS = 3;
+const RESCUE_BATCH = 25;
+const DID_NOT_START = "The build didn’t start, so no credits were used. Try building again";
+const step = v.union(v.literal("research"), v.literal("build"));
 
 async function owned(ctx: MutationCtx | QueryCtx, id: Id<"siteOnboarding">) {
   const userId = await requireMemberId(ctx);
@@ -123,6 +134,7 @@ async function queueOnboardingBuild(
     error: undefined,
     holdId: undefined,
     assistantId: undefined,
+    queueStep: { attempt, step: "research", beatAt: Date.now(), restarts: 0 },
     updatedAt: Date.now(),
   });
   const site = await ctx.db.get(siteId);
@@ -140,6 +152,30 @@ async function queueOnboardingBuild(
   await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id, attempt });
 }
 
+// A step's heartbeat while its action runs. A step the platform killed stops
+// beating and the rescue starts it again; one that is only slow -- a long
+// crawl, a quiet stretch in the worker -- keeps its hold.
+function heartbeat(ctx: ActionCtx, args: { id: Id<"siteOnboarding">; attempt: number; lease: string }) {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const next = () => {
+    timer = setTimeout(async () => {
+      if (stopped) return;
+      try {
+        await ctx.runMutation(internal.onboarding.beat, args);
+      } catch {
+        /* A missed beat is made up by the next. */
+      }
+      if (!stopped) next();
+    }, HEARTBEAT_MS);
+  };
+  next();
+  return () => {
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+  };
+}
+
 // Research has its own action clock. A large reference crawl must not spend
 // the writing action's 480-second budget before the model has even started.
 export const research = internalAction({
@@ -147,6 +183,11 @@ export const research = internalAction({
   handler: async (ctx, { id, attempt }): Promise<void> => {
     const row = await ctx.runQuery(internal.onboarding.load, { id });
     if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
+    // One copy researches an attempt. Any other -- a restart, a retry, a
+    // manual run -- stops here, and nothing it does can end the attempt.
+    const lease = await ctx.runMutation(internal.onboarding.claimStep, { id, attempt, step: "research" });
+    if (!lease) return;
+    const stop = heartbeat(ctx, { id, attempt, lease });
     try {
       const runId = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
       if (!runId) throw new Error("The build activity log is missing");
@@ -172,17 +213,121 @@ export const research = internalAction({
           offer: answers[1] ?? "", audience: answers[2] ?? "", feel: answers[6] ?? "",
           references: answers[8] ?? "",
           ...(saved?.referenceUrl ? { referenceUrl: saved.referenceUrl } : {}),
-        }, trace);
+        }, trace, lease);
       }
-      const current = await ctx.runQuery(internal.onboarding.load, { id });
-      if (current?.status === "queued" && current.attempt === attempt) {
-        await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
-      }
+      await ctx.runMutation(internal.onboarding.researched, { id, attempt, lease });
     } catch (error) {
       const reason = describe(error);
       console.error("Forge design research failed:", reason);
-      await ctx.runMutation(internal.onboarding.expire, { id, attempt, failed: true, reason });
+      await ctx.runMutation(internal.onboarding.stepFailed, { id, attempt, step: "research", lease, reason });
+    } finally {
+      stop();
     }
+  },
+});
+
+// The start of a step. One copy holds it; another copy of a step for the same
+// attempt stops here and changes nothing, and so does a research once its
+// attempt has moved on to the build.
+export const claimStep = internalMutation({
+  args: { id: v.id("siteOnboarding"), attempt: v.number(), step },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, { id, attempt, step }) => {
+    const row = await ctx.db.get(id);
+    if (!row || row.attempt !== attempt || row.status !== "queued") return null;
+    const now = Date.now();
+    const current = row.queueStep?.attempt === attempt ? row.queueStep : undefined;
+    if (current?.lease && now - current.beatAt < STEP_QUIET_MS) return null;
+    if (step === "research" && current?.step === "build") return null;
+    const lease = `${now.toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    await ctx.db.patch(id, { queueStep: { attempt, step, lease, beatAt: now, restarts: current?.restarts ?? 0 }, updatedAt: now });
+    return lease;
+  },
+});
+
+// A sign of life from the copy that holds its step.
+export const beat = internalMutation({
+  args: { id: v.id("siteOnboarding"), attempt: v.number(), lease: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { id, attempt, lease }) => {
+    const row = await ctx.db.get(id);
+    if (!row?.queueStep || row.attempt !== attempt || row.status !== "queued" || row.queueStep.lease !== lease) return false;
+    const now = Date.now();
+    await ctx.db.patch(id, { queueStep: { ...row.queueStep, beatAt: now }, updatedAt: now });
+    return true;
+  },
+});
+
+// The research that holds its step hands the attempt to the build, once.
+export const researched = internalMutation({
+  args: { id: v.id("siteOnboarding"), attempt: v.number(), lease: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { id, attempt, lease }) => {
+    const row = await ctx.db.get(id);
+    if (!row?.queueStep || row.attempt !== attempt || row.status !== "queued" ||
+        row.queueStep.lease !== lease || row.queueStep.step !== "research") return false;
+    const now = Date.now();
+    await ctx.db.patch(id, { queueStep: { attempt, step: "build", beatAt: now, restarts: row.queueStep.restarts }, updatedAt: now });
+    await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
+    return true;
+  },
+});
+
+// A step that failed ends its attempt only while it holds it: queued, or --
+// for the build, past its checkpoint -- building or saving. A copy that lost
+// its hold to another fails alone, and a research can never end a build.
+export const stepFailed = internalMutation({
+  args: { id: v.id("siteOnboarding"), attempt: v.number(), step, lease: v.string(), reason: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { id, attempt, step, lease, reason }) => {
+    const row = await ctx.db.get(id);
+    if (!row || row.attempt !== attempt || row.queueStep?.lease !== lease || row.queueStep.step !== step) return false;
+    const holds = row.status === "queued" || (step === "build" && (row.status === "building" || row.status === "saving"));
+    if (!holds) return false;
+    await stopAttempt(ctx, { id, attempt, failed: true, reason });
+    return true;
+  },
+});
+
+// Every half minute (crons.ts). A queued attempt that has gone quiet lost its
+// step, so the step is started again from the top; the copy claims it first,
+// so a step that turns out to be alive after all is left alone. An attempt
+// that keeps losing its step stops, with nothing charged, before the
+// watchdog would have spoken for it.
+export const rescue = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const quiet = await ctx.db
+      .query("siteOnboarding")
+      .withIndex("by_status_updated", (q) => q.eq("status", "queued").lt("updatedAt", now - STEP_QUIET_MS))
+      .take(RESCUE_BATCH);
+    for (const row of quiet) {
+      const current = row.queueStep?.attempt === row.attempt ? row.queueStep : undefined;
+      const lost = current?.step ?? "research";
+      const restarts = current?.restarts ?? 0;
+      const run = await ctx.db
+        .query("buildRuns")
+        .withIndex("by_onboarding_attempt", (q) => q.eq("onboardingId", row._id).eq("attempt", row.attempt))
+        .first();
+      const quietFor = Math.round((now - row.updatedAt) / 1000);
+      if (restarts >= MOST_RESTARTS) {
+        if (run) {
+          await recordEvent(ctx, { runId: run._id, userId: row.userId, phase: "rescue_stopped", level: "error",
+            label: `The ${lost} went quiet again after ${restarts} restarts, so the build stopped` });
+        }
+        await stopAttempt(ctx, { id: row._id, attempt: row.attempt, failed: true, reason: DID_NOT_START });
+        continue;
+      }
+      await ctx.db.patch(row._id, { queueStep: { attempt: row.attempt, step: lost, beatAt: now, restarts: restarts + 1 }, updatedAt: now });
+      if (run) {
+        await recordEvent(ctx, { runId: run._id, userId: row.userId, phase: "rescued", level: "warn",
+          label: `Started the ${lost} again: nothing had been heard from it for ${quietFor}s` });
+      }
+      await ctx.scheduler.runAfter(0, lost === "build" ? internal.onboarding.build : internal.onboarding.research, { id: row._id, attempt: row.attempt });
+    }
+    return null;
   },
 });
 
@@ -577,10 +722,15 @@ export const strategize = internalAction({
 });
 
 export const checkpoint = internalMutation({
-  args: { id: v.id("siteOnboarding"), attempt: v.number(), storageId: v.optional(v.id("_storage")), saving: v.optional(v.boolean()) },
-  handler: async (ctx, { id, attempt, storageId, saving }) => {
+  args: {
+    id: v.id("siteOnboarding"), attempt: v.number(), storageId: v.optional(v.id("_storage")), saving: v.optional(v.boolean()),
+    // The build's own first checkpoint names its hold: only that copy moves the attempt on.
+    lease: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, attempt, storageId, saving, lease }) => {
     const row = await ctx.db.get(id);
     if (!row || row.attempt !== attempt || !["queued", "building"].includes(row.status)) return false;
+    if (lease !== undefined && (row.status !== "queued" || row.queueStep?.lease !== lease)) return false;
     if (storageId && row.briefStorageId) await ctx.storage.delete(row.briefStorageId);
     const patch = storageId ? { briefStorageId: storageId } : {};
     await ctx.db.patch(id, { ...patch, status: saving ? "saving" : "building", updatedAt: Date.now(),
@@ -740,6 +890,10 @@ export const build = internalAction({
   handler: async (ctx, { id, attempt }): Promise<void> => {
     const row = await ctx.runQuery(internal.onboarding.load, { id });
     if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
+    // One copy builds an attempt; any other stops here (see research).
+    const lease = await ctx.runMutation(internal.onboarding.claimStep, { id, attempt, step: "build" });
+    if (!lease) return;
+    const stop = heartbeat(ctx, { id, attempt, lease });
     const deadline = Date.now() + TEXT_BUDGET_MS;
     // Everything from here on is inside the one catch, so whatever stops the
     // build -- the log as much as the model -- marks the attempt failed now
@@ -780,11 +934,17 @@ export const build = internalAction({
       const file = await ctx.storage.get(storageId);
       if (!file) throw new Error("The build brief could not be read");
       const brief = await file.text();
-      if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, storageId })) {
+      if (!await ctx.runMutation(internal.onboarding.checkpoint, { id, attempt, storageId, lease })) {
         await ctx.storage.delete(storageId);
-        await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
+        // Another copy holds the build: the attempt goes on, and so does its log.
+        const latest = await ctx.runQuery(internal.onboarding.load, { id });
+        if (latest?.attempt !== attempt || !isActiveBuild(latest.status)) {
+          await ctx.runMutation(internal.diagnostics.close, { runId, status: "failed", error: "This build is no longer active" });
+        }
         return;
       }
+      // Past its checkpoint the attempt is building, and the watchdog speaks for it.
+      stop();
       const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
       const savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
       if (!savedDesign || savedDesign.buildEpoch !== epoch || !isMeasured(savedDesign)) throw new Error(NOT_MEASURED);
@@ -840,7 +1000,9 @@ export const build = internalAction({
       // `describe` has already scrubbed keys and cut it to a line.
       const reason = describe(error);
       console.error("Forge onboarding build failed:", reason);
-      await ctx.runMutation(internal.onboarding.expire, { id, attempt, failed: true, reason });
+      await ctx.runMutation(internal.onboarding.stepFailed, { id, attempt, step: "build", lease, reason });
+    } finally {
+      stop();
     }
   },
 });

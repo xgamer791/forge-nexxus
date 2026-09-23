@@ -71,6 +71,9 @@ export const save = internalMutation({
     siteId: v.id("sites"), onboardingId: v.id("siteOnboarding"), attempt: v.number(), epoch: v.number(),
     storageId: v.id("_storage"), referenceUrl: v.string(), prompt: v.string(), inspectedPages: v.number(),
     routes: v.array(v.string()),
+    // The research's hold on its attempt (onboarding.claimStep). A copy that
+    // lost it saves nothing.
+    lease: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const site = await ctx.db.get(args.siteId);
@@ -79,6 +82,7 @@ export const save = internalMutation({
     if (!site || !brief || !uploaded || brief.siteId !== site._id || brief.userId !== site.userId ||
         brief.attempt !== args.attempt || !["queued", "building"].includes(brief.status) ||
         (site.buildEpoch ?? 0) !== args.epoch) return false;
+    if (args.lease !== undefined && brief.queueStep?.lease !== args.lease) return false;
     if (!/^https:\/\//.test(args.referenceUrl) || !args.prompt.trim() || args.prompt.length > PROMPT_LIMIT ||
         args.inspectedPages < 1 || !args.routes.includes("/")) return false;
     await discardSiteDesign(ctx, site._id);
@@ -145,6 +149,7 @@ export async function researchDesign(
   input: { siteId: Id<"sites">; onboardingId: Id<"siteOnboarding">; attempt: number; epoch: number;
     offer: string; audience: string; feel: string; references: string; referenceUrl?: string },
   trace: ProviderTrace,
+  lease?: string,
 ) {
   const { base, token } = workerRoute();
   const uploadUrl = await ctx.runMutation(internal.siteDesign.uploadUrl, { siteId: input.siteId, epoch: input.epoch });
@@ -202,6 +207,7 @@ export async function researchDesign(
     prompt: found.prompt,
     inspectedPages: found.inspectedPages,
     routes: found.routes,
+    ...(lease ? { lease } : {}),
   });
   if (!saved) {
     await ctx.runMutation(internal.siteDesign.discardUpload, { storageId: found.storageId });
