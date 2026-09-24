@@ -7,8 +7,8 @@
 // speak for it once it has gone quiet.
 //
 // This was where the design auditors held a site until they agreed it matched
-// its SkillUI Ultra reference. They are gone: a site lands as it was written.
-// Rows from their time keep their rounds and verdicts (`inspect`).
+// its design reference. They are gone: a site lands as it was written. Rows
+// from their time keep their rounds and verdicts (`inspect`).
 import { v, type ObjectType } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -19,7 +19,6 @@ import { describe, finishThreadBuild } from "./generate";
 import { finishOnboardingBuild, stopAttempt } from "./onboarding";
 import { hasPages, type BuiltSite } from "./pages";
 import { requestKind } from "./plans";
-import { isSkillUI, NOT_EXTRACTED } from "./siteDesign";
 
 const KEEP_GATES = 20;
 
@@ -187,26 +186,13 @@ async function stop(ctx: ActionCtx, id: Id<"designGates">, reason: string) {
   await ctx.runMutation(internal.designGate.fail, { id, reason });
 }
 
-// The site's SkillUI Ultra reference, for the build it was extracted for.
-// Anything else -- none, an older kind, or one from before a rebuild -- is not
-// one.
-async function referenceFor(ctx: ActionCtx, gate: Gate) {
-  const reference = await ctx.runQuery(internal.siteDesign.forSite, { siteId: gate.siteId });
-  return reference && reference.buildEpoch === gate.epoch && isSkillUI(reference) ? reference : null;
-}
-
-// The landing itself: the pictures, then the version. A site whose SkillUI
-// Ultra reference is no longer the one it was built from does not land.
+// The landing itself: the pictures, then the version.
 export const check = internalAction({
   args: { id: v.id("designGates") },
   handler: async (ctx, { id }): Promise<null> => {
     const gate = await ctx.runMutation(internal.designGate.claim, { id });
     if (!gate) return null;
     const trace = providerTrace(ctx, gate.runId, gate.userId);
-    if (!(await referenceFor(ctx, gate))) {
-      await stop(ctx, id, NOT_EXTRACTED);
-      return null;
-    }
     if (!(await ctx.runMutation(internal.designGate.passed, { id }))) return null;
     try {
       await land(ctx, trace, gate, siteOf(gate));

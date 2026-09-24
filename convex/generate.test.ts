@@ -3,7 +3,6 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { answerDesignResearch, DESIGN_PROMPT, insertDesignPackage } from "./designWorkerMock";
 import { parseReply } from "./generate";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -35,13 +34,12 @@ async function createBuilder(t: ReturnType<typeof fresh>, email: string) {
 }
 
 // A paid thread cannot take its first build through generate.run. These tests
-// cover the edit path, which needs a saved page and a SkillUI Ultra design reference.
+// cover the edit path, which needs a saved page.
 async function seedBuilt(
   t: ReturnType<typeof fresh>,
   userId: Id<"users">,
   siteId: Id<"sites">,
   html = PAGE,
-  withPackage = true,
 ) {
   await t.run(async (ctx) => {
     const versionId = await ctx.db.insert("siteVersions", {
@@ -53,7 +51,6 @@ async function seedBuilt(
       createdAt: Date.now(),
     });
     await ctx.db.patch(siteId, { currentVersionId: versionId });
-    if (withPackage) await insertDesignPackage(ctx, userId, siteId);
   });
 }
 
@@ -76,12 +73,8 @@ function stubProvider(respond: (body: any, call: number) => Response) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
-      // Design research, and the memory note that follows a saved turn, are
-      // not the builder. A build is saved as it was written.
-      const audit = await answerDesignResearch(url, init, async () => {
-        throw new Error("This test does not research a design reference");
-      });
-      if (audit) return audit;
+      // The memory note that follows a saved turn is not the builder. A build
+      // is saved as it was written.
       const body = JSON.parse(String(init.body));
       const system = (body.messages ?? []).filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
       if (/maintain Forge's memory/.test(system)) {
@@ -146,7 +139,7 @@ describe("parseReply", () => {
 });
 
 describe("generate.run", () => {
-  test("a paid thread edits a saved site, charges the edit cost, and follows the SkillUI Ultra design reference", async () => {
+  test("a paid thread edits a saved site and charges the edit cost, with no design reference to follow", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const { siteId, conversationId } = await member.as.mutation(api.sites.create, { name: "Bakery on Main" });
@@ -160,25 +153,13 @@ describe("generate.run", () => {
     expect(await member.as.query(api.messages.list, { conversationId })).toEqual([]);
     expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(OPENING);
 
-    await seedBuilt(t, member.userId, siteId, PAGE, false);
-    await expect(
-      member.as.action(api.generate.run, { conversationId, prompt }),
-    ).rejects.toThrow("This site needs a new design reference before it can change. Rebuild the site to make one, then try again.");
-
-    // A package from the retired measured reference is not a SkillUI Ultra one.
-    const legacy = await t.run(async (ctx) => ctx.db.insert("siteDesignPackages", {
-      userId: member.userId, siteId, storageId: await ctx.storage.store(new Blob(["{}"])), referenceUrl: "https://harbor-reference.example/",
-      prompt: "MEASURED DESIGN REFERENCE", inspectedPages: 1, buildEpoch: 0, createdAt: Date.now(), format: "forge-measured-v1", routes: ["/"],
+    // A saved page is all an edit needs. A package the retired design worker
+    // saved for the site is never read.
+    await seedBuilt(t, member.userId, siteId, PAGE);
+    await t.run(async (ctx) => ctx.db.insert("siteDesignPackages", {
+      userId: member.userId, siteId, storageId: await ctx.storage.store(new Blob(["PK"])), referenceUrl: "https://harbor-reference.example/",
+      prompt: "RETIRED DESIGN REFERENCE", inspectedPages: 1, buildEpoch: 0, createdAt: Date.now(), format: "skillui-ultra-v1", routes: ["/"],
     }));
-    await expect(
-      member.as.action(api.generate.run, { conversationId, prompt }),
-    ).rejects.toThrow("This site needs a new design reference before it can change.");
-    expect(calls).toHaveLength(0);
-
-    await t.run(async (ctx) => {
-      await ctx.db.delete(legacy);
-      await insertDesignPackage(ctx, member.userId, siteId);
-    });
     const { messageId } = await member.as.action(api.generate.run, { conversationId, prompt });
     await drain(t);
 
@@ -209,11 +190,12 @@ describe("generate.run", () => {
     expect(calls[0].headers.authorization).toBe(`Bearer ${KEY}`);
     expect(calls[0].body.model).toBe("forge-test");
     const sent = calls[0].body.messages;
-    expect(sent.map((m: any) => m.role)).toEqual(["system", "system", "system", "system", "system", "system", "user"]);
-    expect(sent[3].content).toContain("saved SkillUI Ultra design reference");
-    expect(sent[4].content).toBe(DESIGN_PROMPT);
-    expect(sent[5].content).toContain(PAGE);
-    expect(sent[6].content).toBe(prompt);
+    expect(sent.map((m: any) => m.role)).toEqual(["system", "system", "system", "system", "system", "user"]);
+    expect(sent[3].content).toContain("You are Forge, the website-building agent");
+    expect(sent[3].content).not.toContain("SkillUI");
+    expect(sent[4].content).toContain(PAGE);
+    expect(sent[5].content).toBe(prompt);
+    expect(JSON.stringify(sent)).not.toContain("RETIRED DESIGN REFERENCE");
   });
 
   test("a prompt against a built site is an edit: the current page goes along and the edit cost is charged", async () => {
@@ -237,7 +219,6 @@ describe("generate.run", () => {
       "Add opening hours",
     ]);
     expect(second.find((m: any) => m.content.includes("currently looks like this"))?.content).toContain(PAGE);
-    expect(second.find((m: any) => m.content === DESIGN_PROMPT)).toBeTruthy();
 
     expect((await member.as.query(api.sites.currentHtml, { siteId }))?.html).toBe(withScreenFloor(PAGE_TWO));
     expect(await t.run((ctx) => ctx.db.query("siteVersions").collect())).toHaveLength(3);
@@ -275,7 +256,7 @@ describe("generate.run", () => {
       t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "A bakery" }),
     ).rejects.toThrow("Complete the website questions before your first build");
 
-    // Once a page and its SkillUI Ultra design reference are saved, the next turn edits it.
+    // Once a page is saved, the next turn edits it.
     await seedBuilt(t, member.userId, siteId);
     await t.mutation(internal.generate.begin, { userId: member.userId, conversationId, prompt: "Add hours" });
     expect(await pendingBody(conversationId)).toBe("Updating your site\u2026");

@@ -3,8 +3,8 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { answerDesignResearch, crewCall, partReply, storeDesignPackage } from "./designWorkerMock";
-import { QUESTIONS } from "./onboardingQuestions";
+import { crewCall, partReply } from "./crewMock";
+import { QUESTION_SET, QUESTIONS } from "./onboardingQuestions";
 import schema from "./schema";
 
 // A queued build whose step the platform lost -- a deploy or a restart can
@@ -19,18 +19,18 @@ function makeTest() {
 }
 type T = ReturnType<typeof makeTest>;
 
+// No choice of what visitors can do, so the site is the home page alone.
 const ANSWERS = [
   "Harbor Roasters",
-  "Small-batch coffee roasted on the pier",
-  "Neighbours and visitors in Port Ellen",
-  "Contact you",
+  "Small-batch coffee roasted on the pier, for neighbours and visitors in Port Ellen",
   "",
-  "Collect inquiries",
+  "Pier Roast 250g — £11",
+  "",
+  "",
+  "",
   "Warm and welcoming",
   "",
   "",
-  "",
-  "Pier Roast 250g — £11",
 ];
 const PNG = btoa("not really a png, but bytes are bytes");
 const json = (payload: unknown) => new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
@@ -44,18 +44,14 @@ afterEach(() => {
   delete process.env.AI_IMAGE_API_KEY;
 });
 
-// The design worker and the crew's builders, counted: a one-page site is one
-// crew of four builders.
+// The crew's builders, counted: a one-page site is one crew of four builders.
 function stubProviders(t: T) {
   process.env.AI_BASE_URL = "https://api.deepseek.com/v1";
   process.env.AI_API_KEY = "sk-test-secret-key";
   process.env.AI_MODEL = "deepseek-flash";
   process.env.AI_IMAGE_API_KEY = "img-test-secret-key";
-  const count = { research: 0, builds: 0 };
+  const count = { builds: 0 };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
-    if (url.endsWith("/research")) count.research += 1;
-    const worker = await answerDesignResearch(url, init, () => storeDesignPackage(t));
-    if (worker) return worker;
     if (/generateContent/.test(url)) {
       return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: PNG } }] } }] });
     }
@@ -83,7 +79,7 @@ async function queued(t: T) {
   const member = t.withIdentity({ subject: `${userId}|${sessionId}` });
   const id = await member.mutation(api.onboarding.start, {});
   for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index] ?? "", advance: true });
+    await member.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index] ?? "", advance: true, questionSet: QUESTION_SET });
   }
   await member.mutation(api.onboarding.submit, { id });
   return { id, userId };
@@ -124,7 +120,7 @@ describe("a queued build the platform lost", () => {
     const { id } = await queued(t);
     await dropScheduled(t);
     vi.useRealTimers();
-    expect(count.research).toBe(0);
+    expect(count.builds).toBe(0);
 
     // Nothing to rescue while the attempt is fresh.
     await t.mutation(internal.onboarding.rescue, {});
@@ -146,7 +142,7 @@ describe("a queued build the platform lost", () => {
     await t.finishAllScheduledFunctions(() => {});
     const done = await row(t, id);
     expect(done.status).toBe("complete");
-    expect(count).toEqual({ research: 1, builds: 4 });
+    expect(count).toEqual({ builds: 4 });
     const events = await t.run(async (ctx) => (await ctx.db.query("buildEvents").collect()).map((event) => event.phase));
     expect(events).toContain("rescued");
   });
@@ -201,15 +197,14 @@ describe("one copy of a step at a time", () => {
       t.action(internal.onboarding.research, { id, attempt: 1 }),
       t.action(internal.onboarding.research, { id, attempt: 1 }),
     ]);
-    expect(count.research).toBe(1);
     expect(await jobs(t, "pending")).toEqual(["onboarding:build"]);
     const after = await row(t, id);
     expect(after.status).toBe("queued");
     expect(after.queueStep).toMatchObject({ step: "build" });
     // A manual run once the attempt has moved on changes nothing.
     await t.action(internal.onboarding.research, { id, attempt: 1 });
-    expect(count.research).toBe(1);
     expect(await jobs(t, "pending")).toEqual(["onboarding:build"]);
+    expect(count.builds).toBe(0);
   });
 
   test("a research that runs while another holds the step does nothing", async () => {
@@ -221,7 +216,7 @@ describe("one copy of a step at a time", () => {
     const held = await t.mutation(internal.onboarding.claimStep, { id, attempt: 1, step: "research" });
     expect(held).toEqual(expect.any(String));
     await t.action(internal.onboarding.research, { id, attempt: 1 });
-    expect(count.research).toBe(0);
+    expect(count.builds).toBe(0);
     expect((await row(t, id)).queueStep?.lease).toBe(held);
     expect(await jobs(t, "pending")).toEqual([]);
   });
@@ -243,7 +238,7 @@ describe("one copy of a step at a time", () => {
     expect((await row(t, id)).status).toBe("building");
 
     // The stray research fails, the way tonight's did, while the build runs.
-    const reason = "Design research worker answered 403";
+    const reason = "The sample business came back unreadable";
     expect(await t.mutation(internal.onboarding.stepFailed, { id, attempt: 1, step: "research", lease: research, reason })).toBe(false);
     expect(await t.mutation(internal.onboarding.stepFailed, { id, attempt: 1, step: "research", lease: build, reason })).toBe(false);
     await t.action(internal.onboarding.research, { id, attempt: 1 });
@@ -256,20 +251,16 @@ describe("one copy of a step at a time", () => {
     expect((await row(t, id)).status).toBe("failed");
   });
 
-  test("a research that lost its hold saves no design reference", async () => {
+  test("a research that lost its hold hands nothing on to the build", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const t = makeTest();
     stubProviders(t);
     const { id } = await queued(t);
     await dropScheduled(t);
     const held = (await t.mutation(internal.onboarding.claimStep, { id, attempt: 1, step: "research" }))!;
-    const { siteId } = await row(t, id);
-    const storageId = await storeDesignPackage(t);
-    const reference = {
-      siteId: siteId!, onboardingId: id, attempt: 1, epoch: 0, storageId, referenceUrl: "https://harbor-reference.example/",
-      prompt: "Measured design reference", inspectedPages: 1, routes: ["/"],
-    };
-    expect(await t.mutation(internal.siteDesign.save, { ...reference, lease: "lost-hold" })).toBe(false);
-    expect(await t.mutation(internal.siteDesign.save, { ...reference, lease: held })).toBe(true);
+    expect(await t.mutation(internal.onboarding.researched, { id, attempt: 1, lease: "lost-hold" })).toBe(false);
+    expect(await jobs(t, "pending")).toEqual([]);
+    expect(await t.mutation(internal.onboarding.researched, { id, attempt: 1, lease: held })).toBe(true);
+    expect(await jobs(t, "pending")).toEqual(["onboarding:build"]);
   });
 });
