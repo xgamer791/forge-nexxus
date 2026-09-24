@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { QUESTIONS } from "./onboardingQuestions";
+import { QUESTION_SET, QUESTIONS } from "./onboardingQuestions";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -76,6 +76,7 @@ async function seedReadySite(
       userId,
       siteId,
       answers,
+      questionSet: QUESTION_SET,
       step: 9,
       revision: 2,
       assets: [],

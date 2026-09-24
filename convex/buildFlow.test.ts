@@ -9,6 +9,7 @@ import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
 import { QUESTIONS } from "./onboardingQuestions";
+import { fillBrief, HARBOR_ANSWERS } from "./testBrief";
 import { siteParts } from "./pages";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -44,19 +45,7 @@ const starter = planFor("starter");
 const OPENING = (free.monthlyCredits ?? 0) + free.signupCredits + starter.monthlyCredits!;
 const KEY = "sk-test-secret-key";
 const IMAGE_KEY = "img-test-secret-key";
-const ANSWERS = [
-  "Harbor Roasters",
-  "Small-batch coffee roasted on the pier",
-  "Neighbours and visitors in Port Ellen",
-  "Contact you",
-  "",
-  "Collect inquiries",
-  "Warm and welcoming",
-  "",
-  "",
-  "",
-  "Pier Roast 250g — £11\nDecaf Harbour 250g — £12\nSubscription, a bag a fortnight — £20 a month",
-];
+const ANSWERS = [...HARBOR_ANSWERS];
 
 const page = (title: string) =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title><style>body{margin:0}</style></head>` +
@@ -137,9 +126,7 @@ const ONE_PAGE = "Built your one-page website.";
 
 async function answerEverything(member: Awaited<ReturnType<typeof createBuilder>>) {
   const id = await member.as.mutation(api.onboarding.start, {});
-  for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.as.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index], advance: true });
-  }
+  await fillBrief(member.as, id, ANSWERS);
   return id;
 }
 
@@ -938,9 +925,10 @@ describe("a rebuild while testing is a new San Antonio business", () => {
       if (/Invent one small, independent business/.test(last)) {
         asked.push(last);
         return json({ choices: [{ message: { content: JSON.stringify({
-          name: "Lupita's Paletas", offer: "Fruit paletas made each morning.", audience: "Families in Southtown, San Antonio",
-          goal: "Buy something", difference: "Mango con chile.", features: ["Sell products", "Made up"],
-          brand: "", references: "", content: "1 S Alamo St, San Antonio, TX. (210) 555-0100.", catalogue: "Mango paleta — $4",
+          name: "Lupita's Paletas", offer: "Fruit paletas made each morning for families in Southtown, San Antonio.",
+          features: ["Buy products"], catalogue: "Mango paleta — $4",
+          contact: "1 S Alamo St, San Antonio, TX. (210) 555-0100.", online: "",
+          loved: "Mango con chile.", brand: "", references: "",
         }) } }] });
       }
       asking = crewCall(body);
@@ -959,7 +947,7 @@ describe("a rebuild while testing is a new San Antonio business", () => {
     expect(row.error).toBeUndefined();
     expect(row.status).toBe("complete");
     expect(row.answers[0]).toBe("Lupita's Paletas");
-    expect(row.answers[5]).toBe("Sell products");
+    expect(row.answers[2]).toBe("Buy products");
     expect(row.events.map((event) => event.label).slice(0, 2)).toEqual([
       "Rebuilding as a new San Antonio business",
       expect.stringMatching(/^Answers replaced with Lupita's Paletas in /),
@@ -987,9 +975,9 @@ describe("a rebuild while testing is a new San Antonio business", () => {
       const body = JSON.parse(String(init.body));
       if (/Invent one small, independent business/.test(body.messages.at(-1).content)) {
         return json({ choices: [{ message: { content: JSON.stringify({
-          name: "Tamales Doña Rosa", offer: "Pork and bean tamales by the dozen.", audience: "The West Side, San Antonio",
-          goal: "Buy something", difference: "Masa ground daily.", features: ["Sell products"], brand: "", references: "",
-          content: "(210) 555-0142", catalogue: "Dozen pork tamales — $18",
+          name: "Tamales Doña Rosa", offer: "Pork and bean tamales by the dozen for the West Side, San Antonio.",
+          features: ["Buy products"], catalogue: "Dozen pork tamales — $18",
+          contact: "(210) 555-0142", online: "", loved: "Masa ground daily.", brand: "", references: "",
         }) } }] });
       }
       asking = crewCall(body);

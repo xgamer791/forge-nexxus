@@ -5,6 +5,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { answerDesignResearch, crewCall, partReply, storeDesignPackage } from "./designWorkerMock";
 import { QUESTIONS } from "./onboardingQuestions";
+import { fillBrief, HARBOR_ANSWERS } from "./testBrief";
 import schema from "./schema";
 
 // A queued build whose step the platform lost -- a deploy or a restart can
@@ -19,19 +20,7 @@ function makeTest() {
 }
 type T = ReturnType<typeof makeTest>;
 
-const ANSWERS = [
-  "Harbor Roasters",
-  "Small-batch coffee roasted on the pier",
-  "Neighbours and visitors in Port Ellen",
-  "Contact you",
-  "",
-  "Collect inquiries",
-  "Warm and welcoming",
-  "",
-  "",
-  "",
-  "Pier Roast 250g — £11",
-];
+const ANSWERS = [...HARBOR_ANSWERS];
 const PNG = btoa("not really a png, but bytes are bytes");
 const json = (payload: unknown) => new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
 
@@ -82,9 +71,7 @@ async function queued(t: T) {
   await t.mutation(internal.billing.grantPlan, { userId, plan: "starter" });
   const member = t.withIdentity({ subject: `${userId}|${sessionId}` });
   const id = await member.mutation(api.onboarding.start, {});
-  for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index] ?? "", advance: true });
-  }
+  await fillBrief(member, id, ANSWERS);
   await member.mutation(api.onboarding.submit, { id });
   return { id, userId };
 }
@@ -186,7 +173,8 @@ describe("a queued build the platform lost", () => {
     expect(stopped.error).toBe("The build didn’t start, so no credits were used. Try building again. Your answers are saved.");
     const holds = await t.run(async (ctx) => await ctx.db.query("creditHolds").withIndex("by_user", (q) => q.eq("userId", userId)).collect());
     expect(holds).toEqual([]);
-    expect(await jobs(t, "pending")).toEqual([]);
+    // A failed build may still notify support; that is not part of the queue.
+    expect((await jobs(t, "pending")).filter((name) => !name.startsWith("support:"))).toEqual([]);
   });
 });
 

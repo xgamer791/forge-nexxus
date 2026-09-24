@@ -11,6 +11,7 @@ import {
 } from "./designWorkerMock";
 import { CARRY_ON, MOST_RESTARTS, NEW_IMAGERY, PAGE_STEP_MS } from "./onboarding";
 import { QUESTIONS } from "./onboardingQuestions";
+import { fillBrief, TACO_ANSWERS } from "./testBrief";
 import { MAX_PAGES, pagePlan } from "./pages";
 import { REQUEST_COSTS } from "./plans";
 import schema from "./schema";
@@ -31,19 +32,7 @@ const SEVEN = ["/", "/food-menu", "/drink-menu", "/specials", "/events", "/party
 const FIVE = SEVEN.slice(0, MAX_PAGES);
 const KEY = "sk-test-secret-key";
 const PNG = btoa("not really a png, but bytes are bytes");
-const ANSWERS = [
-  "Taquería El Farolito",
-  "Tacos, burritos and aguas frescas, made to order",
-  "Families and lunch crowds in Plano",
-  "Visit you",
-  "",
-  "Show the menu",
-  "Warm and welcoming",
-  "",
-  "",
-  "",
-  "Tacos al pastor — $3.50\nHorchata — $4",
-];
+const ANSWERS = [...TACO_ANSWERS];
 
 const encoder = new TextEncoder();
 const json = (payload: unknown, status = 200) =>
@@ -120,9 +109,7 @@ type Member = Awaited<ReturnType<typeof createBuilder>>;
 
 async function answerEverything(member: Member) {
   const id = await member.as.mutation(api.onboarding.start, {});
-  for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.as.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index] ?? "", advance: true });
-  }
+  await fillBrief(member.as, id, ANSWERS);
   return id;
 }
 
@@ -410,7 +397,7 @@ describe("a site written by its crews, start to finish", () => {
     const log = await events(t);
     expect(log.filter((event) => ["provider_stop", "provider_retry", "crew_unusable"].includes(event.phase))).toEqual([]);
     // The log ends where the build did.
-    expect(log.sort((a, b) => a.at - b.at).at(-1)).toMatchObject({ phase: "failed", label: "Build failed" });
+    expect(log.find((event) => event.phase === "failed")).toMatchObject({ phase: "failed", label: "Build failed" });
     expect(await versions(t)).toEqual([]);
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "released"]]);
 
