@@ -14,6 +14,7 @@ import {
 } from "./designCheck";
 import { parseReply, parseShellReply } from "./generate";
 import { QUESTIONS } from "./onboardingQuestions";
+import { fillBrief, HARBOR_ANSWERS } from "./testBrief";
 import schema from "./schema";
 
 // The second agent. A build's header, dropdown menu and footer go to a
@@ -39,25 +40,11 @@ async function createBuilder(t: T, email: string) {
 }
 type Member = Awaited<ReturnType<typeof createBuilder>>;
 
-const ANSWERS = [
-  "Harbor Roasters",
-  "Small-batch coffee roasted on the pier",
-  "Neighbours and visitors in Port Ellen",
-  "Contact you",
-  "",
-  "Collect inquiries",
-  "Warm and welcoming",
-  "",
-  "",
-  "",
-  "Pier Roast 250g — £11",
-];
+const ANSWERS = [...HARBOR_ANSWERS];
 
 async function answerEverything(member: Member) {
   const id = await member.as.mutation(api.onboarding.start, {});
-  for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.as.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index], advance: true });
-  }
+  await fillBrief(member.as, id, ANSWERS);
   return id;
 }
 

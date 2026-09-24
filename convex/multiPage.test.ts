@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import { answerDesignResearch, crewCall, resetDesignRoutes, setDesignRoutes, storeDesignPackage, type CrewCall } from "./designWorkerMock";
 import { builtSite, parseReply } from "./generate";
-import { QUESTIONS } from "./onboardingQuestions";
+import { QUESTION_SET, QUESTIONS } from "./onboardingQuestions";
 import { serializeSite } from "./pages";
 import schema from "./schema";
 
@@ -194,7 +194,7 @@ describe("parseReply reads a site in blocks", () => {
 async function onboarded(t: T, member: Awaited<ReturnType<typeof createBuilder>>) {
   const id = await member.as.mutation(api.onboarding.start, {});
   for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.as.mutation(api.onboarding.save, { id, index, answer: index === 0 ? "Harbor Roasters" : "Coffee on the pier", advance: true });
+    await member.as.mutation(api.onboarding.save, { id, index, answer: index === 0 ? "Harbor Roasters" : "Coffee on the pier", advance: true, questionSet: QUESTION_SET });
   }
   await member.as.mutation(api.onboarding.submit, { id });
   await t.finishAllScheduledFunctions(() => {});
