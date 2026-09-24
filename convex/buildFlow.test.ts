@@ -4,11 +4,11 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { answerDesignResearch, crewCall, DESIGN_PROMPT, storeDesignPackage, type CrewCall } from "./designWorkerMock";
+import { crewCall, type CrewCall } from "./crewFixture";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
-import { QUESTIONS } from "./onboardingQuestions";
+import { QUESTION_SET, QUESTIONS } from "./onboardingQuestions";
 import { siteParts } from "./pages";
 import { REQUEST_COSTS, planFor } from "./plans";
 import schema from "./schema";
@@ -47,15 +47,14 @@ const IMAGE_KEY = "img-test-secret-key";
 const ANSWERS = [
   "Harbor Roasters",
   "Small-batch coffee roasted on the pier",
+  "Send you a message",
+  "Pier Roast 250g — £11\nDecaf Harbour 250g — £12\nSubscription, a bag a fortnight — £20 a month",
   "Neighbours and visitors in Port Ellen",
-  "Contact you",
   "",
-  "Collect inquiries",
+  "",
   "Warm and welcoming",
   "",
   "",
-  "",
-  "Pier Roast 250g — £11\nDecaf Harbour 250g — £12\nSubscription, a bag a fortnight — £20 a month",
 ];
 
 const page = (title: string) =>
@@ -93,8 +92,6 @@ function stubProviders(build: (call: number) => Response) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
-      const research = await answerDesignResearch(url, init, () => storeDesignPackage(active));
-      if (research) return research;
       const body = JSON.parse(String(init.body));
       calls.push({ url, body });
       if (/generateContent/.test(url)) {
@@ -138,7 +135,7 @@ const ONE_PAGE = "Built your one-page website.";
 async function answerEverything(member: Awaited<ReturnType<typeof createBuilder>>) {
   const id = await member.as.mutation(api.onboarding.start, {});
   for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.as.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index], advance: true });
+    await member.as.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index], advance: true, questionSet: QUESTION_SET });
   }
   return id;
 }
@@ -195,8 +192,7 @@ describe("a brand new build, start to finish", () => {
     // A second press while the build is queued must not queue a second build.
     await member.as.mutation(api.onboarding.submit, { id });
     const queued = await scheduled(t);
-    expect(queued.filter((job) => job.name === "onboarding:research")).toHaveLength(1);
-    expect(queued.filter((job) => job.name === "onboarding:build")).toHaveLength(0);
+    expect(queued.filter((job) => job.name === "onboarding:build")).toHaveLength(1);
     expect(queued.filter((job) => job.name === "onboarding:expire")).toHaveLength(1);
 
     await drain(t);
@@ -220,7 +216,7 @@ describe("a brand new build, start to finish", () => {
     const buildCall = providers.chatCalls().find((call) => call.body.messages.some((m: any) => /website-build-brief\.md/.test(m.content)))!;
     expect(buildCall).toBeDefined();
     expect(buildCall.body.model).toBe("forge-test");
-    expect(buildCall.body.messages.some((m: any) => m.content === DESIGN_PROMPT)).toBe(true);
+    expect(buildCall.body.messages.some((m: any) => /Design every part from the brief and from DESIGN_GOD/.test(m.content))).toBe(true);
     const briefText = briefOf(buildCall);
     expect(briefText).toContain("Harbor Roasters");
     expect(briefText).toContain("Small-batch coffee roasted on the pier");
@@ -266,8 +262,7 @@ describe("a brand new build, start to finish", () => {
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(
       expect.arrayContaining([
-        "queued", "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
-        "design_loaded", "held", "draft_start", "crew_page", "crew_build", "provider_request", "provider_response", "crew_built",
+        "queued", "held", "draft_start", "crew_page", "crew_build", "provider_request", "provider_response", "crew_built",
         "crew_page_done", "draft_done", "images", "images_done", "saving", "complete",
       ]),
     );
@@ -331,7 +326,7 @@ describe("a brand new build, start to finish", () => {
     });
 
     // Nothing re-queues on its own: the failed attempt leaves no build behind.
-    expect((await scheduled(t)).filter((job) => (job.name === "onboarding:build" || job.name === "onboarding:research") && job.state !== "success")).toEqual([]);
+    expect((await scheduled(t)).filter((job) => job.name === "onboarding:build" && job.state !== "success")).toEqual([]);
 
     // Try building again is one more attempt, not a loop.
     dropping = false;
@@ -536,7 +531,7 @@ describe("a rebuild, start to finish", () => {
       canRebuild: false,
       draft: expect.objectContaining({ id, status: "queued" }),
     });
-    expect((await scheduled(t)).filter((job) => job.name === "onboarding:research" && job.state !== "success")).toHaveLength(1);
+    expect((await scheduled(t)).filter((job) => job.name === "onboarding:build" && job.state !== "success")).toHaveLength(1);
 
     await drain(t);
 
@@ -599,7 +594,7 @@ describe("a rebuild, start to finish", () => {
     await t.mutation(internal.onboarding.expire, { id, attempt: 2 });
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ status: "complete", attempt: 2 });
     expect(await versions(t)).toHaveLength(1);
-    expect((await scheduled(t)).filter((job) => (job.name === "onboarding:build" || job.name === "onboarding:research") && job.state !== "success")).toEqual([]);
+    expect((await scheduled(t)).filter((job) => job.name === "onboarding:build" && job.state !== "success")).toEqual([]);
   });
 
   test("a thread build the platform stopped is failed by its watchdog, and a finished one is left alone", async () => {
@@ -927,8 +922,6 @@ describe("a rebuild while testing is a new San Antonio business", () => {
     const asked: string[] = [];
     const calls: Call[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
-      const research = await answerDesignResearch(url, init, () => storeDesignPackage(t));
-      if (research) return research;
       const body = JSON.parse(String(init.body));
       calls.push({ url, body });
       if (/generateContent/.test(url)) {
@@ -938,9 +931,10 @@ describe("a rebuild while testing is a new San Antonio business", () => {
       if (/Invent one small, independent business/.test(last)) {
         asked.push(last);
         return json({ choices: [{ message: { content: JSON.stringify({
-          name: "Lupita's Paletas", offer: "Fruit paletas made each morning.", audience: "Families in Southtown, San Antonio",
-          goal: "Buy something", difference: "Mango con chile.", features: ["Sell products", "Made up"],
-          brand: "", references: "", content: "1 S Alamo St, San Antonio, TX. (210) 555-0100.", catalogue: "Mango paleta — $4",
+          name: "Lupita's Paletas", offer: "Fruit paletas made each morning in Southtown, San Antonio.",
+          features: ["Buy products"], catalogue: "Mango paleta — $4",
+          contact: "1 S Alamo St, San Antonio, TX. (210) 555-0100.", online: "", loved: "Mango con chile.",
+          brand: "", references: "",
         }) } }] });
       }
       asking = crewCall(body);
@@ -959,7 +953,7 @@ describe("a rebuild while testing is a new San Antonio business", () => {
     expect(row.error).toBeUndefined();
     expect(row.status).toBe("complete");
     expect(row.answers[0]).toBe("Lupita's Paletas");
-    expect(row.answers[5]).toBe("Sell products");
+    expect(row.answers[2]).toBe("Buy products");
     expect(row.events.map((event) => event.label).slice(0, 2)).toEqual([
       "Rebuilding as a new San Antonio business",
       expect.stringMatching(/^Answers replaced with Lupita's Paletas in /),
@@ -979,17 +973,15 @@ describe("a rebuild while testing is a new San Antonio business", () => {
     const admin = await createBuilder(t, "lifewirecg@gmail.com");
     const member = await createBuilder(t, "m@example.com");
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
-      const research = await answerDesignResearch(url, init, () => storeDesignPackage(t));
-      if (research) return research;
       if (/generateContent/.test(url)) {
         return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: PNG } }] } }] });
       }
       const body = JSON.parse(String(init.body));
       if (/Invent one small, independent business/.test(body.messages.at(-1).content)) {
         return json({ choices: [{ message: { content: JSON.stringify({
-          name: "Tamales Doña Rosa", offer: "Pork and bean tamales by the dozen.", audience: "The West Side, San Antonio",
-          goal: "Buy something", difference: "Masa ground daily.", features: ["Sell products"], brand: "", references: "",
-          content: "(210) 555-0142", catalogue: "Dozen pork tamales — $18",
+          name: "Tamales Doña Rosa", offer: "Pork and bean tamales by the dozen on the West Side, San Antonio.",
+          features: ["Buy products"], catalogue: "Dozen pork tamales — $18",
+          contact: "(210) 555-0142", online: "", loved: "Masa ground daily.", brand: "", references: "",
         }) } }] });
       }
       asking = crewCall(body);

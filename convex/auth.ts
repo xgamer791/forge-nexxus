@@ -152,8 +152,6 @@ export async function adoptGuestData(
   await Promise.all(uploads.map(row => ctx.db.patch(row._id, { userId })));
   const images = await ctx.db.query("siteImages").withIndex("by_user", q => q.eq("userId", guestId)).collect();
   await Promise.all(images.map(row => ctx.db.patch(row._id, { userId })));
-  const designPackages = await ctx.db.query("siteDesignPackages").withIndex("by_user", q => q.eq("userId", guestId)).collect();
-  await Promise.all(designPackages.map(row => ctx.db.patch(row._id, { userId })));
   const buildRuns = await ctx.db.query("buildRuns").withIndex("by_user", q => q.eq("userId", guestId)).collect();
   await Promise.all(buildRuns.map(row => ctx.db.patch(row._id, { userId })));
   const buildEvents = await ctx.db.query("buildEvents").withIndex("by_user", q => q.eq("userId", guestId)).collect();

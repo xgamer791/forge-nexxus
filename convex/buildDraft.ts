@@ -1,9 +1,8 @@
 // A first build or a rebuild, written a page at a time by a crew.
 //
-// The design worker's page discovery agent chose the pages -- five at most --
-// and SkillUI Ultra extracted the reference's design (siteDesign.ts). Each page
-// is then written by a crew of its own (crew.ts): a builder for the header, two
-// for the body and one for the footer, working side by side to the reference.
+// A first build and a rebuild write the home page. Each page is written by a
+// crew of its own (crew.ts): a builder for the header, two for the body and
+// one for the footer, designing from the brief.
 // A page is kept once each of its parts has come back whole and clean, and
 // the next page's crew starts only then.
 //
@@ -52,8 +51,8 @@ import { imageRoute } from "./images";
 import {
   designHash, heartbeat, MOST_RESTARTS, NEW_IMAGERY, PAGE_FLOOR_MS, PAGE_STEP_MS, rebuildNote, RESCUE_BATCH, STEP_QUIET_MS, stopAttempt,
 } from "./onboarding";
+import { assertDesignRules } from "./designRules";
 import { designSource, pagePlan, siteParts } from "./pages";
-import { assertDesignRules, isSkillUI } from "./siteDesign";
 import type { StreamStats } from "./stream";
 
 // Steps in a row that may finish nothing -- no part, and nothing more of one --
@@ -82,8 +81,7 @@ type Draft = Doc<"buildDrafts">;
 type Stop = { reason: string; phase: string; reasoningChars?: number; replyChars?: number };
 
 // The page a step works on: the home page first, which writes the shell with
-// it, then the rest in the order they were discovered. Null once every page
-// is kept.
+// it, then the rest in order. Null once every page is kept.
 export function nextPage(draft: Pick<Draft, "routes" | "pages" | "shell">) {
   if (!draft.shell) return "/";
   return draft.routes.find((path) => !draft.pages.some((page) => page.path === path)) ?? null;
@@ -166,8 +164,7 @@ async function failDraft(ctx: MutationCtx, draft: Draft, reason?: string, stalle
 
 // Closes a draft its build no longer wants and says whether it did: the
 // attempt moved on or stopped, its credits went back, the site was rebuilt or
-// cancelled under it -- or the site now holds a design package other than the
-// SkillUI Ultra one these pages were written against.
+  // cancelled under it.
 async function settle(ctx: MutationCtx, draft: Draft) {
   const row = await ctx.db.get(draft.onboardingId);
   const hold = await ctx.db.get(draft.holdId);
@@ -176,12 +173,6 @@ async function settle(ctx: MutationCtx, draft: Draft) {
   if (!row || row.attempt !== draft.attempt || row.status !== "building" || hold?.status !== "held" ||
       !site || (site.buildEpoch ?? 0) !== draft.epoch || message?.status !== "pending") {
     await close(ctx, draft, "cancelled");
-    return true;
-  }
-  const design = await ctx.db.query("siteDesignPackages").withIndex("by_site", (q) => q.eq("siteId", draft.siteId)).first();
-  if (!design || design._id !== draft.designId || design.storageId !== draft.designStorageId ||
-      design.buildEpoch !== draft.epoch || !isSkillUI(design)) {
-    await failDraft(ctx, draft, "The saved design reference disappeared during the build");
     return true;
   }
   return false;
@@ -233,8 +224,6 @@ export const start = internalMutation({
     epoch: v.number(),
     siteName: v.string(),
     rebuild: v.boolean(),
-    designId: v.id("siteDesignPackages"),
-    designStorageId: v.id("_storage"),
     model: v.string(),
     memory: v.optional(v.string()),
     routes: v.array(v.string()),
@@ -249,7 +238,7 @@ export const start = internalMutation({
       .first();
     if (existing) return existing._id;
     await prune(ctx, row.userId);
-    // Five pages at most, the home page first, whatever the package held.
+    // The home page first, and never more than the page cap.
     const routes = pagePlan(args.routes);
     const now = Date.now();
     const id = await ctx.db.insert("buildDrafts", {
@@ -318,21 +307,16 @@ export const beat = internalMutation({
 });
 
 // What a step reads besides the draft: the brief every build is written from,
-// the SkillUI Ultra extract and its foundation stylesheet, the reference's
-// address, and a rebuild's note.
+// and a rebuild's note.
 export const setting = internalQuery({
   args: { id: v.id("buildDrafts") },
   handler: async (ctx, { id }) => {
     const draft = await ctx.db.get(id);
     if (!draft) return null;
     const row = await ctx.db.get(draft.onboardingId);
-    const design = await ctx.db.get(draft.designId);
-    if (!row?.briefStorageId || !design) return null;
+    if (!row?.briefStorageId) return null;
     return {
       briefStorageId: row.briefStorageId,
-      extract: design.prompt,
-      foundation: design.foundation,
-      referenceUrl: design.referenceUrl,
       rebuild: draft.rebuild ? rebuildNote(draft.onboardingId, draft.attempt, row.revision) : undefined,
     };
   },
@@ -474,10 +458,8 @@ export const pageDone = internalMutation({
     const draft = await live(ctx, id, lease);
     if (!draft?.crew || !draft.crew.parts.every((part) => nextFor(part) === "done")) return null;
     const crew = draft.crew;
-    const design = await ctx.db.get(draft.designId);
     const writesShell = !draft.shell;
     const shell = draft.shell ?? shellFrom({
-      foundation: design?.foundation,
       header: partOf(crew, "header").markup ?? "",
       footer: partOf(crew, "footer").markup ?? "",
       siteName: draft.siteName,
@@ -565,10 +547,9 @@ export const handOff = internalMutation({
     if (!draft.shell || pages.length !== draft.routes.length) return "gone";
     const site = { shell: draft.shell, pages };
     const row = (await ctx.db.get(draft.onboardingId))!;
-    const design = (await ctx.db.get(draft.designId))!;
     let fault: string | undefined;
     try {
-      assertDesignRules(site, design.referenceUrl);
+      assertDesignRules(site);
     } catch (error) {
       fault = describe(error);
     }
@@ -622,7 +603,7 @@ function agentTrace(trace: ProviderTrace, who: string, detail: EventDetail): Pro
 const asksForPicture = (markup: string) =>
   (markup.match(/<img\b[^>]*>/gi) ?? []).some((tag) => /\bdata-forge-image\s*=\s*["'][^"']+/i.test(tag));
 
-type Setting = { extract: string; foundation?: string; referenceUrl: string; rebuild?: string };
+type Setting = { rebuild?: string };
 type Worked =
   | { state: "page"; draft: Draft }
   | { state: "short"; progressed: boolean; reason?: string; stop?: Stop }
@@ -723,8 +704,6 @@ async function workCrew(
         });
     const messages = builderTurn({
       base: input.base,
-      extract: setting.extract,
-      foundation: setting.foundation,
       brief: input.brief,
       siteName: draft.siteName,
       routes: draft.routes,
@@ -766,7 +745,7 @@ async function workCrew(
     let problem = "problem" in read ? read.problem : undefined;
     if ("markup" in read) {
       try {
-        assertDesignRules({ html: read.markup }, setting.referenceUrl);
+        assertDesignRules({ html: read.markup });
       } catch (error) {
         problem = describe(error);
       }

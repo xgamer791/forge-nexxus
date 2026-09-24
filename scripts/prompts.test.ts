@@ -84,14 +84,13 @@ describe("one instruction, in one place", () => {
 describe("the brief collects what a shop needs", () => {
   test("the last question asks for the catalogue without limiting generated pricing", async () => {
     const { QUESTIONS, FINAL_STEP } = await import("../convex/onboardingQuestions");
-    const catalogue = QUESTIONS[FINAL_STEP];
-    expect(catalogue.id).toBe("catalogue");
+    const catalogue = QUESTIONS.find((question) => question.id === "catalogue")!;
     expect(catalogue.title).toBe("What do you sell, and what does it cost?");
     expect(FINAL_STEP).toBe(QUESTIONS.length - 1);
     expect(QUESTIONS[0].id).toBe("name");
     expect(QUESTIONS[1].id).toBe("offer");
-    expect(QUESTIONS[9].id).toBe("content");
-    expect(catalogue.hint).toContain("Add prices or any other details you want featured");
+    expect(QUESTIONS[FINAL_STEP].id).toBe("references");
+    expect(catalogue.hint).toContain("with its price if you want it shown");
   });
 
   test("no step index is hardcoded", () => {
@@ -189,8 +188,8 @@ describe("the contract sets a floor, not a mould", () => {
     expect(DESIGN_GOD).not.toContain("at least 44px");
   });
 
-  test("the reply follows the saved SkillUI Ultra design reference instead of naming Awwwards clones", () => {
-    expect(contract).toContain("The saved SkillUI Ultra design reference is required for every build and edit");
+  test("the reply designs from the brief and DESIGN_GOD instead of naming Awwwards clones", () => {
+    expect(contract).toContain("Design from the saved brief and from DESIGN_GOD");
     expect(contract).not.toContain("```clones");
     expect(contract).not.toContain("https://www.awwwards.com/");
     expect(DESIGN_GOD).not.toContain("https://www.awwwards.com/");

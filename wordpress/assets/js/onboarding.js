@@ -70,10 +70,6 @@ const ENABLED = true;
   // server says the build did.
   function buildStage(draft, events) {
     const phase = belongsToDraft(draft) ? trace?.latest?.status : null;
-    if (phase === 'researching') {
-      const latestResearch = [...events].reverse().find(event => event.phase?.startsWith('research_'));
-      return { step: 1, label: latestResearch?.label || 'Researching design references…' };
-    }
     if (draft.status === 'queued' || phase === 'queued') return { step: 1, label: 'Waiting for the build to start…' };
     if (draft.status === 'saving' || phase === 'saving') return { step: 4, label: 'Saving your website…' };
     if (phase === 'images') return { step: 3, label: 'Making the pictures…' };

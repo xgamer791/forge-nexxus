@@ -17,7 +17,7 @@ export const QUESTIONS = [
   { id: "loved", title: "What do customers love about you?", hint: "What people tell their friends, or a review you’d like on your site.", limit: 2000 },
   { id: "feel", title: "How should your site feel?", hint: "Choose a direction, or leave it to Forge.", options: ["Clean and simple", "Bold and energetic", "Warm and welcoming", "Elegant and premium", "You decide"], limit: 1000 },
   { id: "brand", title: "Add your logo and photos", hint: "Photos of your place, products, team or work make the site yours. Type your brand colors here if you have them.", uploads: true, limit: 2000 },
-  { id: "references", title: "Any websites you like the look of?", hint: "Paste up to three links. Forge borrows the style, never the words or photos.", limit: 2000 },
+  { id: "references", title: "Any websites you like the look of?", hint: "Paste up to three links if you want them noted. Forge writes your site from your answers.", limit: 2000 },
 ] as const;
 
 // The last question's index. Reaching it is what lets a brief be built, so it

@@ -2,7 +2,6 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { answerDesignResearch, insertDesignPackage } from "./designWorkerMock";
 import type { Id } from "./_generated/dataModel";
 import { recordLastSign } from "./diagnostics";
 import { callProvider } from "./generate";
@@ -171,7 +170,6 @@ async function seedBuiltSite(t: T, userId: Id<"users">) {
     const siteId = await ctx.db.insert("sites", { userId, conversationId, name: "Bakery", status: "draft", createdAt: Date.now(), updatedAt: Date.now() });
     const versionId = await ctx.db.insert("siteVersions", { userId, siteId, html: PAGE, summary: "First", requestKind: "generate", createdAt: Date.now() });
     await ctx.db.patch(siteId, { currentVersionId: versionId });
-    await insertDesignPackage(ctx, userId, siteId);
     return { siteId, conversationId };
   });
 }
@@ -183,10 +181,6 @@ function stubBuilds(build: (call: number) => Response) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
-      const layout = await answerDesignResearch(url, init, async () => {
-        throw new Error("This test does not research a design reference");
-      });
-      if (layout) return layout;
       const request = JSON.parse(String(init.body));
       if (!request.messages.some((m: any) => /standing rules for the website agent/.test(m.content))) {
         return json({ choices: [{ message: { content: '{"add":[],"forget":[],"replace":[]}' } }] });

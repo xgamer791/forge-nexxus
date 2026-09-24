@@ -5,7 +5,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireMemberId } from "./access";
-import { designSource, pagePlan, siteParts, withParts, type BuiltSite } from "./pages";
+import { designSource, siteParts, withParts, type BuiltSite } from "./pages";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import type { RequestKind } from "./plans";
 import { failOpenRun, openRun, providerTrace, recordEvent, recordLastSign, type ProviderTrace } from "./diagnostics";
@@ -16,8 +16,7 @@ import { inventSample, sampleRebuilds } from "./sampleBusiness";
 import { isAdminEmail } from "./admins";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
-import { isSkillUI, NOT_EXTRACTED, researchDesign } from "./siteDesign";
-import { answerTo, briefFile, currentBrief, FINAL_STEP, QUESTION_SET, QUESTIONS, type SavedBrief } from "./onboardingQuestions";
+import { briefFile, currentBrief, FINAL_STEP, QUESTION_SET, QUESTIONS, type SavedBrief } from "./onboardingQuestions";
 
 // The watchdog sits just inside an action's ten minutes, so it only ever
 // speaks for a build that died without saying so.
@@ -89,8 +88,6 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
   if (!siteId) return { hashes: [] };
   const site = await ctx.db.get(siteId);
   if (!site || site.userId !== userId) return { hashes: [] };
-  // The design reference stays: a rebuild extracts the same address again
-  // with SkillUI Ultra, with no new search, and replaces it (siteDesign.save).
   const images = await ctx.db.query("siteImages").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
   for (const image of images) {
     await ctx.storage.delete(image.storageId);
@@ -142,7 +139,7 @@ async function queueOnboardingBuild(
     error: undefined,
     holdId: undefined,
     assistantId: undefined,
-    queueStep: { attempt, step: "research", beatAt: Date.now(), restarts: 0 },
+    queueStep: { attempt, step: "build", beatAt: Date.now(), restarts: 0 },
     updatedAt: Date.now(),
   });
   const site = await ctx.db.get(siteId);
@@ -156,13 +153,13 @@ async function queueOnboardingBuild(
     attempt,
     requestKind: "generate",
   });
-  await ctx.scheduler.runAfter(0, internal.onboarding.research, { id, attempt });
+  await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
   await ctx.scheduler.runAfter(WATCHDOG_MS, internal.onboarding.expire, { id, attempt });
 }
 
 // A step's heartbeat while its action runs. A step the platform killed stops
 // beating and the rescue starts it again; one that is only slow -- a long
-// crawl, a quiet stretch in the worker, a long page -- keeps its hold.
+// page, a quiet stretch while a builder writes -- keeps its hold.
 export function heartbeat(send: () => Promise<unknown>) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -184,60 +181,10 @@ export function heartbeat(send: () => Promise<unknown>) {
   };
 }
 
-// Research has its own action clock. A large reference crawl must not spend
-// the writing action's 480-second budget before the model has even started.
-export const research = internalAction({
-  args: { id: v.id("siteOnboarding"), attempt: v.number() },
-  handler: async (ctx, { id, attempt }): Promise<void> => {
-    const row = await ctx.runQuery(internal.onboarding.load, { id });
-    if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
-    // One copy researches an attempt. Any other -- a restart, a retry, a
-    // manual run -- stops here, and nothing it does can end the attempt.
-    const lease = await ctx.runMutation(internal.onboarding.claimStep, { id, attempt, step: "research" });
-    if (!lease) return;
-    const stop = heartbeat(() => ctx.runMutation(internal.onboarding.beat, { id, attempt, lease }));
-    try {
-      const runId = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
-      if (!runId) throw new Error("The build activity log is missing");
-      const trace = providerTrace(ctx, runId, row.userId);
-      let answers = currentBrief(row).answers;
-      if (row.discardedDesignHashes !== undefined && sampleRebuilds()) {
-        await trace.note({ phase: "sample", label: "Inventing a San Antonio business for this rebuild" });
-        const sample = await inventSample(row.answers[0] ?? "");
-        answers = sample.answers;
-        if (!await ctx.runMutation(internal.onboarding.adoptSample, {
-          id, attempt, answers, label: `Answers replaced with ${answers[0]} in ${sample.draw.neighbourhood}`,
-        })) return;
-      }
-      const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
-      const saved = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (saved && saved.buildEpoch === epoch && isSkillUI(saved)) {
-        await trace.note({ phase: "research_reused", label: "Using the saved design reference" });
-      } else {
-        // A site that already has a reference -- from before a rebuild, or
-        // from before SkillUI Ultra -- is extracted again there, with no
-        // search.
-        await researchDesign(ctx, {
-          siteId: row.siteId, onboardingId: id, attempt, epoch,
-          offer: answerTo(answers, "offer"), audience: "", feel: answerTo(answers, "feel"),
-          references: answerTo(answers, "references"),
-          ...(saved?.referenceUrl ? { referenceUrl: saved.referenceUrl } : {}),
-        }, trace, lease);
-      }
-      await ctx.runMutation(internal.onboarding.researched, { id, attempt, lease });
-    } catch (error) {
-      const reason = describe(error);
-      console.error("Forge design research failed:", reason);
-      await ctx.runMutation(internal.onboarding.stepFailed, { id, attempt, step: "research", lease, reason });
-    } finally {
-      stop();
-    }
-  },
-});
-
 // The start of a step. One copy holds it; another copy of a step for the same
-// attempt stops here and changes nothing, and so does a research once its
-// attempt has moved on to the build.
+// attempt stops here and changes nothing. `research` remains in the union so a
+// row queued before design research was removed still validates; claiming it
+// does nothing, and the rescue starts the build instead.
 export const claimStep = internalMutation({
   args: { id: v.id("siteOnboarding"), attempt: v.number(), step },
   returns: v.union(v.string(), v.null()),
@@ -247,7 +194,7 @@ export const claimStep = internalMutation({
     const now = Date.now();
     const current = row.queueStep?.attempt === attempt ? row.queueStep : undefined;
     if (current?.lease && now - current.beatAt < STEP_QUIET_MS) return null;
-    if (step === "research" && current?.step === "build") return null;
+    if (step === "research") return null;
     const lease = `${now.toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
     await ctx.db.patch(id, { queueStep: { attempt, step, lease, beatAt: now, restarts: current?.restarts ?? 0 }, updatedAt: now });
     return lease;
@@ -267,24 +214,9 @@ export const beat = internalMutation({
   },
 });
 
-// The research that holds its step hands the attempt to the build, once.
-export const researched = internalMutation({
-  args: { id: v.id("siteOnboarding"), attempt: v.number(), lease: v.string() },
-  returns: v.boolean(),
-  handler: async (ctx, { id, attempt, lease }) => {
-    const row = await ctx.db.get(id);
-    if (!row?.queueStep || row.attempt !== attempt || row.status !== "queued" ||
-        row.queueStep.lease !== lease || row.queueStep.step !== "research") return false;
-    const now = Date.now();
-    await ctx.db.patch(id, { queueStep: { attempt, step: "build", beatAt: now, restarts: row.queueStep.restarts }, updatedAt: now });
-    await ctx.scheduler.runAfter(0, internal.onboarding.build, { id, attempt });
-    return true;
-  },
-});
-
 // A step that failed ends its attempt only while it holds it: queued, or --
 // for the build, past its checkpoint -- building or saving. A copy that lost
-// its hold to another fails alone, and a research can never end a build.
+// its hold to another fails alone.
 export const stepFailed = internalMutation({
   args: { id: v.id("siteOnboarding"), attempt: v.number(), step, lease: v.string(), reason: v.string() },
   returns: v.boolean(),
@@ -314,7 +246,9 @@ export const rescue = internalMutation({
       .take(RESCUE_BATCH);
     for (const row of quiet) {
       const current = row.queueStep?.attempt === row.attempt ? row.queueStep : undefined;
-      const lost = current?.step ?? "research";
+      // A row still marked research was queued before that step was removed.
+      // The build is what runs now.
+      const lost = "build" as const;
       const restarts = current?.restarts ?? 0;
       const run = await ctx.db
         .query("buildRuns")
@@ -334,7 +268,7 @@ export const rescue = internalMutation({
         await recordEvent(ctx, { runId: run._id, userId: row.userId, phase: "rescued", level: "warn",
           label: `Started the ${lost} again: nothing had been heard from it for ${quietFor}s` });
       }
-      await ctx.scheduler.runAfter(0, lost === "build" ? internal.onboarding.build : internal.onboarding.research, { id: row._id, attempt: row.attempt });
+      await ctx.scheduler.runAfter(0, internal.onboarding.build, { id: row._id, attempt: row.attempt });
     }
     return null;
   },
@@ -869,7 +803,7 @@ export const build = internalAction({
   handler: async (ctx, { id, attempt }): Promise<void> => {
     const row = await ctx.runQuery(internal.onboarding.load, { id });
     if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
-    // One copy builds an attempt; any other stops here (see research).
+    // One copy builds an attempt; any other stops here.
     const lease = await ctx.runMutation(internal.onboarding.claimStep, { id, attempt, step: "build" });
     if (!lease) return;
     const stop = heartbeat(() => ctx.runMutation(internal.onboarding.beat, { id, attempt, lease }));
@@ -903,7 +837,18 @@ export const build = internalAction({
           status: "started",
       });
       const trace = providerTrace(ctx, runId, row.userId);
-      const answers = currentBrief(row).answers;
+      // sample-business block: a rebuild invents a San Antonio business and
+      // saves those answers before the brief is written, while the attempt is
+      // still queued. Every other member builds from the answers they gave.
+      let answers = currentBrief(row).answers;
+      if (row.discardedDesignHashes !== undefined && sampleRebuilds()) {
+        await trace.note({ phase: "sample", label: "Inventing a San Antonio business for this rebuild" });
+        const sample = await inventSample(row.answers[0] ?? "");
+        answers = sample.answers;
+        if (!await ctx.runMutation(internal.onboarding.adoptSample, {
+          id, attempt, answers, label: `Answers replaced with ${answers[0]} in ${sample.draw.neighbourhood}`,
+        })) return;
+      }
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
         url: await ctx.storage.getUrl(asset.storageId), text: asset.type.startsWith("text/") ? (await (await ctx.storage.get(asset.storageId))?.text())?.slice(0, 12000) : undefined })));
       const contents = briefFile(answers, row.strategy ?? "", assets);
@@ -923,10 +868,6 @@ export const build = internalAction({
       }
       // Past its checkpoint the attempt is building, and the watchdog speaks for it.
       stop();
-      const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
-      const savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (!savedDesign || savedDesign.buildEpoch !== epoch || !isSkillUI(savedDesign)) throw new Error(NOT_EXTRACTED);
-      await trace.note({ phase: "design_loaded", label: "Loaded the saved design reference" });
       const job = await ctx.runMutation(internal.generate.beginOnboarding, { id, attempt });
       await ctx.runMutation(internal.diagnostics.attach, {
         runId,
@@ -940,9 +881,9 @@ export const build = internalAction({
         label: "Credits held for a build",
         detail: { requestKind: job.result.requestKind, host: providerHost, model: route.model, keySet: Boolean(route.apiKey) },
       });
-      // Every build is written a page at a time by a crew of builders, each
-      // step its own action, five pages at most; the site lands once every
-      // page is written (buildDraft.ts).
+      // Every first build and rebuild is written a page at a time by a crew
+      // of builders, each step its own action. They write the home page from
+      // the brief; the site lands once that page is written (buildDraft.ts).
       const draftId = await ctx.runMutation(internal.buildDraft.start, {
         onboardingId: id,
         attempt,
@@ -953,11 +894,9 @@ export const build = internalAction({
         epoch: job.result.epoch,
         siteName: job.siteName,
         rebuild: row.discardedDesignHashes !== undefined,
-        designId: savedDesign._id,
-        designStorageId: savedDesign.storageId,
         model: route.model,
         ...(job.memory ? { memory: job.memory } : {}),
-        routes: pagePlan(savedDesign.routes),
+        routes: ["/"],
       });
       if (!draftId) throw new Error("This build is no longer active");
     } catch (error) {

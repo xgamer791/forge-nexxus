@@ -112,16 +112,14 @@ export function designSource(version: VersionPages) {
   return version.html ?? "";
 }
 
-// The most pages a new build or a rebuild writes. The page discovery agent
-// proposes no more than this, SkillUI Ultra extracts no more screens than
-// this, and a build is planned to it whatever a design package says.
+// The most pages a draft will write. A first build and a rebuild write the
+// home page; a draft that already lists more still writes them, up to this.
 export const MAX_PAGES = 5;
 
-// The pages a design reference asks for, as the addresses a build stores:
-// each once, the home page first, the rest in the order they were discovered,
-// and never more than MAX_PAGES. An address that cannot be served names no
-// page, so it is left out. Every build is written a page at a time
-// (buildDraft.ts).
+// The addresses a build stores: each once, the home page first, the rest in
+// the order they were given, and never more than MAX_PAGES. An address that
+// cannot be served names no page, so it is left out. Every build is written
+// a page at a time (buildDraft.ts).
 export function pagePlan(routes: readonly string[] | undefined): string[] {
   const plan: string[] = [];
   for (const route of routes ?? []) {

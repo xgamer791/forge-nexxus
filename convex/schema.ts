@@ -20,26 +20,6 @@ export default defineSchema({
     prompt: v.string(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
-  // One design reference per site: the address SkillUI Ultra extracted it
-  // from, the whole `.skill` package in file storage, the extract every
-  // builder reads (`prompt`), the foundation stylesheet made from
-  // its tokens, and the pages the page discovery agent chose (five at most).
-  // A row from before SkillUI Ultra -- no `format`, or the retired measured
-  // one -- keeps its address, so the site is extracted again there with no
-  // new search.
-  siteDesignPackages: defineTable({
-    userId: v.id("users"),
-    siteId: v.id("sites"),
-    storageId: v.id("_storage"),
-    referenceUrl: v.string(),
-    prompt: v.string(),
-    inspectedPages: v.number(),
-    buildEpoch: v.number(),
-    createdAt: v.number(),
-    format: v.optional(v.union(v.literal("forge-measured-v1"), v.literal("skillui-ultra-v1"))),
-    routes: v.optional(v.array(v.string())),
-    foundation: v.optional(v.string()),
-  }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
   // A build on its way to being saved: the site as the builder wrote it, held
   // while a step of its own makes its pictures and saves it (designGate.ts).
   // The site leaves the row once it lands. Rows from before the design
@@ -116,16 +96,12 @@ export default defineSchema({
     epoch: v.number(),
     siteName: v.string(),
     rebuild: v.boolean(),
-    // The SkillUI Ultra package the draft is written against. A
-    // step that finds the site holding any other package writes nothing.
-    designId: v.id("siteDesignPackages"),
-    designStorageId: v.id("_storage"),
     // What every step is told the same way: the model the draft began on,
     // which alone may carry on a page it stopped, and the member's memory note.
     model: v.string(),
     memory: v.optional(v.string()),
-    // Every page the discovery agent chose (five at most), home first, and
-    // the pages written so far.
+    // The pages this build writes, home first, and the pages written so far.
+    // A first build and a rebuild write the home page.
     routes: v.array(v.string()),
     shell: v.optional(v.string()),
     pages: v.array(v.object({ path: v.string(), title: v.string(), body: v.string() })),

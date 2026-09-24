@@ -12,7 +12,7 @@ type Message = { role: "system" | "user" | "assistant"; content: string };
 
 // On unless the deployment turns it off: `npx convex env set DESIGN_REVIEW 0`.
 export function designReviewOn() {
-  // Retired: the per-site SkillUI package now drives design continuity.
+  // Retired: the Awwwards reviewer stays off.
   return false;
 }
 

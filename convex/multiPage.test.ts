@@ -2,9 +2,9 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { answerDesignResearch, crewCall, resetDesignRoutes, setDesignRoutes, storeDesignPackage, type CrewCall } from "./designWorkerMock";
+import { crewCall, type CrewCall } from "./crewFixture";
 import { builtSite, parseReply } from "./generate";
-import { QUESTIONS } from "./onboardingQuestions";
+import { QUESTION_SET, QUESTIONS } from "./onboardingQuestions";
 import { serializeSite } from "./pages";
 import schema from "./schema";
 
@@ -54,9 +54,7 @@ const siteReply = (summary: string, about = ABOUT) =>
 const json = (payload: unknown) =>
   new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
 
-// A first build's crew, writing the same two-page site: the header with the
-// nav, the footer, and each page's two halves. The picture sits on both
-// pages, which is one picture.
+// A first build's crew writes the home page. A thread edit can add more.
 const HEADER = '<style>.site-header{padding:16px}</style><header class="site-header"><nav><a href="/">Home</a> <a href="/about">About</a></nav></header>';
 const FOOTER = "<footer>Harbor Roasters</footer>";
 function crewSite(about = "<p>Roasting since 2019.</p>") {
@@ -81,8 +79,6 @@ function stubProviders(build: (call: number) => string, crew: (call: CrewCall) =
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
-      const research = await answerDesignResearch(url, init, () => storeDesignPackage(active));
-      if (research) return research;
       const body = JSON.parse(String(init.body));
       calls.push({ url, body });
       if (/generateContent/.test(url)) {
@@ -106,7 +102,6 @@ function stubProviders(build: (call: number) => string, crew: (call: CrewCall) =
 }
 
 beforeEach(() => {
-  setDesignRoutes(["/", "/about"]);
   process.env.AI_BASE_URL = "https://ai.example/v1/";
   process.env.AI_API_KEY = KEY;
   process.env.AI_MODEL = "forge-test";
@@ -115,7 +110,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
-  resetDesignRoutes();
   for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_BUILD_MODEL", "AI_BUILD_BASE_URL", "AI_BUILD_API_KEY", "AI_REASONING_EFFORT", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL"]) {
     delete process.env[name];
   }
@@ -194,7 +188,7 @@ describe("parseReply reads a site in blocks", () => {
 async function onboarded(t: T, member: Awaited<ReturnType<typeof createBuilder>>) {
   const id = await member.as.mutation(api.onboarding.start, {});
   for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.as.mutation(api.onboarding.save, { id, index, answer: index === 0 ? "Harbor Roasters" : "Coffee on the pier", advance: true });
+    await member.as.mutation(api.onboarding.save, { id, index, answer: index === 0 ? "Harbor Roasters" : "Coffee on the pier", advance: true, questionSet: QUESTION_SET });
   }
   await member.as.mutation(api.onboarding.submit, { id });
   await t.finishAllScheduledFunctions(() => {});
@@ -205,44 +199,45 @@ async function onboarded(t: T, member: Awaited<ReturnType<typeof createBuilder>>
 }
 
 describe("a build with pages, start to finish", () => {
-  test("stores the shell and pages, makes each picture once, and serves every page", async () => {
+  test("stores the shell and the home page, makes its picture, and an edit can add another page", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const providers = stubProviders(() => siteReply("Built a two-page site for the roastery."));
     const site = await onboarded(t, member);
 
-    // The picture appears on two pages and was asked for once.
     expect(providers.pictures()).toBe(1);
-    const [version] = await t.run((ctx) => ctx.db.query("siteVersions").collect());
-    expect(version.html).toBeUndefined();
-    expect(version.shell).toContain('<nav><a href="/">Home</a> <a href="/about">About</a></nav>');
-    expect(version.shell).toContain("<!--forge-page-->\n<footer>Harbor Roasters</footer>");
+    const [first] = await t.run((ctx) => ctx.db.query("siteVersions").collect());
+    expect(first.html).toBeUndefined();
+    expect(first.shell).toContain('<nav><a href="/">Home</a> <a href="/about">About</a></nav>');
+    expect(first.shell).toContain("<!--forge-page-->\n<footer>Harbor Roasters</footer>");
+    expect(first.pages!.map((page) => page.path)).toEqual(["/"]);
+    expect((await t.fetch(`/sites/${site.slug}/about`)).status).toBe(404);
+
+    await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add an about page" });
+    await t.finishAllScheduledFunctions(() => {});
+
+    const versions = await t.run((ctx) => ctx.db.query("siteVersions").collect());
+    const version = versions[1];
     expect(version.pages!.map((page) => [page.path, page.title])).toEqual([["/", "Harbor Roasters"], ["/about", "Our story"]]);
     const images = await t.run((ctx) => ctx.db.query("siteImages").collect());
-    expect(images).toHaveLength(1);
-    const url = await t.run((ctx) => ctx.storage.getUrl(images[0].storageId));
+    expect(images.length).toBeGreaterThan(0);
+    const url = await t.run((ctx) => ctx.storage.getUrl(images.at(-1)!.storageId));
     for (const page of version.pages!) {
       expect(page.body).not.toContain("forge-image:");
       expect(page.body).toContain(url);
     }
 
-    // Published, and every page answers at its address with the shell around it.
-    expect(site.status).toBe("published");
     const about = await t.fetch(`/sites/${site.slug}/about`);
     expect(about.status).toBe(200);
     const served = await about.text();
     expect(served).toContain("<title>Our story</title>");
     expect(served).toContain("<h1>Our story</h1>");
-    // Read from the origin by a browser, so the nav is pointed under the slug.
     expect(served).toContain(`<nav><a href="/sites/${site.slug}/">Home</a> <a href="/sites/${site.slug}/about">About</a></nav>`);
     expect(served).toContain("<footer>Harbor Roasters</footer>");
-    expect(served).not.toContain("<h1>Harbor Roasters</h1>");
     expect(served).not.toContain("forge-page");
     expect(await (await t.fetch(`/sites/${site.slug}`)).text()).toContain("<title>Harbor Roasters</title>");
-    // A site with pages knows its addresses; the rest are nothing.
     expect((await t.fetch(`/sites/${site.slug}/nowhere`)).status).toBe(404);
 
-    // The preview shows the home page.
     const preview = await member.as.query(api.sites.currentHtml, { siteId: site._id });
     expect(preview?.html).toContain("<h1>Harbor Roasters</h1>");
     expect(preview?.html).not.toContain("<h1>Our story</h1>");
@@ -255,13 +250,14 @@ describe("a build with pages, start to finish", () => {
     const site = await onboarded(t, member);
     await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add the founding year to the story" });
 
-    // The strategist, the onboarding crew, then the edit. Captured before the
-    // audit's drain, which also runs the memory note.
+    // The strategist, the onboarding crew, then the edit.
     const edit = providers.builds().at(-1)!;
     const handed = edit.body.messages.filter((m: any) => m.role === "system").map((m: any) => m.content).join("\n");
+    const shown = edit.body.messages.find((m: any) => String(m.content).includes("currently looks like this"))?.content as string;
     expect(handed).toContain("```html shell\n<!doctype html>");
     expect(handed).toContain('<nav><a href="/">Home</a> <a href="/about">About</a></nav>');
-    expect(handed).toContain('```html path="/about" title="Our story"');
+    expect(shown).toContain('```html path="/"');
+    expect(shown).not.toContain('```html path="/about"');
     expect(handed).toContain("return the whole updated site, every block");
 
     // The edit is saved as it was written.
@@ -275,12 +271,11 @@ describe("a build with pages, start to finish", () => {
   test("a first build's part that stopped short is asked for again, whole, and the site still lands in blocks", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    // The about page's top half never closed its block the first time.
     const whole = crewSite();
     let cut = true;
     const providers = stubProviders(() => siteReply("Built it."), (call) => {
       const reply = whole(call);
-      if (call.path === "/about" && call.part === "body1" && cut) {
+      if (call.path === "/" && call.part === "body1" && cut) {
         cut = false;
         return reply.slice(0, -3);
       }
@@ -288,11 +283,11 @@ describe("a build with pages, start to finish", () => {
     });
     await onboarded(t, member);
 
-    const tops = providers.calls.filter((call) => /chat\/completions/.test(call.url) && crewCall(call.body)?.path === "/about" && crewCall(call.body)?.part === "body1");
+    const tops = providers.calls.filter((call) => /chat\/completions/.test(call.url) && crewCall(call.body)?.path === "/" && crewCall(call.body)?.part === "body1");
     expect(tops).toHaveLength(2);
     expect(tops[1].body.messages.at(-1).content).toContain("Your last reply for this part could not be used: the top half stopped before its block closed.");
     const [version] = await t.run((ctx) => ctx.db.query("siteVersions").collect());
-    expect(version.pages!.map((page) => page.path)).toEqual(["/", "/about"]);
+    expect(version.pages!.map((page) => page.path)).toEqual(["/"]);
     expect(version.html).toBeUndefined();
   });
 });
@@ -301,8 +296,10 @@ describe("the site as files", () => {
   test("one file per page, named for its address, linked to each other, badge-free on a paid plan", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
-    stubProviders(() => siteReply("Built it."), crewSite('<a href="/">Back home</a><a href="/about#team">Team</a>'));
+    stubProviders(() => siteReply("Built it.", `<h1>Our story</h1><a href="/">Back home</a><a href="/about#team">Team</a>`));
     const site = await onboarded(t, member);
+    await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add an about page" });
+    await t.finishAllScheduledFunctions(() => {});
 
     const exported = await member.as.query(api.sites.exportPages, { siteId: site._id });
     expect(exported!.files.map((file) => file.name)).toEqual(["index.html", "about.html"]);
@@ -346,6 +343,8 @@ describe("the site read straight from this deployment's origin", () => {
     const member = await createBuilder(t, "m@example.com");
     stubProviders(() => siteReply("Built it."));
     const site = await onboarded(t, member);
+    await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add an about page" });
+    await t.finishAllScheduledFunctions(() => {});
 
     const browser = await (await t.fetch(`/sites/${site.slug}/about`)).text();
     expect(browser).toContain(`<nav><a href="/sites/${site.slug}/">Home</a> <a href="/sites/${site.slug}/about">About</a></nav>`);

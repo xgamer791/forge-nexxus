@@ -2,9 +2,9 @@
 //
 // Every page of a first build or a rebuild is written by a crew of its own
 // (buildDraft.ts runs it): a builder for the header, two for the body -- the
-// top of the page and the rest of it -- and one for the footer. Each works to
-// the SkillUI Ultra extract of the reference site, and a page is kept once
-// every one of its parts has come back whole and clean.
+// top of the page and the rest of it -- and one for the footer. Each designs
+// from the brief and from DESIGN_GOD, and a page is kept once every one of
+// its parts has come back whole and clean.
 //
 // The header and the footer are the site's shared chrome: they live in the
 // shell every page is served inside, and the home page's crew writes them.
@@ -80,7 +80,6 @@ export function partOf(crew: Crew, name: PartName) {
 }
 
 // How much of a part, or of the site so far, a turn is shown at most.
-const EXTRACT_LIMIT = 90000;
 const PART_LIMIT = 60000;
 const SITE_LIMIT = 80000;
 const clip = (text: string, limit: number) =>
@@ -102,10 +101,9 @@ function where(routes: string[], path: string) {
 // The foundation: what Forge puts under every part
 // ---------------------------------------------------------------------------
 
-// Forge's floor under the reference's tokens: the box model, a body that never
-// scrolls sideways, pictures that fit their column, and the type variables the
-// header's builder sets from Fontshare. The design package's own foundation --
-// the SkillUI Ultra tokens as custom properties -- comes after it.
+// Forge's floor: the box model, a body that never scrolls sideways, pictures
+// that fit their column, and the type variables the header's builder sets
+// from Fontshare. A caller may pass extra custom properties to sit under that.
 const FLOOR = [
   ":root{--font-display:'Satoshi',system-ui,sans-serif;--font-body:'Satoshi',system-ui,sans-serif}",
   "*,*::before,*::after{box-sizing:border-box}",
@@ -120,9 +118,12 @@ export function foundationCss(tokens: string | undefined) {
 }
 
 function foundationNote(tokens: string | undefined) {
+  const using = tokens?.trim()
+    ? "The foundation below sets custom properties. Use them for colour, spacing, radius and shadow instead of new values, and set type with var(--font-display) and var(--font-body)."
+    : "The foundation below is the floor every page starts from. Set type with var(--font-display) and var(--font-body), and choose colour, spacing and type in the styles for your part.";
   return [
     "Forge writes the document around the parts: the <head> with the viewport, each page's <title> and the foundation stylesheet below, then the header, the page's <main>, and the footer.",
-    "The foundation is the SkillUI Ultra reference's tokens as custom properties. Use them for colour, spacing, radius and shadow instead of new values, and set type with var(--font-display) and var(--font-body).",
+    using,
     "```css",
     foundationCss(tokens),
     "```",
@@ -137,20 +138,20 @@ function foundationNote(tokens: string | undefined) {
 function crewOrder(routes: string[], path: string) {
   return [
     `This is an onboarding BUILD, written one page at a time by a crew. The site has ${routes.length} ${routes.length === 1 ? "page" : "pages"}: ${routes.join(", ")}. This turn is ${where(routes, path)}: ${path}.`,
-    "Each page has a crew: a builder for the header, two builders for the body -- the top of the page and the rest of it -- and a builder for the footer. Build every part to the SkillUI Ultra design reference rather than inventing in its place.",
+    "Each page has a crew: a builder for the header, two builders for the body -- the top of the page and the rest of it -- and a builder for the footer. Design every part from the brief and from DESIGN_GOD. Write this business's own words, pictures and name.",
     "This turn's reply is one part of one page, not the whole site: where the platform contract asks for a shell and pages, reply the way this turn asks instead. Read the attached website-build-brief.md and work privately. Do not ask questions, discuss your plan, or reply with planning prose.",
   ].join("\n\n");
 }
 
 const SECTION_RULES = [
-  "- Build each section to the SkillUI Ultra reference's page at this address: the same sections in the same order, with the same layout, spacing, type scale, colours and components, at phone and desktop widths. A page with no counterpart among the reference's pages follows the reference's design system: its components, spacing, type and colour.",
-  "- Write every word from the brief, and ask for every picture through forge-image at the aspect of the reference's image slot. Never use the reference's words, pictures, logos or name.",
+  "- Design each section from the brief and from DESIGN_GOD: layout, spacing, type, colour and components, at phone and desktop widths.",
+  "- Write every word from the brief, and ask for every picture through forge-image. Never copy another site's words, pictures, logos or name.",
 ].join("\n");
 
 function headerAsk(routes: string[]) {
   return [
-    "You are the header builder. Write the site's header to the SkillUI Ultra reference's header: the same structure, placement, height, spacing, type scale, colours and states, and on a phone the same menu, opening the same way.",
-    "- The brand is this business's own name as a wordmark, never the reference's logo or name.",
+    "You are the header builder. Write the site's header from the brief and from DESIGN_GOD: its structure, placement, height, spacing, type, colours and states, and on a phone a menu that opens.",
+    "- The brand is this business's own name as a wordmark.",
     `- The navigation links every page of this site by its path: ${routes.join(", ")}. Name each destination in the business's own words.`,
     '- A menu that opens on a phone is a button with a small script that opens and closes it by touch and by keyboard. The same script marks the link to the page being shown with aria-current="page", from location.pathname.',
     "- Choose the type from Fontshare the way DESIGN_GOD's Type section says: one <link> to https://api.fontshare.com and a :root rule setting --font-display and --font-body. Leave both out to keep the foundation's Satoshi.",
@@ -162,8 +163,8 @@ function headerAsk(routes: string[]) {
 
 function footerAsk(routes: string[]) {
   return [
-    "You are the footer builder. Write the site's footer to the SkillUI Ultra reference's footer: the same structure, columns, order, spacing, type scale and colours, at phone and desktop widths.",
-    `- It carries this business's own details from the brief -- its name, where to find it, when it is open, how to reach it -- and links every page by its path: ${routes.join(", ")}. Never the reference's details.`,
+    "You are the footer builder. Write the site's footer from the brief and from DESIGN_GOD: its structure, columns, spacing, type and colours, at phone and desktop widths.",
+    `- It carries this business's own details from the brief -- its name, where to find it, when it is open, how to reach it -- and links every page by its path: ${routes.join(", ")}.`,
     "Put every style the footer uses in one <style> element before it, every rule scoped under .site-footer or classes starting ft-. Forge moves it into the <head>.",
     'Reply with one sentence saying what you built, then the footer in a ```html part="footer" block, and nothing after.',
   ].join("\n");
@@ -171,7 +172,7 @@ function footerAsk(routes: string[]) {
 
 function topAsk(path: string, siteName: string, imagery?: string) {
   return [
-    "You are the builder for the top of this page: its opening and the sections after it, to about the middle of the reference's page at this address. Another builder writes the rest of the page after yours, and the header and footer are written separately: write none of them.",
+    "You are the builder for the top of this page: its opening and the sections after it, to about the middle of the page. Another builder writes the rest of the page after yours, and the header and footer are written separately: write none of them.",
     SECTION_RULES,
     "- The page has one h1, and it is in your opening.",
     ...(imagery ? [`- ${imagery}`] : []),
@@ -182,7 +183,7 @@ function topAsk(path: string, siteName: string, imagery?: string) {
 
 function restAsk() {
   return [
-    "You are the builder for the rest of this page: from about the middle of the reference's page at this address down to the last section before the footer. The top of the page is written, below: carry on from where it ends, and do not repeat its opening or any of its sections. The header and footer are written separately: write neither.",
+    "You are the builder for the rest of this page: from about the middle of the page down to the last section before the footer. The top of the page is written, below: carry on from where it ends, and do not repeat its opening or any of its sections. The header and footer are written separately: write neither.",
     SECTION_RULES,
     "- The top of the page holds its h1: start your headings at h2.",
     "Put the styles your sections use in one <style> element at the start of your markup, every class starting b-. Send only your <section> elements: Forge puts the page's <main> around them.",
@@ -202,7 +203,6 @@ export type BuilderInput = {
   // The house rules, the design files and the platform contract every build
   // turn carries (onboardingMessages).
   base: Message[];
-  extract: string;
   foundation?: string;
   brief: string;
   siteName: string;
@@ -220,13 +220,12 @@ export type BuilderInput = {
   carry?: string;
 };
 
-// One builder's turn: the rules every build turn carries, the reference, the
-// crew and the foundation, the brief, and then its own part to write.
+// One builder's turn: the rules every build turn carries, the crew and the
+// foundation, the brief, and then its own part to write.
 export function builderTurn(input: BuilderInput): Message[] {
   const { part, path } = input;
   const messages: Message[] = [
     ...input.base,
-    { role: "system", content: clip(input.extract, EXTRACT_LIMIT) },
     { role: "system", content: foundationNote(input.foundation) },
     { role: "system", content: crewOrder(input.routes, path) },
     ...(input.rebuild ? [{ role: "system" as const, content: input.rebuild }] : []),
