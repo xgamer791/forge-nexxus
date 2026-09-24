@@ -191,6 +191,9 @@ export default defineSchema({
     userId: v.id("users"),
     siteId: v.optional(v.id("sites")),
     answers: v.array(v.string()),
+    // Which set of questions `answers` is stored under (onboardingQuestions.ts).
+    // None is the first set, which `currentBrief` reads as the current one.
+    questionSet: v.optional(v.number()),
     step: v.number(),
     revision: v.number(),
     strategyAnswers: v.optional(v.array(v.union(v.string(), v.null()))),

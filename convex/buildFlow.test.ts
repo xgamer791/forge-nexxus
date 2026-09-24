@@ -964,7 +964,7 @@ describe("a rebuild while testing is a new San Antonio business", () => {
       "Rebuilding as a new San Antonio business",
       expect.stringMatching(/^Answers replaced with Lupita's Paletas in /),
     ]);
-    expect(QUESTIONS[6].options).toContain(row.answers[6]);
+    expect(QUESTIONS[7].options).toContain(row.answers[7]);
     const site = (await t.run((ctx) => ctx.db.get(row.siteId!)))!;
     expect(site.name).toBe("Lupita's Paletas");
 

@@ -1,3 +1,5 @@
+import { QUESTION_SET } from "../convex/onboardingQuestions.js";
+
 const TOKEN_KEY = "forge-auth-token";
 const REFRESH_KEY = "forge-auth-refresh";
 const KIND_KEY = "forge-auth-kind";
@@ -495,7 +497,9 @@ export function createForgeData({
     onboarding: {
       subscribe: (callback, onError) => client.onUpdate(api.onboarding.state, {}, callback, onError),
       start: () => client.mutation(api.onboarding.start, {}),
-      save: (id, index, answer, advance = false) => client.mutation(api.onboarding.save, { id, index, answer, advance }),
+      // The set the questions are numbered in, so a page opened before they
+      // changed cannot save an answer into the wrong one.
+      save: (id, index, answer, advance = false) => client.mutation(api.onboarding.save, { id, index, answer, advance, questionSet: QUESTION_SET }),
       submit: (id) => client.mutation(api.onboarding.submit, { id }),
       rebuild: (siteId, options) => client.mutation(api.onboarding.rebuild, {
         ...(siteId ? { siteId } : {}),

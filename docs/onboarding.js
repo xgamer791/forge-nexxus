@@ -242,9 +242,9 @@ const ENABLED = true;
       <div class="onboarding-question-progress" role="progressbar" aria-label="Questions completed" aria-valuemin="0" aria-valuemax="${questions.length}" aria-valuenow="${step}"><span style="width:${(step / questions.length) * 100}%"></span></div>
       <h1 id="onboarding-question" tabindex="-1">${escape(q.title)}</h1><p class="onboarding-hint">${escape(q.hint)}</p>
       ${choices}<div class="onboarding-field">${field}</div>
-      ${q.id === 'content' ? '<label class="onboarding-upload"><svg aria-hidden="true"><use href="#clip"/></svg><span>Add files</span><input type="file" data-onboarding-files multiple accept="image/png,image/jpeg,image/webp,.txt,.md"></label><p class="onboarding-file-hint">Up to 8 images or text files. Images under 5 MB; text under 100 KB.</p><ul class="onboarding-assets" data-onboarding-assets></ul>' : ''}
+      ${q.uploads ? '<label class="onboarding-upload"><svg aria-hidden="true"><use href="#clip"/></svg><span>Add files</span><input type="file" data-onboarding-files multiple accept="image/png,image/jpeg,image/webp,.txt,.md"></label><p class="onboarding-file-hint">Up to 8 images or text files. Images under 5 MB; text under 100 KB.</p><ul class="onboarding-assets" data-onboarding-assets></ul>' : ''}
       <p class="onboarding-error" role="alert" hidden></p>
-      <footer class="onboarding-actions"><button type="button" class="onboarding-quiet" data-onboarding-action="back" ${step === 0 ? 'hidden' : ''}>Back</button><div>${!q.required && step !== lastStep() ? `<button type="button" class="onboarding-quiet" data-onboarding-action="skip">${step === 7 ? 'You decide' : 'Skip'}</button>` : ''}<button type="submit" class="onboarding-primary">${step === lastStep() ? (state.isFree ? 'Choose a plan' : 'Build my website') : 'Continue'}</button></div></footer>
+      <footer class="onboarding-actions"><button type="button" class="onboarding-quiet" data-onboarding-action="back" ${step === 0 ? 'hidden' : ''}>Back</button><div>${!q.required && step !== lastStep() ? `<button type="button" class="onboarding-quiet" data-onboarding-action="skip">Skip</button>` : ''}<button type="submit" class="onboarding-primary">${step === lastStep() ? (state.isFree ? 'Choose a plan' : 'Build my website') : 'Continue'}</button></div></footer>
     </form>`) + (state.required ? '' : '<button class="onboarding-exit onboarding-quiet onboarding-dock" type="button" data-onboarding-action="exit">Back to dashboard</button>');
     renderAssets();
   }
@@ -381,7 +381,7 @@ const ENABLED = true;
     revealDashboard(!show); screen.hidden = !show;
     if (!show) { rendered = ''; return; }
     if (!row) {
-      showWaiting('Let’s make your first website.', 'Ten simple questions. One at a time.');
+      showWaiting('Let’s make your first website.', `${questions.length} simple questions, one at a time.`);
       if (!starting && !subscriptionError) {
         starting = true;
         data.onboarding.start().catch(() => {

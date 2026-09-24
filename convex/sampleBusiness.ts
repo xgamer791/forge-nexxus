@@ -46,7 +46,7 @@ const NEIGHBOURHOODS = [
   "Downtown on the River Walk", "Five Points", "Deco District", "Tobin Hill near St. Mary's Strip",
 ];
 
-// The two single-choice questions and the one multiple-choice question.
+// The single-choice question and the multiple-choice one.
 const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.length)];
 const options = (id: string) => [...((QUESTIONS.find((q) => q.id === id) as { options?: readonly string[] })?.options ?? [])];
 
@@ -68,15 +68,14 @@ Give it a specific name, a street address in that part of San Antonio, a 210 pho
 Reply with one JSON object and nothing else, with exactly these keys:
 {
   "name": "the business name, under 60 characters",
-  "offer": "what it offers, 2-4 sentences",
-  "audience": "who the site is for, naming the neighbourhood and San Antonio",
-  "goal": one of ${JSON.stringify(options("goal"))},
-  "difference": "the one thing visitors should remember, 1-3 sentences",
+  "offer": "what it offers and who it is for, naming the neighbourhood and San Antonio, 2-4 sentences",
   "features": an array of one to three of ${JSON.stringify(options("features"))},
+  "catalogue": "one product or service per line, each with a price",
+  "contact": "address, phone, email, hours, owners' names and anything else that must be on the site",
+  "online": "",
+  "loved": "the one thing customers love and remember about it, 1-3 sentences",
   "brand": "",
-  "references": "",
-  "content": "address, phone, email, hours, owners' names and anything else that must be on the site",
-  "catalogue": "one product or service per line, each with a price"
+  "references": ""
 }`;
 }
 
@@ -96,15 +95,12 @@ export function sampleAnswers(reply: string, draw: SampleDraw): string[] {
     const value = parsed[question.id];
     if (question.id === "feel") return draw.feel;
     // An invented owner's colours would outrank the design rules the way a
-    // real member's do, so a test business never brings any.
-    if (question.id === "brand") return "";
+    // real member's do, so a test business never brings any; and it has no
+    // real shop or booking page to link to.
+    if (question.id === "brand" || question.id === "online") return "";
     if (question.id === "features") {
       const chosen = (Array.isArray(value) ? value : [value]).map(text).filter((v) => options("features").includes(v));
       return [...new Set(chosen)].join("\n");
-    }
-    if (question.id === "goal") {
-      const goal = text(value);
-      return options("goal").includes(goal) ? goal : "Contact you";
     }
     return text(value);
   }).map((answer, index) => answer.slice(0, QUESTIONS[index].limit));

@@ -17,7 +17,7 @@ import { isAdminEmail } from "./admins";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
 import { isSkillUI, NOT_EXTRACTED, researchDesign } from "./siteDesign";
-import { briefFile, FINAL_STEP, QUESTIONS } from "./onboardingQuestions";
+import { answerTo, briefFile, currentBrief, FINAL_STEP, QUESTION_SET, QUESTIONS, type SavedBrief } from "./onboardingQuestions";
 
 // The watchdog sits just inside an action's ten minutes, so it only ever
 // speaks for a build that died without saying so.
@@ -56,9 +56,10 @@ function isActiveBuild(status: string) {
   return status === "queued" || status === "building" || status === "saving";
 }
 
-function briefReadyToBuild(row: { answers: string[]; step: number; status: string }) {
-  return Boolean(row.answers[0]?.trim() && row.answers[1]?.trim()) &&
-    (row.step >= FINAL_STEP || row.status === "complete" || row.status === "failed");
+function briefReadyToBuild(row: SavedBrief) {
+  const { answers, step } = currentBrief(row);
+  return Boolean(answers[0]?.trim() && answers[1]?.trim()) &&
+    (step >= FINAL_STEP || row.status === "complete" || row.status === "failed");
 }
 
 // Keep only a one-way checksum, never the discarded page. Ignore image tags
@@ -199,7 +200,7 @@ export const research = internalAction({
       const runId = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
       if (!runId) throw new Error("The build activity log is missing");
       const trace = providerTrace(ctx, runId, row.userId);
-      let answers = row.answers;
+      let answers = currentBrief(row).answers;
       if (row.discardedDesignHashes !== undefined && sampleRebuilds()) {
         await trace.note({ phase: "sample", label: "Inventing a San Antonio business for this rebuild" });
         const sample = await inventSample(row.answers[0] ?? "");
@@ -218,8 +219,8 @@ export const research = internalAction({
         // search.
         await researchDesign(ctx, {
           siteId: row.siteId, onboardingId: id, attempt, epoch,
-          offer: answers[1] ?? "", audience: answers[2] ?? "", feel: answers[6] ?? "",
-          references: answers[8] ?? "",
+          offer: answerTo(answers, "offer"), audience: "", feel: answerTo(answers, "feel"),
+          references: answerTo(answers, "references"),
           ...(saved?.referenceUrl ? { referenceUrl: saved.referenceUrl } : {}),
         }, trace, lease);
       }
@@ -366,7 +367,8 @@ export const state = query({
     // sample-business block: a tester never lands on the questions.
     const row = testing && newestOpen?.status === "questions" ? undefined : newestOpen;
     // Never expose the agent's strategy, provider details, or private brief.
-    const draft = row ? { id: row._id, siteId: row.siteId, answers: row.answers, step: row.step,
+    const current = row ? currentBrief(row) : null;
+    const draft = row && current ? { id: row._id, siteId: row.siteId, answers: current.answers, step: current.step,
       status: row.status, events: row.events, error: row.error,
       assets: row.assets.map(a => ({ name: a.name, storageId: a.storageId })) } : null;
     const canRebuild = plan.key !== "free" && !rows.some(r => isActiveBuild(r.status)) && (testing || rows.some(briefReadyToBuild));
@@ -391,15 +393,18 @@ export const start = mutation({
     const resume = rows.filter(r => r.status === "questions" || r.status === "failed").sort((a, b) => b.updatedAt - a.updatedAt)[0];
     if (resume) { await ctx.db.patch(resume._id, { dismissed: false, updatedAt: Date.now() }); return resume._id; }
     const now = Date.now();
-    return await ctx.db.insert("siteOnboarding", { userId, answers: QUESTIONS.map(() => ""),
+    return await ctx.db.insert("siteOnboarding", { userId, answers: QUESTIONS.map(() => ""), questionSet: QUESTION_SET,
       step: 0, revision: 0, assets: [], status: "questions", attempt: 0, dismissed: false,
       events: [], createdAt: now, updatedAt: now });
   },
 });
 
 export const save = mutation({
-  args: { id: v.id("siteOnboarding"), index: v.number(), answer: v.string(), advance: v.boolean() },
-  handler: async (ctx, { id, index, answer, advance }) => {
+  args: { id: v.id("siteOnboarding"), index: v.number(), answer: v.string(), advance: v.boolean(), questionSet: v.optional(v.number()) },
+  handler: async (ctx, { id, index, answer, advance, questionSet }) => {
+    // A page opened before the questions changed numbers them the old way, so
+    // it saves nothing until it is reloaded.
+    if (questionSet !== QUESTION_SET) throw new ConvexError("Forge has been updated. Reload the page to keep going.");
     const row = await owned(ctx, id);
     // Saving an answer on a brief whose build failed reopens its questions:
     // what went wrong may be in the answers, and they are the member's to fix.
@@ -410,13 +415,16 @@ export const save = mutation({
     const value = answer.trim();
     if (value.length > question.limit) throw new ConvexError(`Keep this answer under ${question.limit} characters`);
     if (advance && "required" in question && question.required && !value) throw new ConvexError("Add a short answer to continue");
-    const answers = [...row.answers];
+    // A brief saved under the first set of questions is stored as this set
+    // from its first save on.
+    const current = currentBrief(row);
+    const answers = [...current.answers];
     answers[index] = value;
     const revision = row.revision + 1;
-    const strategyAnswers = row.strategyAnswers ?? QUESTIONS.map(() => null as string | null);
+    const strategyAnswers = current.strategyAnswers ? [...current.strategyAnswers] : QUESTIONS.map(() => null as string | null);
     const developStrategy = advance && strategyAnswers[index] !== value;
     if (advance) strategyAnswers[index] = value;
-    await ctx.db.patch(id, { answers, revision, strategyAnswers, step: advance ? Math.min(index + 1, FINAL_STEP) : index, updatedAt: Date.now(),
+    await ctx.db.patch(id, { answers, questionSet: QUESTION_SET, revision, strategyAnswers, step: advance ? Math.min(index + 1, FINAL_STEP) : index, updatedAt: Date.now(),
       ...(reopening ? { status: "questions" as const, error: undefined } : {}) });
     // Each submitted answer gives the agent an updated snapshot, even when a
     // later answer arrives before it finishes. Only the newest strategy wins.
@@ -471,7 +479,8 @@ export const submit = mutation({
     if (["queued", "building", "saving", "complete"].includes(row.status)) return;
     const plan = await currentPlan(ctx, row.userId);
     if (plan.key === "free") throw new ConvexError("Choose a paid plan to build your website. Your answers are saved.");
-    if (row.step < FINAL_STEP || !row.answers[0]?.trim() || !row.answers[1]?.trim()) throw new ConvexError("Finish your website questions first");
+    const { answers, step } = currentBrief(row);
+    if (step < FINAL_STEP || !answers[0]?.trim() || !answers[1]?.trim()) throw new ConvexError("Finish your website questions first");
     // A retry builds into the site the first attempt made, as long as it is
     // still there; otherwise the build would fail on a site nobody can find.
     const kept = row.siteId ? await ctx.db.get(row.siteId) : null;
@@ -554,7 +563,7 @@ export const rebuild = mutation({
 // build fills with an invented business before anything reads it.
 async function blankBrief(ctx: MutationCtx, userId: Id<"users">, siteId: Id<"sites"> | undefined) {
   const now = Date.now();
-  const id = await ctx.db.insert("siteOnboarding", { userId, answers: QUESTIONS.map(() => ""),
+  const id = await ctx.db.insert("siteOnboarding", { userId, answers: QUESTIONS.map(() => ""), questionSet: QUESTION_SET,
     step: FINAL_STEP, revision: 0, assets: [], status: "questions", attempt: 0, dismissed: false,
     events: [], createdAt: now, updatedAt: now, ...(siteId ? { siteId } : {}) });
   return (await ctx.db.get(id))!;
@@ -723,7 +732,8 @@ export const strategize = internalAction({
         { role: "system", content: FED },
         { role: "system", content: "You are Forge's private website strategist. After each onboarding answer, refine a concise actionable build brief: who this is for, what the site has to get them to do, what it must cover, what the copy should lead with, and the feel the brand asks for. Never ask questions. Never write user-facing commentary." },
         ...(memory ? [{ role: "system" as const, content: memory }] : []),
-        { role: "user", content: briefFile(answers, row.strategy ?? "", []) },
+        // A snapshot taken before the questions changed is read as this set.
+        { role: "user", content: briefFile(answers.length === QUESTIONS.length ? answers : currentBrief({ answers, step: 0, status: "questions" }).answers, row.strategy ?? "", []) },
       ], STRATEGY_MAX_TOKENS, undefined, undefined, "strategy");
     } catch { /* The final build can derive its strategy directly from the complete brief. */ }
     await ctx.runMutation(internal.onboarding.strategySaved, { id, revision, strategy: strategy?.slice(0, STRATEGY_CHARS), holdId: hold.holdId });
@@ -782,7 +792,7 @@ export const adoptSample = internalMutation({
   handler: async (ctx, { id, attempt, answers, label }) => {
     const row = await ctx.db.get(id);
     if (!row || row.attempt !== attempt || row.status !== "queued") return false;
-    await ctx.db.patch(id, { answers, strategy: undefined, strategyRevision: undefined, strategyAnswers: undefined,
+    await ctx.db.patch(id, { answers, questionSet: QUESTION_SET, strategy: undefined, strategyRevision: undefined, strategyAnswers: undefined,
       step: FINAL_STEP, revision: row.revision + 1, updatedAt: Date.now(), events: [...row.events, { label, at: Date.now() }] });
     const site = row.siteId ? await ctx.db.get(row.siteId) : null;
     if (site) {
@@ -893,10 +903,10 @@ export const build = internalAction({
           status: "started",
       });
       const trace = providerTrace(ctx, runId, row.userId);
-      const answers = row.answers;
+      const answers = currentBrief(row).answers;
       const assets = await Promise.all(row.assets.map(async asset => ({ name: asset.name,
         url: await ctx.storage.getUrl(asset.storageId), text: asset.type.startsWith("text/") ? (await (await ctx.storage.get(asset.storageId))?.text())?.slice(0, 12000) : undefined })));
-      const contents = briefFile(answers, answers === row.answers ? row.strategy ?? "" : "", assets);
+      const contents = briefFile(answers, row.strategy ?? "", assets);
       const storageId = await ctx.storage.store(new Blob([contents], { type: "text/markdown" }));
       // Read the persisted file, not a client prompt, as the agent's source.
       const file = await ctx.storage.get(storageId);

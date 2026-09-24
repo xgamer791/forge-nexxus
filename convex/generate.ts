@@ -6,7 +6,7 @@ import { action, internalMutation, internalQuery, type ActionCtx } from "./_gene
 import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import { closeRun, providerTrace, recordLastSign, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
-import { briefFile } from "./onboardingQuestions";
+import { briefFile, currentBrief } from "./onboardingQuestions";
 import { designReviewOn, reviewInFlight } from "./designCheck";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
@@ -580,7 +580,7 @@ export const begin = internalMutation({
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const messages = buildMessages(site.name, current ?? null, recent.reverse(), prompt, talkOnly, kind === "chat" ? "chat" : "build", await memoryNote(ctx, userId));
     if (design) messages.splice(4, 0, { role: "system", content: design.prompt });
-    if (setup) messages.splice(3, 0, { role: "system", content: `Saved project context:\n${briefFile(setup.answers, setup.strategy ?? "", [])}` });
+    if (setup) messages.splice(3, 0, { role: "system", content: `Saved project context:\n${briefFile(currentBrief(setup).answers, setup.strategy ?? "", [])}` });
     return {
       siteId: site._id,
       siteName: site.name,

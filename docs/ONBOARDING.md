@@ -35,14 +35,20 @@ live — a claim that failed, or a site taken offline. It is one button with no
 field: the server assigns the address as the site goes live. Open it as a draft
 sits beside it, so publishing is never the only way on.
 
-Every new website uses the same eleven questions in `convex/onboardingQuestions.ts`.
-The last one — *What do you sell, and what does it cost?* — is what a products
-section is built from: one product or service per line, with a price where the
-member wants one shown. It is optional, and prices reach a site only through
-it, because the agent may not invent one. New questions are appended rather
-than slotted in beside a related one: answers are stored by position, so moving
-an existing question would relabel every brief already saved. `FINAL_STEP` is
-read from the list on both surfaces, so Build stays on the last question.
+Every new website uses the same ten questions in `convex/onboardingQuestions.ts`:
+the business name; what it does and who it is for; what visitors should be
+able to do on the site; what it sells and what it costs; where it is and how to
+reach it; any online shop or booking link; what customers love about it; how
+the site should feel; the logo and photos; and websites the member likes.
+Answers are stored by position, so each set of questions has a number,
+`QUESTION_SET`. A brief saved under the first set of eleven is read as the
+current one by `currentBrief`, which carries every answer across: the two
+overlapping questions about what visitors should do became one, their choices
+map to the new ones, and anything with no match is kept as the member's own
+words. It is stored that way from its next save. A page opened before the
+questions changed is told to reload instead of saving into the wrong question.
+`FINAL_STEP` is read from the list on both surfaces, so Build stays on the last
+question.
 Answers, current step, uploads and the build state belong to the signed-in user
 in `siteOnboarding`. Text autosaves; Continue waits for its write. Reloads and
 other devices can resume. Required answers are the name and offering. Other
