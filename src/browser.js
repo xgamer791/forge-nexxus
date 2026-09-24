@@ -1,6 +1,6 @@
 import { ConvexClient, ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api.js";
-import { createForgeData } from "./data.js";
+import { createForgeData, LIVE_CLIENT_OPTIONS } from "./data.js";
 
 const url = document.querySelector('meta[name="convex-url"]')?.content;
 if (!url) throw new Error('Forge Nexxus needs <meta name="convex-url"> to reach Convex.');
@@ -37,7 +37,7 @@ function pickStorage() {
 }
 
 const data = createForgeData({
-  client: new ConvexClient(url),
+  client: new ConvexClient(url, LIVE_CLIENT_OPTIONS),
   httpClient: new ConvexHttpClient(url),
   storage: pickStorage(),
   api,
@@ -50,7 +50,9 @@ const data = createForgeData({
 data.ready.catch((error) => console.error("Forge Nexxus could not start a session", error));
 
 // iOS can suspend timers and sockets while the app is closed or backgrounded.
-// Refresh persisted credentials on return rather than starting a guest session.
+// A session the live client let go of in the meantime is refreshed on return,
+// rather than waiting out a retry timer that was frozen with the page, or
+// starting a guest session. One it still holds is left to it (data.js).
 const resumeSession = () => {
   if (document.visibilityState !== "visible" || !navigator.onLine) return;
   void data.ready.then(() => data.auth.resume()).catch(() => {});

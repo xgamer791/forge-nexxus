@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { BaseConvexClient, ConvexClient, ConvexHttpClient } from "convex/browser";
 import { describe, expect, test, vi } from "vitest";
-import { createForgeData } from "./data.js";
+import { createForgeData, LIVE_CLIENT_OPTIONS } from "./data.js";
 
 const api = {
   auth: { signIn: "auth:signIn", signOut: "auth:signOut" },
@@ -264,22 +264,62 @@ describe("token lifecycle", () => {
     expect(data.auth.state()).toEqual({ signedIn: true, kind: "member" });
   });
 
-  test("coming back refreshes a session whose token is about to run out", async () => {
+  // The live client refreshes a token it holds before it runs out, and again
+  // when the deployment turns one down. Handing it the session over the top
+  // of that is what stranded its socket.
+  test("coming back leaves a token about to run out to the live client that holds it", async () => {
     const { client, http, data } = harness({ storage: member(60) });
     await data.ready;
     const [, onStatus] = client.setAuth.mock.calls[0];
     onStatus(true);
     await data.auth.resume();
-    expect(http.calls.filter((call) => call.args.refreshToken)).toHaveLength(1);
-    expect(client.setAuth).toHaveBeenCalledTimes(2);
+    expect(http.calls.filter((call) => call.args.refreshToken)).toEqual([]);
+    expect(client.setAuth).toHaveBeenCalledTimes(1);
   });
 
-  test("coming back refreshes a session the live client has not signed in with", async () => {
+  test("coming back leaves a session the live client is still confirming alone", async () => {
     const { client, http, data } = harness({ storage: member(3600) });
     await data.ready;
     await data.auth.resume();
+    expect(http.calls.filter((call) => call.args.refreshToken)).toEqual([]);
+    expect(client.setAuth).toHaveBeenCalledTimes(1);
+  });
+
+  test("coming back refreshes a session the live client let go of, and hands it back", async () => {
+    const { client, http, data } = harness({ storage: member(3600) });
+    await data.ready;
+    const [, onStatus] = client.setAuth.mock.calls[0];
+    onStatus(false);
+    await data.auth.resume();
     expect(http.calls.filter((call) => call.args.refreshToken)).toHaveLength(1);
     expect(client.setAuth).toHaveBeenCalledTimes(2);
+    expect(data.auth.state()).toEqual({ signedIn: true, kind: "member" });
+  });
+
+  test("a saved token that has run out is refreshed before the live client is given it", async () => {
+    const { client, http, data } = harness({ storage: member(-60) });
+    await data.ready;
+    const [fetchToken] = client.setAuth.mock.calls[0];
+    expect(await fetchToken({ forceRefreshToken: false })).toBe("refreshed-token");
+    expect(http.calls.filter((call) => call.args.refreshToken)).toHaveLength(1);
+  });
+
+  // A refresh the network swallowed held the live client, and the member,
+  // for as long as it never answered.
+  test("a refresh that never answers fails like an outage, and the session is kept", async () => {
+    const storage = member(3600);
+    const client = fakeClient();
+    const http = {
+      setAuth() {},
+      clearAuth() {},
+      action: vi.fn((fn, args) => (args.refreshToken ? new Promise(() => {}) : Promise.reject(new Error("unexpected")))),
+    };
+    const data = createForgeData({ client, httpClient: http, storage, api, wait: async () => {}, refreshTimeoutMs: 20 });
+    await data.ready;
+    const [fetchToken] = client.setAuth.mock.calls[0];
+    expect(await fetchToken({ forceRefreshToken: true })).toBeNull();
+    expect(data.auth.state()).toEqual({ signedIn: true, kind: "member" });
+    expect(storage.getItem("forge-auth-refresh")).toBe("member-refresh");
   });
 
   test("a refresh presents the newest saved refresh token, even one another tab wrote", async () => {
@@ -447,6 +487,172 @@ describe("data access", () => {
     expect(client.mutation.mock.calls).toEqual([["users:deleteAccount", {}]]);
     expect(http.calls.slice(before).map((call) => call.fn)).toEqual(["auth:signOut", "auth:signIn"]);
     expect(data.auth.state()).toEqual({ signedIn: true, kind: "guest" });
+  });
+});
+
+// The session lifecycle against the real live client. The fake above records
+// what data.js asks of it; these run Convex's own auth state machine and
+// socket over a stand-in deployment, which is where a reload with an expired
+// token used to strand a member on "Signing you back in…" for good.
+describe("the live client through a restore", () => {
+  const MEMBER = { _id: "u1", name: "Sam", email: "sam@example.com", image: null, isAnonymous: false };
+  let issued = 0;
+  // A token the way Convex Auth issues one, expiring `seconds` from now. No
+  // two are alike, as no two real ones are.
+  const jwt = (seconds) => {
+    const now = Math.floor(Date.now() / 1000);
+    issued += 1;
+    const claims = { sub: "u1", iat: now, exp: now + seconds, jti: issued };
+    return `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`;
+  };
+  const lifeOf = (token) => JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp * 1000 - Date.now();
+  const u64 = (n) => {
+    const bytes = Buffer.alloc(8);
+    bytes.writeBigUInt64LE(BigInt(n));
+    return bytes.toString("base64");
+  };
+
+  // Just enough of a deployment's sync protocol for users.me: it answers a
+  // query, accepts a live token, and turns down one that has run out or that
+  // it has been told to refuse.
+  function fakeDeployment({ turnsDown = new Set() } = {}) {
+    const heard = [];
+    class Socket {
+      constructor() {
+        this.readyState = 0;
+        this.version = { querySet: 0, identity: 0, ts: 0 };
+        this.queries = new Map();
+        this.signedIn = false;
+        setTimeout(() => {
+          if (this.readyState !== 0) return;
+          this.readyState = 1;
+          this.onopen?.();
+        }, 1);
+      }
+      send(raw) {
+        const message = JSON.parse(raw);
+        setTimeout(() => this.receive(message), 1);
+      }
+      close() {
+        if (this.readyState >= 2) return;
+        this.readyState = 3;
+        setTimeout(() => this.onclose?.({ code: 1000, reason: "" }), 0);
+      }
+      emit(message) {
+        if (this.readyState === 1) this.onmessage?.({ data: JSON.stringify(message) });
+      }
+      answers(queryIds) {
+        return queryIds.map((queryId) => ({
+          type: "QueryUpdated",
+          queryId,
+          value: this.queries.get(queryId) === "users:me" && this.signedIn ? MEMBER : null,
+          logLines: [],
+          journal: null,
+        }));
+      }
+      step(querySet, identity, modifications) {
+        const startVersion = { ...this.version, ts: u64(this.version.ts) };
+        this.version = { querySet, identity, ts: this.version.ts + 1 };
+        this.emit({ type: "Transition", startVersion, endVersion: { ...this.version, ts: u64(this.version.ts) }, modifications });
+      }
+      receive(message) {
+        if (this.readyState !== 1) return;
+        if (message.type === "Authenticate") {
+          const user = message.tokenType === "User";
+          const accepted = user && lifeOf(message.value) > 0 && !turnsDown.has(message.value);
+          if (user) heard.push({ token: message.value, accepted });
+          if (user && !accepted) {
+            this.emit({ type: "AuthError", error: "Token expired", baseVersion: message.baseVersion, authUpdateAttempted: true });
+            return;
+          }
+          this.signedIn = accepted;
+          this.step(this.version.querySet, message.baseVersion + 1, this.answers([...this.queries.keys()]));
+        } else if (message.type === "ModifyQuerySet") {
+          const added = [];
+          for (const change of message.modifications) {
+            if (change.type === "Add") {
+              this.queries.set(change.queryId, change.udfPath);
+              added.push(change.queryId);
+            } else this.queries.delete(change.queryId);
+          }
+          this.step(message.newVersion, this.version.identity, this.answers(added));
+        }
+      }
+    }
+    return { Socket, heard };
+  }
+
+  // Refreshes answer with a fresh token, once `hold` lets them.
+  function refreshingHttp({ hold } = {}) {
+    const http = { auth: null, calls: [] };
+    http.setAuth = (value) => {
+      http.auth = value;
+    };
+    http.clearAuth = () => {
+      http.auth = null;
+    };
+    http.action = vi.fn(async (fn, args) => {
+      http.calls.push({ fn, args });
+      if (!args.refreshToken) throw new Error(`unexpected call ${JSON.stringify(args)}`);
+      await hold?.();
+      return { tokens: { token: jwt(3600), refreshToken: `member-refresh-${http.calls.length}` } };
+    });
+    http.query = vi.fn(async () => MEMBER);
+    http.refreshes = () => http.calls.filter((call) => call.args.refreshToken).length;
+    return http;
+  }
+
+  function restore({ token, turnsDown, hold }) {
+    const deployment = fakeDeployment({ turnsDown });
+    const http = refreshingHttp({ hold });
+    const client = new ConvexClient("https://forge-test.convex.cloud", {
+      ...LIVE_CLIENT_OPTIONS,
+      webSocketConstructor: deployment.Socket,
+      unsavedChangesWarning: false,
+      logger: false,
+    });
+    const storage = memoryStorage({
+      "forge-auth-token": token,
+      "forge-auth-refresh": "member-refresh",
+      "forge-auth-kind": "member",
+    });
+    const data = createForgeData({ client, httpClient: http, storage, api, wait: async () => {} });
+    const seen = [];
+    data.account.subscribe((user) => seen.push(user));
+    return { deployment, http, client, data, seen };
+  }
+
+  test("a saved token that has run out is refreshed before the socket presents it", async () => {
+    const { deployment, http, client, data, seen } = restore({ token: jwt(-60) });
+    await data.ready;
+    // browser.js resumes on `pageshow`, which fires on every load.
+    void data.auth.resume();
+    await vi.waitFor(() => expect(seen.at(-1)).toEqual(MEMBER), { timeout: 3000 });
+    expect(deployment.heard.map((entry) => entry.accepted)).toEqual([true]);
+    expect(http.refreshes()).toBe(1);
+    await client.close();
+  });
+
+  // The reload that never finished. Coming back into view handed the live
+  // client the session again while it was replacing a token the deployment
+  // had just turned down; it dropped that replacement as out of date and left
+  // its socket stopped, so users.me never answered.
+  test("coming back while the socket replaces a token the deployment turned down leaves it to finish", async () => {
+    const saved = jwt(1800);
+    let answer;
+    const held = new Promise((resolve) => {
+      answer = resolve;
+    });
+    const { deployment, http, client, data, seen } = restore({ token: saved, turnsDown: new Set([saved]), hold: () => held });
+    await data.ready;
+    const resumed = data.auth.resume();
+    await vi.waitFor(() => expect(deployment.heard).toEqual([{ token: saved, accepted: false }]));
+    await vi.waitFor(() => expect(http.refreshes()).toBe(1));
+    answer();
+    await resumed;
+    await vi.waitFor(() => expect(seen.at(-1)).toEqual(MEMBER), { timeout: 3000 });
+    expect(deployment.heard.at(-1).accepted).toBe(true);
+    await client.close();
   });
 });
 
