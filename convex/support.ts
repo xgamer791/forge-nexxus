@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { publishedUrlFor } from "./sites";
 
 // Build reports for Forge support. When a build fails -- or a reply stopped
@@ -70,10 +70,15 @@ function span(ms: number) {
 }
 
 // One event's detail as the fields a person debugging a stall reads, in the
-// order they read them. Anything not set is left out.
+// order they read them: where in the build it was, what the reply had got to,
+// and what went wrong. Anything not set is left out.
 export function describeDetail(detail: Doc<"buildEvents">["detail"]) {
   if (!detail) return "";
   const parts: string[] = [];
+  if (detail.page && detail.total) parts.push(`page ${detail.page} of ${detail.total}${detail.path ? ` (${detail.path})` : ""}`);
+  else if (detail.path) parts.push(`page ${detail.path}`);
+  if (detail.part) parts.push(`part ${detail.part}`);
+  if (detail.step) parts.push(`step ${detail.step}`);
   if (detail.stopReason) parts.push(`stopped: ${detail.stopReason}`);
   if (detail.streamPhase) parts.push(`phase ${detail.streamPhase}`);
   if (detail.reasoningChars) parts.push(`thinking ${grouped(detail.reasoningChars)} chars`);
@@ -97,7 +102,115 @@ export function describeDetail(detail: Doc<"buildEvents">["detail"]) {
   if (detail.continuation) parts.push(`continuation ${detail.continuation}`);
   if (detail.errorClass) parts.push(`class ${detail.errorClass}`);
   if (detail.providerError) parts.push(`provider said "${detail.providerError}"`);
+  if (detail.reason) parts.push(`why: "${detail.reason}"`);
   return parts.join(", ");
+}
+
+type Logged = Pick<Doc<"buildEvents">, "at" | "phase" | "level" | "label" | "detail">;
+
+// Which agent a line of the log is from. A crew builder names itself at the
+// start of its lines ("Header builder: calling the model"), and so did the
+// retired design auditors; a crew line about a part is its builder's; any
+// other model call is the build's one agent. Everything else is the build's
+// own bookkeeping, and no agent's.
+const BUILDERS: Record<string, string> = {
+  header: "Header builder",
+  body1: "Top-half builder",
+  body2: "Bottom-half builder",
+  footer: "Footer builder",
+};
+export function agentOf(event: Pick<Logged, "label" | "phase" | "detail">) {
+  const named = event.label.match(/^([A-Z][\w-]* (?:builder|auditor))\b/)?.[1];
+  if (named) return named;
+  if (event.phase.startsWith("crew_") && event.detail?.part && BUILDERS[event.detail.part]) return BUILDERS[event.detail.part];
+  if (event.phase.startsWith("provider_")) return "Model";
+  return null;
+}
+
+// What each agent did over a run: its calls to the model and how they ended,
+// what they produced, how long the longest took, and every reason one of its
+// replies could not be used. Counts and reasons only, never a reply.
+export type AgentSummary = {
+  agent: string;
+  calls: number;
+  answered: number;
+  stops: number;
+  retries: number;
+  errors: number;
+  thinkingChars: number;
+  replyChars: number;
+  tokens: number;
+  thinkingTokens: number;
+  longestMs: number;
+  finishReasons: string[];
+  problems: string[];
+};
+export function agentsOf(events: Logged[]): AgentSummary[] {
+  const agents = new Map<string, AgentSummary>();
+  for (const event of [...events].sort((a, b) => a.at - b.at)) {
+    const agent = agentOf(event);
+    if (!agent) continue;
+    let row = agents.get(agent);
+    if (!row) {
+      row = {
+        agent, calls: 0, answered: 0, stops: 0, retries: 0, errors: 0, thinkingChars: 0, replyChars: 0,
+        tokens: 0, thinkingTokens: 0, longestMs: 0, finishReasons: [], problems: [],
+      };
+      agents.set(agent, row);
+    }
+    const detail = event.detail ?? {};
+    // A call's own totals ride the line it ended on: the answer, or the stop.
+    const ended = () => {
+      row!.thinkingChars += detail.reasoningChars ?? 0;
+      row!.replyChars += detail.replyChars ?? 0;
+      row!.tokens += detail.completionTokens ?? 0;
+      row!.thinkingTokens += detail.reasoningTokens ?? 0;
+      row!.longestMs = Math.max(row!.longestMs, detail.durationMs ?? 0);
+      if (detail.finishReason && !row!.finishReasons.includes(detail.finishReason)) row!.finishReasons.push(detail.finishReason);
+    };
+    if (event.phase === "provider_request") row.calls += 1;
+    else if (event.phase === "provider_response") {
+      row.answered += 1;
+      ended();
+    } else if (event.phase === "provider_stop") {
+      row.stops += 1;
+      ended();
+    } else if (event.phase === "provider_retry" || event.phase === "provider_room") row.retries += 1;
+    else if (event.phase === "provider_error") row.errors += 1;
+    else if (event.phase === "crew_unusable" && detail.reason) row.problems.push(detail.reason);
+  }
+  return [...agents.values()];
+}
+
+// What stopped a failed build: the last error before its ending -- the line
+// that stopped it -- and the last thing that went wrong on the way there,
+// which is usually why. A build that finished has neither.
+const TROUBLE = new Set(["provider_error", "provider_stop", "crew_unusable", "draft_unusable"]);
+export function stopOf(run: Pick<Doc<"buildRuns">, "status">, events: Logged[]) {
+  if (run.status !== "failed") return { stoppedBy: null, cause: null };
+  const ordered = [...events].sort((a, b) => a.at - b.at);
+  const ending = ordered.findIndex((event) => event.phase === "failed");
+  const before = ending === -1 ? ordered : ordered.slice(0, ending);
+  const stoppedBy = [...before].reverse().find((event) => event.level === "error") ?? null;
+  const upTo = stoppedBy ? before.slice(0, before.indexOf(stoppedBy) + 1) : before;
+  const cause = [...upTo].reverse().find((event) => TROUBLE.has(event.phase) && event !== stoppedBy) ?? null;
+  return { stoppedBy, cause };
+}
+
+function summaryLine(row: AgentSummary) {
+  const said = [
+    `${row.calls} ${row.calls === 1 ? "call" : "calls"}`,
+    `${row.answered} answered`,
+    ...(row.stops ? [`${row.stops} stopped`] : []),
+    ...(row.retries ? [`${row.retries} asked again`] : []),
+    ...(row.errors ? [`${row.errors} failed`] : []),
+    ...(row.thinkingChars ? [`thinking ${grouped(row.thinkingChars)} chars`] : []),
+    ...(row.replyChars ? [`reply ${grouped(row.replyChars)} chars`] : []),
+    ...(row.tokens ? [`tokens ${grouped(row.tokens)}${row.thinkingTokens ? ` (${grouped(row.thinkingTokens)} thinking)` : ""}`] : []),
+    ...(row.longestMs ? [`longest ${seconds(row.longestMs)}`] : []),
+    ...(row.finishReasons.length ? [`finish ${row.finishReasons.join("/")}`] : []),
+  ];
+  return [`  ${row.agent}: ${said.join(", ")}`, ...row.problems.map((problem) => `    unusable: ${problem}`)];
 }
 
 export function composeReport(
@@ -120,6 +233,12 @@ export function composeReport(
   const ended = run.endedAt ?? run.updatedAt;
   const source = run.source === "generate" ? "Thread build" : run.source === "rebuild" ? "Rebuild" : "Onboarding build";
   const kind = `${source}${run.requestKind ? ` (${run.requestKind})` : ""}${run.attempt ? `, attempt ${run.attempt}` : ""}`;
+  const { stoppedBy, cause } = stopOf(run, ordered);
+  const told = (event: Logged) => {
+    const about = describeDetail(event.detail);
+    return `${event.label}${about ? ` [${about}]` : ""}`;
+  };
+  const agents = agentsOf(ordered);
   const lines = [
     failed ? "A build failed." : "A build finished, but a reply stopped on the way.",
     "",
@@ -127,7 +246,10 @@ export function composeReport(
     `  ${headline}`,
     ...(failed && run.error && run.error !== fault ? [`  The member saw: ${run.error}`] : []),
     ...(run.errorClass ? [`  Class: ${run.errorClass}`] : []),
+    ...(stoppedBy ? [`  Stopped by (+${span(stoppedBy.at - run.startedAt)}): ${told(stoppedBy)}`] : []),
+    ...(cause ? [`  Went wrong before it (+${span(cause.at - run.startedAt)}): ${told(cause)}`] : []),
     ...(stops.length ? [`  Stops, retries and resumes: ${stops.length}`] : []),
+    ...(agents.length ? ["", "Agents", ...agents.flatMap(summaryLine)] : []),
     "",
     "Build",
     `  Run: ${run._id}`,
@@ -151,6 +273,7 @@ export function composeReport(
     }),
     "",
     "Look further",
+    `  npx convex run diagnostics:trace '{"runId":"${run._id}"}'`,
     "  npx convex run diagnostics:inspectStalls",
     "  npx convex run probe:stream",
     "",
@@ -159,20 +282,28 @@ export function composeReport(
   return { subject, text: lines.join("\n") };
 }
 
+// The report for one run, as support is sent it and `diagnostics:trace`
+// reads it.
+export async function reportFor(ctx: QueryCtx, run: Doc<"buildRuns">) {
+  const events = await ctx.db.query("buildEvents").withIndex("by_run_at", (q) => q.eq("runId", run._id)).collect();
+  const user = await ctx.db.get(run.userId);
+  const site = run.siteId ? await ctx.db.get(run.siteId) : null;
+  const mail = composeReport(
+    run,
+    events,
+    { email: user && "email" in user && typeof user.email === "string" ? user.email : null },
+    site ? { name: site.name, slug: site.slug, url: site.slug && site.status === "published" ? publishedUrlFor(site.slug) : null } : null,
+  );
+  return { ...mail, events };
+}
+
 export const report = internalQuery({
   args: { runId: v.id("buildRuns") },
   handler: async (ctx, { runId }) => {
     const run = await ctx.db.get(runId);
     if (!run) return null;
-    const events = await ctx.db.query("buildEvents").withIndex("by_run_at", (q) => q.eq("runId", runId)).collect();
-    const user = await ctx.db.get(run.userId);
-    const site = run.siteId ? await ctx.db.get(run.siteId) : null;
-    return composeReport(
-      run,
-      events,
-      { email: user && "email" in user && typeof user.email === "string" ? user.email : null },
-      site ? { name: site.name, slug: site.slug, url: site.slug && site.status === "published" ? publishedUrlFor(site.slug) : null } : null,
-    );
+    const { subject, text } = await reportFor(ctx, run);
+    return { subject, text };
   },
 });
 

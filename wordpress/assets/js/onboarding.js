@@ -67,8 +67,7 @@ const ENABLED = true;
   }
   // Where the build has got to, as one of the four stages the page drawing
   // shows. Nothing here guesses at a percentage: a stage only moves when the
-  // server says the build did. The design audit belongs to writing: a page is
-  // not finished until its auditors agree it matches the design reference.
+  // server says the build did.
   function buildStage(draft, events) {
     const phase = belongsToDraft(draft) ? trace?.latest?.status : null;
     if (phase === 'researching') {
@@ -79,7 +78,6 @@ const ENABLED = true;
     if (draft.status === 'saving' || phase === 'saving') return { step: 4, label: 'Saving your website…' };
     if (phase === 'images') return { step: 3, label: 'Making the pictures…' };
     const page = crewPage(events);
-    if (phase === 'reviewing') return { step: 2, label: page ? `Checking ${page} against the design reference…` : 'Checking your website against the design reference…' };
     if (phase === 'calling') return { step: 2, label: page ? `Writing ${page}…` : 'Writing your website…' };
     const has = label => events.some(event => event.label === label);
     return has('Pictures made for your site') ? { step: 4, label: 'Putting it together…' }
@@ -104,10 +102,15 @@ const ENABLED = true;
   }
   // A new stage repaints the drawing where it stands rather than replacing the
   // screen, so the part being drawn carries on instead of starting over.
-  function buildActivity(events) {
+  // The log as the member reads it. Once a build has failed, the lines that
+  // say why are marked, so the reason stands out rather than being one line
+  // among twelve; the ending itself is the screen's title already. While a
+  // build runs, a stumble it recovers from is not marked.
+  function buildActivity(events, failed = false) {
     const recent = events.filter(event => event.label && event.phase !== 'queued').slice(-12);
+    const why = event => failed && event.level === 'error' && event.phase !== 'failed';
     return `<details class="build-activity" open><summary>Build activity</summary><ol>${recent.map(event =>
-      `<li><time datetime="${new Date(event.at).toISOString()}">${new Date(event.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time><span>${escape(event.label)}</span></li>`
+      `<li${why(event) ? ' data-level="error"' : ''}><time datetime="${new Date(event.at).toISOString()}">${new Date(event.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time><span>${escape(event.label)}</span></li>`
     ).join('')}</ol></details>`;
   }
   function updateBuild(stage, events) {
@@ -127,9 +130,21 @@ const ENABLED = true;
       const replacement = document.createElement('div');
       replacement.innerHTML = buildActivity(events);
       const next = replacement.firstElementChild;
-      if (next) activity.querySelector('ol').replaceWith(next.querySelector('ol'));
+      const list = activity.querySelector('ol');
+      if (next && list) {
+        const fresh = next.querySelector('ol');
+        const reading = list.scrollTop + list.clientHeight < list.scrollHeight - 8;
+        const from = list.scrollTop;
+        list.replaceWith(fresh);
+        followLog(fresh, reading ? from : null);
+      }
     }
     return true;
+  }
+  // The log keeps its newest line in view -- where the build is now, or the
+  // line that stopped it -- unless the member has scrolled up to read.
+  function followLog(list, keep = null) {
+    if (list) list.scrollTop = keep ?? list.scrollHeight;
   }
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const mark = '<svg class="onboarding-mark" viewBox="0 0 24 30" aria-hidden="true"><path fill="currentColor" stroke="none" d="m12 0 5 5-3 3 10 7-6 15H6L0 15l10-7-3-3Z"/></svg>';
@@ -287,7 +302,7 @@ const ENABLED = true;
     const title = live ? 'Your website is published.' : done ? 'Your website is ready.' : failed ? 'Let’s try that again.' : 'Your idea is taking shape.';
     const detail = live ? 'It is on the web at this address, and every change you make lands there.'
       : done ? (site && !state.isFree ? 'Publish it and Forge gives it an address of its own.' : 'Your first version is saved. Make it yours from your dashboard.')
-      : failed ? draft.error : 'Each page is written and checked in turn, so this can take a while. You can close Forge and come back.';
+      : failed ? draft.error : 'Each page is written in turn, so this can take a while. You can close Forge and come back.';
     // Billing is the way on when the build stopped for credits or a plan;
     // otherwise the answers are, so that is what the failed screen offers.
     const aboutBilling = failed && /credit|plan|limit/i.test(draft.error ?? '');
@@ -302,12 +317,13 @@ const ENABLED = true;
       ${page}<h1 tabindex="-1">${title}</h1>
       ${building ? `<p class="build-status" role="status">${escape(stage.label)}</p>` : ''}
       <p class="onboarding-hint${building ? ' build-note' : ''}">${escape(detail)}</p>
-      ${building || failed ? buildActivity(events) : ''}
+      ${building || failed ? buildActivity(events, failed) : ''}
       ${building ? '<button type="button" class="onboarding-exit onboarding-quiet onboarding-cancel" data-onboarding-action="cancel">Cancel</button>' : ''}
       <p class="onboarding-connection" role="status" ${offline ? '' : 'hidden'}>Connection lost. Reconnecting to live progress…</p>
       ${done ? handoff(site) : failed ? `<button type="button" class="onboarding-primary" data-onboarding-action="retry">Try building again</button>
         <div class="onboarding-after"><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="${aboutBilling ? 'billing' : 'edit'}">${aboutBilling ? 'Manage billing' : 'Edit my answers'}</button><button type="button" class="onboarding-exit onboarding-quiet" data-onboarding-action="exit">Back to dashboard</button></div>` : ''}
       <p class="onboarding-error" role="alert" hidden></p></div>`);
+    followLog(screen.querySelector('.build-activity ol'));
   }
   // The globe owns the address and any domain pointed at it. Open it the way a
   // tap would, once the dashboard is back and the finished site is selected;

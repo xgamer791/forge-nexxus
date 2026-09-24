@@ -8,7 +8,7 @@
 // `.skill` zip. The five screens match Forge's five-page rule.
 //
 // Forge keeps the `.skill` package itself (it is uploaded to Convex and stays
-// with the site), and hands the builders and auditors two things made from it:
+// with the site), and hands the builders two things made from it:
 // the extract -- the package's own text, cut to fit a turn -- and the
 // foundation, its tokens as CSS custom properties for every page's <head>.
 // Nothing here is a judgement: a run that did not produce the ultra outputs
@@ -22,7 +22,7 @@ import { MAX_PAGES } from "./discover.mjs";
 export const SCREENS = MAX_PAGES;
 const REFERENCES = ["LAYOUT.md", "COMPONENTS.md", "INTERACTIONS.md", "ANIMATIONS.md", "VISUAL_GUIDE.md"];
 // How much of each part of the package the extract carries. The whole of it
-// rides in every builder's and auditor's turn, so it is cut to what a turn
+// rides in every builder's turn, so it is cut to what a turn
 // can hold with room for the brief and the page.
 const BUDGET = {
   skill: 20000,
@@ -145,7 +145,7 @@ function tidy(text, limit) {
   return clean.length > limit ? `${clean.slice(0, limit)}\n[… cut to fit]` : clean;
 }
 
-// The extract every builder and auditor reads: what the reference decides and
+// The extract every builder reads: what the reference decides and
 // what it does not, the pages the discovery agent chose, and the package's
 // own text. SKILL.md embeds its references again at the end; that copy is
 // left off, since each reference follows on its own.
@@ -154,7 +154,7 @@ export function extractPrompt({ source, routes, pkg }) {
   const tokens = JSON.stringify({ colors: pkg.tokens.colors, spacing: pkg.tokens.spacing?.scale ?? null, typography: pkg.tokens.typography?.scale ?? null });
   const parts = [
     `SKILLUI ULTRA DESIGN REFERENCE: ${source}`,
-    `Extracted by SkillUI in ultra mode, ${pkg.screens} ${pkg.screens === 1 ? "screen" : "screens"}: the reference site's tokens, type, spacing, components, layout, interactions and motion, screen by screen. Every page is built to it, and every part of every page is audited against it before it is kept.`,
+    `Extracted by SkillUI in ultra mode, ${pkg.screens} ${pkg.screens === 1 ? "screen" : "screens"}: the reference site's tokens, type, spacing, components, layout, interactions and motion, screen by screen. Every page is built to it.`,
     "",
     "WHAT IT DECIDES",
     "- The design: on every page, the order and composition of the sections, the header and its menu, the footer, and their layout, spacing, sizes, type scale, colours, surfaces, components, states and motion, at phone and desktop widths.",

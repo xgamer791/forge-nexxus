@@ -4,14 +4,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { joinCarry, MOST_RESUMES, nextPage, STEP_TRIES } from "./buildDraft";
+import { builderTurn, newCrew, nextFor, pageFrom, readPart, shellFrom, type CrewPart } from "./crew";
 import {
-  AUDITOR, auditorTurn, builderTurn, newCrew, nextFor, pageFrom, PART_REWORKS, readAudit, readPart, shellFrom, type CrewPart,
-} from "./crew";
-import {
-  answerDesignResearch, auditCalls, crewCall, DESIGN_FOUNDATION, DESIGN_PROMPT, designPrompt, partReply, resetAuditScript, resetDesignRoutes,
-  setAuditScript, setDesignRoutes, storeDesignPackage, verdict, type CrewCall,
+  answerDesignResearch, crewCall, DESIGN_FOUNDATION, DESIGN_PROMPT, designPrompt, partReply, resetDesignRoutes,
+  setDesignRoutes, storeDesignPackage, type CrewCall,
 } from "./designWorkerMock";
-import { DESIGN_GOD } from "./designgod";
 import { CARRY_ON, MOST_RESTARTS, NEW_IMAGERY, PAGE_STEP_MS } from "./onboarding";
 import { QUESTIONS } from "./onboardingQuestions";
 import { MAX_PAGES, pagePlan } from "./pages";
@@ -19,10 +16,9 @@ import { REQUEST_COSTS } from "./plans";
 import schema from "./schema";
 
 // Every first build and rebuild is written a page at a time by a crew: a
-// builder and an auditor for the header, two of each for the body and one of
-// each for the footer. These drive the real chain -- the scheduler, the
-// builders' replies, the auditors' verdicts and the save -- against a
-// reference whose pages the discovery agent capped at five.
+// builder for the header, two for the body and one for the footer. These
+// drive the real chain -- the scheduler, the builders' replies and the save --
+// against a reference whose pages the discovery agent capped at five.
 const modules = import.meta.glob("./**/*.*s");
 function makeTest() {
   return convexTest(schema, modules);
@@ -85,9 +81,9 @@ const outlivesStep = (init: RequestInit, ...events: string[]) =>
 // Which build a page came from, so a rebuild is a different design.
 let edition = "first";
 
-// One fetch for the worker, the auditors (answered by the double), the
-// pictures, the strategist, the memory note and the crew's builders, which
-// `answer` speaks for. Every builder call is recorded.
+// One fetch for the worker, the pictures, the strategist, the memory note and
+// the crew's builders, which `answer` speaks for. Every builder call is
+// recorded, and any other call -- one no builder made -- fails the test.
 function stubProviders(answer: (call: CrewCall, init: RequestInit) => Response = (call) => said(partReply(call, edition))) {
   const builders: CrewCall[] = [];
   vi.stubGlobal(
@@ -185,11 +181,10 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   resetDesignRoutes();
-  resetAuditScript();
   for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL"]) delete process.env[name];
 });
 
-const part = (fields: Partial<CrewPart> & Pick<CrewPart, "name">): CrewPart => ({ agreed: false, round: 0, tries: 0, fixes: [], ...fields });
+const part = (fields: Partial<CrewPart> & Pick<CrewPart, "name">): CrewPart => ({ tries: 0, ...fields });
 
 describe("the crew's pieces", () => {
   test("a build plans five pages at most, home first", () => {
@@ -198,19 +193,19 @@ describe("the crew's pieces", () => {
     expect(pagePlan(["/cater", "/Food-Menu/", "/", "/food-menu", "/../x"])).toEqual(["/", "/cater", "/food-menu"]);
   });
 
-  test("a crew starts at its builders, and on a later page the shared header and footer start at their auditors", () => {
+  test("a crew starts at its builders, and on a later page the shared header and footer have nothing left to write", () => {
     const home = newCrew("/", false);
     expect(home.parts.map((each) => [each.name, nextFor(each)])).toEqual([["header", "build"], ["body1", "build"], ["body2", "build"], ["footer", "build"]]);
     const later = newCrew("/food-menu", true);
-    expect(later.parts.map((each) => [each.name, nextFor(each)])).toEqual([["header", "audit"], ["body1", "build"], ["body2", "build"], ["footer", "audit"]]);
-    expect(nextFor(part({ name: "body1", markup: "<section></section>" }))).toBe("audit");
-    expect(nextFor(part({ name: "body1", markup: "<section></section>", fixes: ["Make the opening full height."] }))).toBe("build");
-    expect(nextFor(part({ name: "body1", markup: "<section></section>", agreed: true }))).toBe("done");
+    expect(later.parts.map((each) => [each.name, nextFor(each)])).toEqual([["header", "done"], ["body1", "build"], ["body2", "build"], ["footer", "done"]]);
+    // Written is done: nothing checks a part again once it is written.
+    expect(nextFor(part({ name: "body1", markup: "<section></section>" }))).toBe("done");
+    expect(nextFor(part({ name: "body1", partial: "```html part=\"body1\"\n<section>" }))).toBe("build");
   });
 
   test("a builder's part is read whole and clean, or comes back as what to put right", () => {
-    const read = (reply: string, name: "header" | "body1" | "body2" | "footer", adjusting = false) =>
-      readPart(reply, { part: name, adjusting, path: "/food-menu" }) as { markup?: string; title?: string; problem?: string };
+    const read = (reply: string, name: "header" | "body1" | "body2" | "footer") =>
+      readPart(reply, { part: name }) as { markup?: string; title?: string; problem?: string };
     expect(read('Built it.\n\n```html part="header"\n<style>.site-header{}</style><header class="site-header">x</header>\n```', "header"))
       .toEqual({ markup: '<style>.site-header{}</style><header class="site-header">x</header>' });
     expect(read('Built it.\n\n```html part="body1" title="Food menu"\n<section><h1>Menu</h1></section>\n```', "body1"))
@@ -225,24 +220,9 @@ describe("the crew's pieces", () => {
     expect(read('```html part="body2"\n<style>.b{}</style>\n```', "body2")).toEqual({ problem: "the bottom half has styles and no sections. Write the sections themselves." });
     expect(read('```html part="body1"\n<section>a</section><!-- the rest is unchanged -->\n```', "body1").problem)
       .toMatch(/^the top half has a comment standing in for part of it/);
-    // A later page's chrome is CSS for that page alone.
-    expect(read('```html part="header"\n<style>body:has(main[data-forge-route="/food-menu"]) .site-header{background:#fff}</style>\n```', "header", true))
-      .toEqual({ markup: '<style>body:has(main[data-forge-route="/food-menu"]) .site-header{background:#fff}</style>' });
-    expect(read('```html part="header"\n<header>new</header>\n```', "header", true).problem).toMatch(/^send only a <style> element/);
-    expect(read('```html part="header"\n<style>.site-header{background:#fff}</style>\n```', "header", true).problem).toMatch(/^scope every rule to this page/);
   });
 
-  test("an auditor's verdict is read for agreement and fixes, and one that asks for nothing to change is not a verdict", () => {
-    expect(readAudit('{"agree": true, "differences": [], "fixes": []}')).toEqual({ agree: true, differences: [], fixes: [] });
-    expect(readAudit('Here it is:\n```json\n{"agree": "false", "differences": ["480px tall; the reference fills the screen"], "fixes": ["Make the opening 100svh."]}\n```'))
-      .toEqual({ agree: false, differences: ["480px tall; the reference fills the screen"], fixes: ["Make the opening 100svh."] });
-    expect(readAudit('{"agree": false, "differences": ["The footer has two columns; the reference has four."]}'))
-      .toEqual({ agree: false, differences: ["The footer has two columns; the reference has four."], fixes: ["The footer has two columns; the reference has four."] });
-    expect(readAudit('{"agree": false, "differences": [], "fixes": []}')).toBeNull();
-    expect(readAudit("It looks close.")).toBeNull();
-  });
-
-  test("a builder is handed the reference, the crew, the foundation and the brief, and a part sent back gets its own reply and the fixes", () => {
+  test("a builder is handed the reference, the crew, the foundation and the brief, and a part it could not use is named on its next go", () => {
     const base = [{ role: "system" as const, content: "RULES" }, { role: "user" as const, content: "Build the website from the saved onboarding brief." }];
     const common = { base, extract: DESIGN_PROMPT, foundation: DESIGN_FOUNDATION, brief: "BRIEF", siteName: "Taquería El Farolito", routes: FIVE };
     const header = builderTurn({ ...common, path: "/", part: part({ name: "header" }) });
@@ -253,6 +233,8 @@ describe("the crew's pieces", () => {
     expect(header.some((m) => m.content === "File: website-build-brief.md\n\nBRIEF")).toBe(true);
     expect(header.at(-1)!.content).toMatch(/^You are the header builder\./);
     expect(header.at(-1)!.content).toContain(`every page of this site by its path: ${FIVE.join(", ")}`);
+    // The crew is builders alone: nobody is said to check their work.
+    expect(header.some((m) => /auditor/i.test(m.content))).toBe(false);
 
     const rest = builderTurn({ ...common, path: "/", part: part({ name: "body2" }), top: "<section><h1>Tacos</h1></section>" });
     expect(rest.at(-1)!.content).toContain("The top of this page, as written:\n```html\n<section><h1>Tacos</h1></section>\n```");
@@ -261,22 +243,12 @@ describe("the crew's pieces", () => {
     const later = builderTurn({
       ...common, path: "/specials", part: part({ name: "body1" }), written: { shell: "<!doctype html><html>SHELL</html>", home: { path: "/", title: "Home", body: "HOME PAGE" } },
     });
-    expect(later.at(-1)!.content).toContain("The site so far, as written and approved.");
+    expect(later.at(-1)!.content).toContain("The site so far, as written.");
     expect(later.at(-1)!.content).toContain("HOME PAGE");
 
-    const sentBack = builderTurn({
-      ...common, path: "/", part: part({ name: "footer", markup: "<footer>old</footer>", round: 1, fixes: ["Give the footer four columns."], problem: "the footer came back empty. Write it out in full." }),
-    });
-    expect(sentBack.at(-2)).toEqual({ role: "assistant", content: '```html part="footer"\n<footer>old</footer>\n```' });
-    expect(sentBack.at(-1)!.content).toContain("- Give the footer four columns.");
-    expect(sentBack.at(-1)!.content).toContain("Your last reply for this part could not be used: the footer came back empty. Write it out in full.");
-
-    const chrome = builderTurn({
-      ...common, path: "/specials", part: part({ name: "header", markup: "", round: 1, fixes: ["Make the header solid white on this page."] }),
-      written: { shell: "<!doctype html><html>SHELL</html>" },
-    });
-    expect(chrome.at(-1)!.content).toContain("- Make the header solid white on this page.");
-    expect(chrome.at(-1)!.content).toContain('body:has(main[data-forge-route="/specials"])');
+    const again = builderTurn({ ...common, path: "/", part: part({ name: "footer", tries: 1, problem: "the footer came back empty. Write it out in full." }) });
+    expect(again.at(-1)!.content).toMatch(/^You are the footer builder\./);
+    expect(again.at(-1)!.content).toContain("Your last reply for this part could not be used: the footer came back empty. Write it out in full.");
   });
 
   test("a part its step's clock stopped goes back as the builder's own words, with the ask to carry on after anything to put right", () => {
@@ -287,10 +259,6 @@ describe("the crew's pieces", () => {
     expect(turn.slice(-2)).toEqual([{ role: "assistant", content: carry }, { role: "user", content: CARRY_ON }]);
     expect(turn.at(-3)!.content).toMatch(/^You are the builder for the top of this page/);
     expect(turn.at(-3)!.content).toContain("Your last reply for this part could not be used: the top half came back empty.");
-    // Sent back and then stopped part way: the fixes, then the carry.
-    const reworked = builderTurn({ ...common, part: part({ name: "footer", markup: "<footer>old</footer>", round: 1, fixes: ["Four columns."] }), carry: "```html part=\"footer\"\n<footer" });
-    expect(reworked.at(-3)!.content).toContain("- Four columns.");
-    expect(reworked.at(-2)).toEqual({ role: "assistant", content: "```html part=\"footer\"\n<footer" });
   });
 
   test("carrying a page on joins it where it stopped, and never doubles it", () => {
@@ -302,25 +270,6 @@ describe("the crew's pieces", () => {
     // One that starts the block over replaces what was there.
     const over = '<section class="events"><h1>Events at El Farolito</h1><p>Every Friday night: live mariachi.</p></section>\n```';
     expect(joinCarry(carried, over)).toBe(`\`\`\`html path="/events" title="Events"\n${over}`);
-  });
-
-  test("an auditor gets its own instructions, the builders' rules, the reference and the work, never a builder's instructions", () => {
-    const turn = auditorTurn({
-      extract: DESIGN_PROMPT, foundation: DESIGN_FOUNDATION, siteName: "Taquería El Farolito", routes: FIVE, path: "/specials", part: "body2",
-      work: { label: "The bottom half, as its builder wrote it:", markup: "<section>b</section>" },
-      context: [{ label: "The top half, for context.", markup: "<section>a</section>" }],
-      round: 2, lastFixes: ["Put the hours in three columns."],
-    });
-    expect(turn[0]).toEqual({ role: "system", content: AUDITOR });
-    expect(turn[1].content).toContain(DESIGN_GOD);
-    expect(turn[2].content).toBe(DESIGN_PROMPT);
-    const ask = turn[3].content;
-    expect(ask).toContain("page 4 of 5: /specials. You audit the rest of the page");
-    expect(ask).toContain("Round 2 of this part's audit.");
-    expect(ask).toContain("- Put the hours in three columns.");
-    expect(ask).toContain("<section>b</section>");
-    expect(ask).toContain("The top half, for context. It is not yours to judge.");
-    expect(turn.some((m) => /You are the (header builder|builder for)/.test(m.content))).toBe(false);
   });
 
   test("the shell is Forge's head, the foundation and the parts' own styles, and a page is its two halves in its <main>", () => {
@@ -349,20 +298,19 @@ describe("the crew's pieces", () => {
     const crew = newCrew("/specials", true);
     crew.parts = crew.parts.map((each) => ({
       ...each,
-      agreed: true,
-      markup: each.name === "header" ? '<style>body:has(main[data-forge-route="/specials"]) .site-header{}</style>' : each.name === "footer" ? "" : `<section>${each.name}</section>`,
+      markup: each.name === "header" || each.name === "footer" ? "" : `<section>${each.name}</section>`,
       ...(each.name === "body1" ? { title: "This week's specials" } : {}),
     }));
-    expect(pageFrom(crew, { siteName: "Taquería El Farolito", chromeInShell: false })).toEqual({
+    expect(pageFrom(crew, { siteName: "Taquería El Farolito" })).toEqual({
       path: "/specials",
       title: "This week's specials",
-      body: '<style>body:has(main[data-forge-route="/specials"]) .site-header{}</style>\n<main id="main" data-forge-route="/specials">\n<section>body1</section>\n<section>body2</section>\n</main>',
+      body: '<main id="main" data-forge-route="/specials">\n<section>body1</section>\n<section>body2</section>\n</main>',
     });
   });
 });
 
 describe("a site written by its crews, start to finish", () => {
-  test("seven discovered pages become five, each written by its crew and kept only once all four auditors agree", async () => {
+  test("seven discovered pages become five, each written by its crew and kept once every part is written", async () => {
     const t = fresh();
     const member = await createBuilder(t);
     const builders = stubProviders();
@@ -371,17 +319,13 @@ describe("a site written by its crews, start to finish", () => {
 
     const [draft] = await t.run((ctx) => ctx.db.query("buildDrafts").collect());
     expect(draft).toMatchObject({ status: "done", routes: FIVE, tries: 0 });
-    // The home page's crew writes all four parts; every later page's writes the
-    // body and checks the shared header and footer there.
+    // The home page's crew writes all four parts; every later page's writes
+    // only its body, inside the shared header and footer.
     const written = builders.map((call) => `${call.path} ${call.part}`);
     expect(written).toEqual([
       "/ header", "/ body1", "/ footer", "/ body2",
       ...FIVE.slice(1).flatMap((path) => [`${path} body1`, `${path} body2`]),
     ]);
-    const audited = auditCalls().map((call) => `${call.path} ${call.part}`);
-    for (const path of FIVE) {
-      expect(audited.filter((entry) => entry.startsWith(`${path} `)).sort()).toEqual([`${path} body1`, `${path} body2`, `${path} footer`, `${path} header`]);
-    }
     // One page at a time: no page's crew starts before the last page is kept.
     const order = builders.map((call) => FIVE.indexOf(call.path));
     expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -409,95 +353,115 @@ describe("a site written by its crews, start to finish", () => {
       expect(page.body.startsWith(`<main id="main" data-forge-route="${page.path}">`)).toBe(true);
       expect(page.body).not.toContain("forge-image:");
     }
-    expect(version.summary).toBe("Built your 5-page website. Every page matched the design reference before it was kept.");
+    expect(version.summary).toBe("Built your 5-page website.");
     const site = (await t.run((ctx) => ctx.db.query("sites").first()))!;
     expect(site).toMatchObject({ status: "published", currentVersionId: version._id });
     // One build's credits, held once across every step and settled once.
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
-    // It landed without a second audit: its pages already had their auditors'.
+    // It landed through its own step, as it was written.
     const [gate] = await t.run((ctx) => ctx.db.query("designGates").collect());
-    expect(gate).toMatchObject({ status: "passed", audited: true, round: 1 });
-    expect(auditCalls()).toHaveLength(FIVE.length * 4);
+    expect(gate).toMatchObject({ status: "passed", round: 1, results: [] });
+    expect(gate.audited).toBeUndefined();
 
     const labels = (await events(t)).map((event) => event.label);
     expect(labels).toEqual(expect.arrayContaining([
       "Chose 5 pages from the reference",
-      "Writing your 5 pages one at a time, each with its own builders and auditors",
+      "Writing your 5 pages, one at a time",
       "Page 1 of 5, home: writing the header, the page and the footer",
       "Page 1 of 5: writing the header",
-      "Page 1 of 5: the auditor agreed the header matches the reference",
-      "Kept page 1 of 5, home: all four auditors agreed it matches the reference",
-      "Page 2 of 5, /food-menu: writing the page, and checking the shared header and footer on it",
-      "Page 2 of 5: the auditor is checking the header against the reference",
-      "Kept page 5 of 5, /events: all four auditors agreed it matches the reference",
-      "Wrote all 5 pages, and every auditor agreed",
+      "Page 1 of 5: the header is written",
+      "Wrote page 1 of 5, home",
+      "Page 2 of 5, /food-menu: writing the page",
+      "Wrote page 5 of 5, /events",
+      "Wrote all 5 pages",
     ]));
     expect(labels.some((label) => /^Header builder: calling the model$/.test(label))).toBe(true);
-    expect(labels.some((label) => /^Bottom-half auditor: calling the model$/.test(label))).toBe(true);
+    expect(labels.filter((label) => /audit|agreed|reference before/i.test(label))).toEqual([]);
   });
 
-  test("a part its auditor sends back goes to its builder with its own reply and the fixes, and is audited again", async () => {
+  // The build that failed on its header: the parts still being written when
+  // one stopped it went on thinking, and on writing into the log, for minutes
+  // after it had failed.
+  test("once one part stops the build, the replies still being written for the others are called off", async () => {
     setDesignRoutes(["/"]);
     const t = fresh();
     const member = await createBuilder(t);
-    setAuditScript((call) => (call.part === "body1" && call.round === 1 ? verdict(false, ["Make the opening fill the first screen."]) : null));
-    const builders = stubProviders();
-    const id = await build(t, member);
-    expect(await brief(t, id)).toMatchObject({ status: "complete" });
-    const tops = builders.filter((call) => call.part === "body1");
-    expect(tops).toHaveLength(2);
-    expect(tops[1].messages.at(-2)!.role).toBe("assistant");
-    expect(tops[1].messages.at(-2)!.content).toContain('```html part="body1"');
-    expect(tops[1].messages.at(-1)!.content).toContain("- Make the opening fill the first screen.");
-    const second = auditCalls().filter((call) => call.part === "body1")[1];
-    expect(second.round).toBe(2);
-    expect(second.messages.at(-1)!.content).toContain("Last round you asked for these fixes. Check that each one was made");
-    expect(second.messages.at(-1)!.content).toContain("- Make the opening fill the first screen.");
-    const labels = (await events(t)).map((event) => event.label);
-    expect(labels).toContain("Page 1 of 1: the auditor sent the top half back with 1 change");
-    expect(labels).toContain("Page 1 of 1: making the auditor's change to the top half");
-    expect(labels).toContain("Kept page 1 of 1, home: all four auditors agreed it matches the reference");
-    expect((await versions(t))[0].summary).toBe("Built your one-page website. It matched the design reference before it was kept.");
-  });
-
-  test("a part its auditor never agrees to stops the build after three rounds of changes, and nothing is saved", async () => {
-    setDesignRoutes(["/"]);
-    const t = fresh();
-    const member = await createBuilder(t);
-    setAuditScript((call) => (call.part === "footer" ? verdict(false, ["The footer needs four columns."]) : null));
-    const builders = stubProviders();
-    const id = await build(t, member);
-    expect(auditCalls().filter((call) => call.part === "footer")).toHaveLength(PART_REWORKS + 1);
-    expect(builders.filter((call) => call.part === "footer")).toHaveLength(PART_REWORKS + 1);
-    expect(await brief(t, id)).toMatchObject({
-      status: "failed",
-      error: "The footer of the home page still didn't match the design reference after three rounds of changes, so this build wasn't saved and your credits were returned. Try again. Your answers are saved.",
+    const calledOff: string[] = [];
+    const builders = stubProviders((call, init) => {
+      if (call.part === "body1") return new Response(JSON.stringify({ error: { message: "Model Not Exist" } }), { status: 400 });
+      // The header and the footer are still thinking when the top half fails.
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(delta({ reasoning_content: `Weigh the ${call.part}.` })));
+          const tick = setInterval(() => controller.enqueue(encoder.encode(": keep-alive\n\n")), 10);
+          init.signal?.addEventListener("abort", () => {
+            clearInterval(tick);
+            calledOff.push(call.part);
+            controller.error(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
+          });
+        },
+      }), { status: 200, headers: { "content-type": "text/event-stream" } });
     });
+    const id = await build(t, member);
+    expect((await brief(t, id)).error).toContain("answered 400: Model Not Exist");
+    expect(calledOff.sort()).toEqual(["footer", "header"]);
+    // Asked once each: a reply called off is not a reply that dropped.
+    expect(builders.map((call) => call.part).sort()).toEqual(["body1", "footer", "header"]);
+    const log = await events(t);
+    expect(log.filter((event) => ["provider_stop", "provider_retry", "crew_unusable"].includes(event.phase))).toEqual([]);
+    // The log ends where the build did.
+    expect(log.sort((a, b) => a.at - b.at).at(-1)).toMatchObject({ phase: "failed", label: "Build failed" });
     expect(await versions(t)).toEqual([]);
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "released"]]);
-    expect(await t.run((ctx) => ctx.db.query("designGates").collect())).toEqual([]);
-    const [draft] = await t.run((ctx) => ctx.db.query("buildDrafts").collect());
-    expect(draft).toMatchObject({ status: "failed", pages: [] });
-    expect((await events(t)).map((event) => event.label)).toContain("Stopped at page 1 of 1: the auditor still didn't agree on the footer after 3 rounds of changes");
+
+    // The debugger says what stopped the build, what went wrong just before,
+    // and what each builder's calls came to -- in the provider's own words,
+    // and never with the key.
+    const trace = (await t.query(internal.diagnostics.trace, {}))!;
+    expect(trace).toMatchObject({
+      status: "failed",
+      stoppedBy: {
+        phase: "draft_failed",
+        label: "Stopped at page 1 of 1: the top half came back unusable once",
+        detail: expect.objectContaining({ part: "body1", reason: "The model provider answered 400: Model Not Exist" }),
+      },
+      cause: {
+        phase: "provider_error",
+        label: "Top-half builder: the model provider answered 400",
+        detail: expect.objectContaining({ part: "body1", httpStatus: 400, providerError: "Model Not Exist" }),
+      },
+    });
+    expect(trace.agents.map((agent) => agent.agent).sort()).toEqual(["Footer builder", "Header builder", "Top-half builder"]);
+    expect(trace.agents.find((agent) => agent.agent === "Top-half builder")).toMatchObject({ calls: 1, answered: 0, errors: 1 });
+    expect(trace.agents.find((agent) => agent.agent === "Header builder")).toMatchObject({ calls: 1, answered: 0, stops: 0, retries: 0 });
+    expect(trace.lines).toContain("Agents");
+    expect(trace.lines.find((line) => line.startsWith("  Stopped by"))).toContain("the top half came back unusable once");
+    expect(trace.lines.find((line) => line.startsWith("  Went wrong before it"))).toContain('provider said "Model Not Exist"');
+    expect(JSON.stringify(trace)).not.toContain(KEY);
   });
 
-  test("on a later page the shared header is fixed for that page alone, with CSS, and the shell never changes", async () => {
-    setDesignRoutes(["/", "/food-menu"]);
+  test("a part that keeps coming back unusable is traced with every reason it could not be used", async () => {
+    setDesignRoutes(["/"]);
     const t = fresh();
     const member = await createBuilder(t);
-    setAuditScript((call) => (call.path === "/food-menu" && call.part === "header" && call.round === 1 ? verdict(false, ["On this page the header sits on white, not over the picture."]) : null));
-    const builders = stubProviders();
+    stubProviders((call) => call.part === "footer"
+      ? said('Built it.\n\n```html part="footer"\n<div class="site-footer">no landmark</div>\n```')
+      : said(partReply(call)));
     const id = await build(t, member);
-    expect(await brief(t, id)).toMatchObject({ status: "complete" });
-    const chrome = builders.filter((call) => call.path === "/food-menu" && call.part === "header");
-    expect(chrome).toHaveLength(1);
-    expect(chrome[0].messages.at(-1)!.content).toContain("- On this page the header sits on white, not over the picture.");
-    const [version] = await versions(t);
-    const menu = version.pages!.find((page) => page.path === "/food-menu")!;
-    expect(menu.body).toContain('<style>body:has(main[data-forge-route="/food-menu"]) .site-header{background:var(--color-paper)}</style>');
-    expect(version.pages!.find((page) => page.path === "/")!.body).not.toContain("body:has(");
-    expect(version.shell).not.toContain("body:has(");
-    expect((await events(t)).map((event) => event.label)).toContain("Page 2 of 2: fitting the shared header to this page");
+    expect(await brief(t, id)).toMatchObject({ status: "failed" });
+    const trace = (await t.query(internal.diagnostics.trace, {}))!;
+    expect(trace.stoppedBy).toMatchObject({
+      label: `Stopped at page 1 of 1: the footer came back unusable ${STEP_TRIES} times in a row`,
+      detail: expect.objectContaining({ part: "footer", reason: "the footer has no <footer> element. Put the whole footer in one." }),
+    });
+    expect(trace.cause).toMatchObject({
+      phase: "crew_unusable",
+      detail: expect.objectContaining({ part: "footer", reason: "the footer has no <footer> element. Put the whole footer in one." }),
+    });
+    const footer = trace.agents.find((agent) => agent.agent === "Footer builder")!;
+    expect(footer).toMatchObject({ calls: STEP_TRIES, answered: STEP_TRIES });
+    expect(footer.problems).toEqual(Array(STEP_TRIES).fill("the footer has no <footer> element. Put the whole footer in one."));
+    expect(trace.lines).toContain("    unusable: the footer has no <footer> element. Put the whole footer in one.");
   });
 
   test("a builder's reply that cannot be used is named in the log, and its next turn is told what to put right", async () => {
@@ -580,18 +544,6 @@ describe("when a crew cannot go on", () => {
     expect(await versions(t)).toEqual([]);
   });
 
-  test("an auditor that gives no verdict it can act on is asked again, and one that never does stops the build", async () => {
-    setDesignRoutes(["/"]);
-    const t = fresh();
-    const member = await createBuilder(t);
-    setAuditScript((call) => (call.part === "header" ? "It looks close enough to me." : null));
-    stubProviders();
-    const id = await build(t, member);
-    expect(auditCalls().filter((call) => call.part === "header")).toHaveLength(STEP_TRIES);
-    expect(await brief(t, id)).toMatchObject({ status: "failed", error: "The design auditor didn't return a verdict. Your answers are saved." });
-    expect((await events(t)).map((event) => event.label)).toContain("Page 1 of 1: the auditor's verdict on the header couldn't be read");
-  });
-
   test("a step whose clock runs short saves what its crew finished and queues the next, which carries on from there", async () => {
     setDesignRoutes(["/"]);
     vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
@@ -614,8 +566,6 @@ describe("when a crew cannot go on", () => {
     let row = await load(t, draft._id);
     expect(row.lease).toBeUndefined();
     expect(row.crew!.parts.filter((each) => each.markup !== undefined).map((each) => each.name).sort()).toEqual(["body1", "footer", "header"]);
-    expect(row.crew!.parts.every((each) => !each.agreed)).toBe(true);
-    expect(auditCalls()).toEqual([]);
     expect(await pending(t)).toContain("buildDraft:write");
     await dropScheduled(t);
 
@@ -634,7 +584,7 @@ describe("when a crew cannot go on", () => {
     hold();
     const t = fresh();
     const member = await createBuilder(t);
-    const whole = partReply({ role: "builder", part: "body1", path: "/", round: 0, messages: [] });
+    const whole = partReply({ part: "body1", path: "/" });
     const cut = whole.indexOf("<h1>");
     const opening = whole.slice(0, cut);
     // What is kept is the part from its opening fence, as a page is.
@@ -826,7 +776,7 @@ describe("when a crew cannot go on", () => {
     expect(await holds(t)).toEqual([["generate", "released"]]);
   });
 
-  test("a copy that lost its hold saves nothing, and inspect shows each part's rounds and never a page", async () => {
+  test("a copy that lost its hold saves nothing, and inspect shows where each part is and never a page", async () => {
     hold();
     const t = fresh();
     const member = await createBuilder(t);
@@ -837,9 +787,9 @@ describe("when a crew cannot go on", () => {
     await t.mutation(internal.buildDraft.muster, { id: draft._id, lease: claimed.lease, path: "/" });
     expect(await t.mutation(internal.buildDraft.partBuilt, { id: draft._id, lease: "not-mine", part: "header", markup: "<header>H</header>" })).toBeNull();
     expect(await t.mutation(internal.buildDraft.partBuilt, { id: draft._id, lease: claimed.lease, part: "header", markup: "<header>H</header>" }))
-      .toMatchObject({ name: "header", markup: "<header>H</header>", agreed: false });
-    expect(await t.mutation(internal.buildDraft.partAudited, { id: draft._id, lease: claimed.lease, part: "header", agree: false, fixes: ["Taller."] }))
-      .toMatchObject({ state: "rework", part: { round: 1, fixes: ["Taller."] } });
+      .toEqual({ name: "header", markup: "<header>H</header>", tries: 0 });
+    // Written is done: a second copy of the same part is not taken.
+    expect(await t.mutation(internal.buildDraft.partBuilt, { id: draft._id, lease: claimed.lease, part: "header", markup: "<header>Again</header>" })).toBeNull();
     const opening = 'Built the opening.\n```html part="body1" title="Home"\n<section class="a-hero"><h1>Al pastor';
     expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease: "not-mine", part: "body1", text: opening })).toEqual({ state: "gone" });
     expect(await t.mutation(internal.buildDraft.partCarried, { id: draft._id, lease: claimed.lease, part: "body1", text: opening }))
@@ -848,8 +798,8 @@ describe("when a crew cannot go on", () => {
     expect(nextPage(saved)).toBe("/");
     const inspected = (await t.query(internal.buildDraft.inspect, {}))[0];
     expect(inspected).toMatchObject({ status: "writing", routes: FIVE, written: [], partial: null, crew: { path: "/" } });
-    expect(inspected.crew!.parts[0]).toEqual({ part: "header", agreed: false, round: 1, tries: 0, chars: 18, carried: null, fixes: 1 });
-    expect(inspected.crew!.parts[1]).toEqual({ part: "body1", agreed: false, round: 0, tries: 0, chars: null, carried: { chars: opening.length, resumes: 1 }, fixes: 0 });
+    expect(inspected.crew!.parts[0]).toEqual({ part: "header", written: true, tries: 0, chars: 18, carried: null, problem: null });
+    expect(inspected.crew!.parts[1]).toEqual({ part: "body1", written: false, tries: 0, chars: null, carried: { chars: opening.length, resumes: 1 }, problem: null });
     expect(JSON.stringify(inspected)).not.toContain("<header");
     expect(JSON.stringify(inspected)).not.toContain("Al pastor");
   });
@@ -869,14 +819,13 @@ describe("when a crew cannot go on", () => {
 });
 
 describe("a one-page reference", () => {
-  test("is written by its crew like any other: four builders, four auditors, one page", async () => {
+  test("is written by its crew like any other: four builders, one page", async () => {
     setDesignRoutes(["/"]);
     const t = fresh();
     const member = await createBuilder(t);
     const builders = stubProviders();
     const id = await build(t, member);
     expect(builders.map((call) => call.part).sort()).toEqual(["body1", "body2", "footer", "header"]);
-    expect(auditCalls().map((call) => call.part).sort()).toEqual(["body1", "body2", "footer", "header"]);
     expect(await brief(t, id)).toMatchObject({ status: "complete" });
     expect((await versions(t))[0].pages!.map((page) => page.path)).toEqual(["/"]);
     expect(await member.as.query(api.billing.summary, {})).toMatchObject({ reserved: 0 });

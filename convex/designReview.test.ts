@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { answerDesignResearch, auditCalls, crewCall, DESIGN_PROMPT, partReply, resetAuditScript, storeDesignPackage } from "./designWorkerMock";
+import { answerDesignResearch, crewCall, DESIGN_PROMPT, partReply, storeDesignPackage } from "./designWorkerMock";
 import {
   chromeHash,
   designReviewOn,
@@ -110,8 +110,8 @@ const lastUser = (call: Call) => call.body.messages.filter((message: any) => mes
 
 // The design agent and the design reviewer, told apart by their instructions.
 // The strategist and the memory note are answered so they stay out of the way,
-// and a first build's crew builders get their parts (the auditors are the
-// double's).
+// and a first build's crew builders get their parts. Any other call counts as
+// the design agent's, so a turn nobody asked for shows up in `builds`.
 function stubAgents(agents: { build: (call: number) => string; review: (call: number) => string | Promise<string> }) {
   const calls: Call[] = [];
   let builds = 0;
@@ -160,7 +160,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
-  resetAuditScript();
   for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_BUILD_MODEL", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL", "DESIGN_REVIEW_ROUNDS"]) {
     delete process.env[name];
   }
@@ -178,7 +177,7 @@ async function firstSite(t: T, member: Member) {
 }
 
 describe("a first build researches a SkillUI Ultra design reference and saves", () => {
-  test("the worker runs once, the package is kept, the crew and its auditors build it, and the retired reviewer is not called", async () => {
+  test("the worker runs once, the package is kept, the crew builds it, and the retired reviewer is not called", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const agents = stubAgents({ build: () => siteReply(), review: () => AGREE });
@@ -189,7 +188,6 @@ describe("a first build researches a SkillUI Ultra design reference and saves", 
 
     expect(agents.builds()).toHaveLength(0);
     expect(agents.crew()).toHaveLength(4);
-    expect(auditCalls()).toHaveLength(4);
     expect(agents.reviews()).toHaveLength(0);
     expect(await reviews(t)).toEqual([]);
     const brief = (await t.run((ctx) => ctx.db.get(id)))!;
@@ -200,9 +198,11 @@ describe("a first build researches a SkillUI Ultra design reference and saves", 
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
       "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
-      "design_loaded", "draft_start", "crew_page", "crew_built", "crew_agreed", "crew_page_done", "draft_done", "complete",
+      "design_loaded", "draft_start", "crew_page", "crew_built", "crew_page_done", "draft_done", "complete",
     ]));
-    expect(events.map((event) => event.phase)).not.toContain("layout_check");
+    for (const retired of ["layout_check", "crew_audit", "crew_agreed", "crew_sent_back", "crew_exhausted", "design_audit", "design_verdict"]) {
+      expect(events.map((event) => event.phase)).not.toContain(retired);
+    }
     expect(await versions(t)).toHaveLength(1);
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
     for (const call of agents.crew()) {
@@ -238,7 +238,7 @@ describe("a first build researches a SkillUI Ultra design reference and saves", 
 });
 
 describe("an edit uses the saved SkillUI Ultra design reference", () => {
-  test("an edit is told to follow the reference, checked by its auditors, and saved", async () => {
+  test("an edit is told to follow the reference, and saved as it was written", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const agents = stubAgents({
@@ -256,9 +256,9 @@ describe("an edit uses the saved SkillUI Ultra design reference", () => {
     expect(await versions(t)).toHaveLength(2);
     expect(agents.builds()).toHaveLength(1);
     expect(systemOf(agents.builds()[0])).toContain(DESIGN_PROMPT);
-    // The edit's own auditors: the shell changed, so the header and footer,
-    // and both halves of the page it touched.
-    expect(auditCalls().slice(4).map((call) => `${call.path} ${call.part}`).sort()).toEqual(["/ body1", "/ body2", "/ footer", "/ header"]);
+    // One call for the edit and nothing after it: no second agent is asked
+    // whether the change matches before it is saved.
+    expect(agents.crew()).toHaveLength(4);
     expect((await holds(t)).filter(([kind]) => kind === "edit")).toEqual([["edit", "settled"]]);
   });
 });

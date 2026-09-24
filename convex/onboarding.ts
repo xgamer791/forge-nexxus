@@ -794,8 +794,8 @@ export const adoptSample = internalMutation({
 });
 
 // The end of an onboarding build: the pictures the page asked for, the save,
-// and the log. A build comes here from the design audit (`designGate.ts`)
-// once every page has its auditors' agreement, with the site they agreed to.
+// and the log. A build comes here from its landing step (`designGate.ts`)
+// once every page is written.
 export async function finishOnboardingBuild(
   ctx: ActionCtx,
   trace: ProviderTrace,
@@ -930,9 +930,9 @@ export const build = internalAction({
         label: "Credits held for a build",
         detail: { requestKind: job.result.requestKind, host: providerHost, model: route.model, keySet: Boolean(route.apiKey) },
       });
-      // Every build is written a page at a time by a crew of builders and
-      // auditors, each step its own action, five pages at most; the site
-      // lands once every page has its auditors' agreement (buildDraft.ts).
+      // Every build is written a page at a time by a crew of builders, each
+      // step its own action, five pages at most; the site lands once every
+      // page is written (buildDraft.ts).
       const draftId = await ctx.runMutation(internal.buildDraft.start, {
         onboardingId: id,
         attempt,
@@ -988,8 +988,8 @@ export const expire = internalMutation({
 });
 
 // Ends an attempt that is still running: its credits go back, and the member
-// is told why in the words the thread would use. A crew whose auditor never
-// agreed ends its build through here too.
+// is told why in the words the thread would use. A crew that could not write
+// a page ends its build through here too.
 export async function stopAttempt(
   ctx: MutationCtx,
   { id, attempt, failed, reason }: { id: Id<"siteOnboarding">; attempt: number; failed?: boolean; reason?: string },

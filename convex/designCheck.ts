@@ -94,8 +94,7 @@ export function unnamedVerdict(missing: Part[], hadBlock: boolean): Verdict {
 }
 
 // The first whole JSON object in a reply, however it was wrapped: a code
-// fence, a sentence in front, a sentence after. The design auditors'
-// verdicts (crew.ts) are read the same way.
+// fence, a sentence in front, a sentence after.
 export function firstObject(text: string): unknown {
   for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
     let depth = 0;

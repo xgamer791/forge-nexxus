@@ -527,6 +527,7 @@ select.text-field{appearance:none;-webkit-appearance:none;padding-right:32px;bac
 .build-activity li{display:flex;gap:12px;align-items:baseline;padding:6px 0;font-size:15px;line-height:1.45;border-bottom:1px solid var(--border)}
 .build-activity time{flex:0 0 5.3rem;color:var(--muted)}
 .build-activity li span{min-width:0;overflow-wrap:anywhere}
+.build-activity li[data-level=error] span{color:var(--danger)}
 .onboarding-hint.build-note{margin:6px auto 20px;font-size:15px;line-height:22px;text-wrap:balance}
 .onboarding-connection{color:var(--danger);font-size:14px;line-height:22px}
 /* The hand-off: the address Forge gave the finished site is the one loud thing

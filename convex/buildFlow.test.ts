@@ -85,8 +85,8 @@ type Call = { url: string; body: any };
 let asking: CrewCall | null = null;
 
 // One fetch for every provider. The strategist and the builders are told apart
-// by what they were asked; the auditors are answered by the design double; and
-// `build` is how the site answers, once per build call.
+// by what they were asked, and `build` is how the site answers, once per build
+// call.
 function stubProviders(build: (call: number) => Response) {
   const calls: Call[] = [];
   let builds = 0;
@@ -133,7 +133,7 @@ const built = (title: string) =>
 const briefOf = (call: Call) => call.body.messages.find((m: any) => /^File: website-build-brief\.md/.test(m.content))!.content as string;
 // Everything a saved version is made of, as one string.
 const markupOf = (version: { html?: string; shell?: string; pages?: { path: string; title: string; body: string }[] }) => siteParts(version).join("\n");
-const ONE_PAGE = "Built your one-page website. It matched the design reference before it was kept.";
+const ONE_PAGE = "Built your one-page website.";
 
 async function answerEverything(member: Awaited<ReturnType<typeof createBuilder>>) {
   const id = await member.as.mutation(api.onboarding.start, {});
@@ -210,7 +210,6 @@ describe("a brand new build, start to finish", () => {
       "Answers submitted",
       "Build brief saved and read",
       "Agent started building your website",
-      "Every page matched the design reference",
       "Page written",
       "Pictures made for your site",
       "Website received from the agent",
@@ -268,7 +267,7 @@ describe("a brand new build, start to finish", () => {
     expect(events.map((event) => event.phase)).toEqual(
       expect.arrayContaining([
         "queued", "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
-        "design_loaded", "held", "draft_start", "crew_page", "crew_build", "provider_request", "provider_response", "crew_built", "crew_audit", "crew_agreed",
+        "design_loaded", "held", "draft_start", "crew_page", "crew_build", "provider_request", "provider_response", "crew_built",
         "crew_page_done", "draft_done", "images", "images_done", "saving", "complete",
       ]),
     );
@@ -562,7 +561,6 @@ describe("a rebuild, start to finish", () => {
       "Rebuilding from your answers",
       "Build brief saved and read",
       "Agent started building your website",
-      "Every page matched the design reference",
       "Page written",
       "Pictures made for your site",
       "Website received from the agent",

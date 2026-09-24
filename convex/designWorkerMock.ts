@@ -1,11 +1,11 @@
-// Test double for the design worker and the design auditors: research that
-// returns a SkillUI Ultra package, and auditors that agree unless a script
-// says otherwise. CI never calls the live worker or a live model. convex-test
-// does not serve the storage upload HTTP endpoint the real worker POSTs to, so
-// the fixture stores the package itself and returns that id.
+// Test double for the design worker: research that returns a SkillUI Ultra
+// package, and how the crew's builders are recognised and answered. CI never
+// calls the live worker or a live model. convex-test does not serve the
+// storage upload HTTP endpoint the real worker POSTs to, so the fixture stores
+// the package itself and returns that id.
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { AUDITOR, PARTS, type PartName } from "./crew";
+import { PARTS, type PartName } from "./crew";
 
 export const DESIGN_WORKER_ORIGIN = "https://design-worker.test";
 export const DESIGN_WORKER_TOKEN = "test-design-worker-token";
@@ -41,7 +41,7 @@ export function designPrompt(paths: readonly string[] = routes) {
 }
 
 // "error" and "incomplete" answer research that way; "unauthorized" refuses
-// it. Auditors answer on their own script (setAuditScript).
+// it.
 export type DesignWorkerScript = "ok" | "unauthorized" | "error" | "incomplete";
 
 let script: DesignWorkerScript = "ok";
@@ -122,28 +122,13 @@ function ndjson(events: unknown[]) {
 // The crew, as a test double sees it
 // ---------------------------------------------------------------------------
 
-export type CrewCall = { role: "builder" | "auditor"; part: PartName; path: string; round: number; messages: { role: string; content: string }[] };
+export type CrewCall = { role: "builder"; part: PartName; path: string; round: number; messages: { role: string; content: string }[] };
 
-const AUDITS: [PartName, RegExp][] = [
-  ["header", /You audit the header\b/],
-  ["body1", /You audit the top of the page\b/],
-  ["body2", /You audit the rest of the page\b/],
-  ["footer", /You audit the footer\b/],
-];
-
-// Which member of a crew a chat request is from, or null for any other turn.
+// Which builder of a crew a chat request is from, or null for any other turn.
 export function crewCall(body: unknown): CrewCall | null {
   const messages = (body as { messages?: { role: string; content: string }[] })?.messages;
   if (!Array.isArray(messages) || !messages.length) return null;
   const text = (role: string) => messages.filter((m) => m.role === role).map((m) => String(m.content)).join("\n");
-  if (messages[0].role === "system" && messages[0].content === AUDITOR) {
-    const user = text("user");
-    const part = AUDITS.find(([, pattern]) => pattern.test(user))?.[0];
-    if (!part) return null;
-    const path = user.match(/page \d+ of \d+: (\S+)\. You audit/)?.[1] ?? user.match(/A page at (\S+), which has no counterpart/)?.[1] ?? "/";
-    const round = Number(user.match(/Round (\d+) of this part's audit/)?.[1] ?? 1);
-    return { role: "auditor", part, path, round, messages };
-  }
   const system = text("system");
   const crew = system.match(/This turn is page \d+ of \d+: (\S+)\./);
   if (!crew || !/written one page at a time by a crew/.test(system)) return null;
@@ -152,12 +137,6 @@ export function crewCall(body: unknown): CrewCall | null {
   if (!part) return null;
   const round = messages.filter((m) => m.role === "assistant").length;
   return { role: "builder", part, path: crew[1], round, messages };
-}
-
-// Whether a builder is being asked for this page's own CSS for the shared
-// header or footer.
-export function adjusting(call: CrewCall) {
-  return call.role === "builder" && /as CSS for this page alone/.test(call.messages.filter((m) => m.role === "user").map((m) => m.content).join("\n"));
 }
 
 export const PART_PICTURE =
@@ -184,61 +163,18 @@ export function partMarkup(call: Pick<CrewCall, "part" | "path">, label = "first
 }
 
 // A builder's whole reply: the sentence, then the part in its block.
-export function partReply(call: CrewCall, label = "first") {
-  if (adjusting(call)) {
-    return `Fitted the ${call.part} to this page.\n\n\`\`\`html part="${call.part}"\n<style>body:has(main[data-forge-route="${call.path}"]) .site-${call.part}{background:var(--color-paper)}</style>\n\`\`\``;
-  }
+export function partReply(call: Pick<CrewCall, "part" | "path">, label = "first") {
   const title = call.part === "body1" ? ` title="${call.path === "/" ? "Harbor Roasters" : call.path.slice(1)}"` : "";
   return `Built the ${call.part}.\n\n\`\`\`html part="${call.part}"${title}\n${partMarkup(call, label)}\n\`\`\``;
 }
 
-export function verdict(agree: boolean, fixes: string[] = []) {
-  return JSON.stringify(agree ? { agree: true, differences: [], fixes: [] } : { agree: false, differences: fixes, fixes });
-}
-
-// How the auditors answer: agreement unless a script says otherwise. A script
-// returns the reply text, or null to agree.
-type AuditScript = (call: CrewCall) => string | null;
-let auditScript: AuditScript = () => null;
-const audits: CrewCall[] = [];
-
-export function setAuditScript(next: AuditScript) {
-  auditScript = next;
-}
-
-export function resetAuditScript() {
-  auditScript = () => null;
-  audits.length = 0;
-}
-
-// Every auditor call answered so far, for tests that count them.
-export function auditCalls() {
-  return [...audits];
-}
-
-const said = (content: string) =>
-  new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200, headers: { "content-type": "application/json" } });
-
-// Returns a response when `url` is the worker or the request is an auditor's,
-// otherwise null so the caller's provider stub can answer chat, builder and
-// image requests.
+// Returns a response when `url` is the worker, otherwise null so the caller's
+// provider stub can answer chat, builder and image requests.
 export async function answerDesignResearch(
   url: string,
   init: RequestInit | undefined,
   store: () => Promise<Id<"_storage">>,
 ): Promise<Response | null> {
-  if (/\/chat\/completions$/.test(url)) {
-    let body: unknown;
-    try {
-      body = JSON.parse(String(init?.body ?? ""));
-    } catch {
-      return null;
-    }
-    const call = crewCall(body);
-    if (call?.role !== "auditor") return null;
-    audits.push(call);
-    return said(auditScript(call) ?? verdict(true));
-  }
   if (!isDesignResearchRequest(url)) return null;
   const authorization = new Headers(init?.headers).get("authorization");
   if (script === "unauthorized" || authorization !== `Bearer ${process.env.DESIGN_WORKER_TOKEN ?? ""}`) {

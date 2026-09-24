@@ -10,7 +10,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { queueReport } from "./support";
+import { agentsOf, queueReport, reportFor, stopOf as stopsOf } from "./support";
 
 const KEEP_RUNS = 40;
 const INSPECT_LIMIT = 20;
@@ -81,6 +81,7 @@ const detailValidator = v.object({
   step: v.optional(v.number()),
   part: v.optional(v.string()),
   agree: v.optional(v.boolean()),
+  reason: v.optional(v.string()),
 });
 
 const eventValidator = v.object({
@@ -170,10 +171,13 @@ export type EventDetail = {
   // step that wrote it.
   path?: string;
   step?: number;
-  // Which part of the page a crew event is about, and whether its auditor
-  // agreed.
+  // Which part of the page a crew event is about. `agree` is retired with the
+  // design auditors: whether one agreed, on events from before.
   part?: string;
   agree?: boolean;
+  // What went wrong, in Forge's own words: why a reply could not be used, or
+  // what stopped a call. Never a key, a prompt or a page.
+  reason?: string;
 };
 
 export type ProviderTrace = {
@@ -343,6 +347,11 @@ export async function recordEvent(
 ) {
   const row = await ctx.db.get(args.runId);
   if (!row || row.userId !== args.userId) return;
+  // A run that has ended says nothing more. A reply still going when its build
+  // stopped wrote on after the ending, so the last line of a failed build's
+  // log was a builder starting work, and the one that stopped it was lost
+  // above.
+  if (row.status === "complete" || row.status === "failed") return;
   const now = Date.now();
   await ctx.db.insert("buildEvents", {
     userId: args.userId,
@@ -743,8 +752,8 @@ const STOP_PHASES = new Set([
   // A build written a page at a time: a page kept part way, a reply that
   // could not be used, a page written again, a quiet step restarted, a stop.
   "draft_partial", "draft_unusable", "draft_retry", "draft_rescued", "draft_failed",
-  // Its crews: a part that came back unusable, and an auditor that sent a part
-  // back or ran out of rounds.
+  // Its crews: a part that came back unusable -- and, on runs from before the
+  // design auditors were removed, a part one sent back or ran out of rounds on.
   "crew_unusable", "crew_sent_back", "crew_exhausted",
 ]);
 export const inspectStalls = internalQuery({
@@ -780,6 +789,41 @@ export const inspectStalls = internalQuery({
       }
     }
     return rows.sort((a, b) => b.at - a.at);
+  },
+});
+
+// One build's whole trail, for whoever is debugging it:
+// `npx convex run diagnostics:trace` for the latest build that failed, or
+// `npx convex run diagnostics:trace '{"runId":"..."}'` for any run. It is the
+// report support is emailed -- what stopped the build and what went wrong
+// just before, what each agent's calls to the model came to, and every line
+// of the log with its timing -- read straight off the deployment, with no
+// email set up. Never a key, a prompt, the model's thinking or a page: none of
+// those are in the log to begin with.
+export const trace = internalQuery({
+  args: { runId: v.optional(v.id("buildRuns")) },
+  handler: async (ctx, { runId }) => {
+    let run = runId ? await ctx.db.get(runId) : null;
+    if (!runId) {
+      const recent = await ctx.db.query("buildRuns").withIndex("by_started").order("desc").take(INSPECT_LIMIT * 5);
+      run = recent.find((row) => row.status === "failed") ?? recent[0] ?? null;
+    }
+    if (!run) return null;
+    const { text, events } = await reportFor(ctx, run);
+    const { stoppedBy, cause } = stopsOf(run, events);
+    const brief = (event: typeof stoppedBy) =>
+      event ? { at: event.at, phase: event.phase, label: event.label, detail: event.detail ?? null } : null;
+    return {
+      runId: run._id,
+      source: run.source,
+      status: run.status,
+      error: run.error ?? null,
+      errorClass: run.errorClass ?? null,
+      stoppedBy: brief(stoppedBy),
+      cause: brief(cause),
+      agents: agentsOf(events),
+      lines: text.split("\n"),
+    };
   },
 });
 

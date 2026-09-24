@@ -7,7 +7,7 @@ import { creditCheck, currentPlan, holdCredits, releaseHold, settleHold } from "
 import { closeRun, providerTrace, recordLastSign, type ProviderTrace } from "./diagnostics";
 import { fulfilImages, IMAGE_MODEL_LABEL, imageRoute, wantsImages } from "./images";
 import { briefFile } from "./onboardingQuestions";
-import { reviewInFlight } from "./designCheck";
+import { designReviewOn, reviewInFlight } from "./designCheck";
 import { DESIGN_GOD } from "./designgod";
 import { FED } from "./fed";
 import { FORGE_MD } from "./forgeMd";
@@ -188,9 +188,8 @@ const RUN_WATCHDOG_MS = 610000;
 // builds on the model chat uses.
 // The kinds of turn this route carries. They differ in what they are worth
 // thinking about and, for planning, a build and its design review, which
-// provider answers. The design auditors are separate agents with their own
-// instructions, but they ride the build route: they judge the build's work, so
-// they answer on the model the deployment chose for building.
+// provider answers. `review` is the retired design reviewer's (designReview.ts,
+// off), which rode the build route; nothing else asks for it.
 export type Purpose = "chat" | "build" | "strategy" | "review";
 
 function agentTurn(purpose: Purpose) {
@@ -245,8 +244,9 @@ export const routing = internalQuery({
       chat: { host: new URL(chat.baseUrl).host, model: chat.model, label: chat.label, keySet: Boolean(chat.apiKey), reasoningEffort: reasoningEffort(chat.baseUrl, chat.model, "chat") ?? null, maxTokens: maxTokensFor("chat") },
       build: { host: new URL(build.baseUrl).host, model: build.model, label: build.label, keySet: Boolean(build.apiKey), sameAsChat: build.model === chat.model && build.baseUrl === chat.baseUrl, reasoningEffort: reasoningEffort(build.baseUrl, build.model, "build") ?? null, maxTokens: maxTokensFor("build") },
       strategy: { host: new URL(strategy.baseUrl).host, model: strategy.model, label: strategy.label, sameAsBuild: strategy.model === build.model && strategy.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(strategy.baseUrl, strategy.model, "strategy") ?? null },
-      // The design auditors (crew.ts) ride this route on every build and edit.
-      review: { host: new URL(review.baseUrl).host, model: review.model, on: true, sameAsBuild: review.model === build.model && review.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(review.baseUrl, review.model, "review") ?? null, maxTokens: maxTokensFor("review") },
+      // The retired design reviewer's route (designReview.ts). The design
+      // auditors that rode it on every build and edit were removed.
+      review: { host: new URL(review.baseUrl).host, model: review.model, on: designReviewOn(), sameAsBuild: review.model === build.model && review.baseUrl === build.baseUrl, reasoningEffort: reasoningEffort(review.baseUrl, review.model, "review") ?? null, maxTokens: maxTokensFor("review") },
       image: { host: new URL(image.baseUrl).host, model: image.model, label: IMAGE_MODEL_LABEL, keySet: Boolean(image.apiKey), pinnedToLite: image.pinned },
     };
   },
@@ -379,8 +379,8 @@ export const run = action({
         const reference = await ctx.runQuery(internal.siteDesign.forSite, { siteId: job.siteId });
         if (!reference || reference.buildEpoch !== job.epoch || !isSkillUI(reference)) throw new Error(NOT_EXTRACTED);
         assertDesignRules(site, reference.referenceUrl);
-        // A built site is saved only once the design auditors agree it
-        // matches the reference (designGate.ts), which finishes the turn.
+        // A built site is saved by a landing step of its own
+        // (designGate.ts), which makes its pictures and finishes the turn.
         await ctx.runMutation(internal.designGate.open, {
           source: "thread",
           runId,
@@ -432,8 +432,8 @@ export const run = action({
 });
 
 // The end of a thread turn: the pictures a page asked for, the save, the log
-// and the memory note. A build comes here from the design audit
-// (`designGate.ts`) once its auditors agree, with the site they agreed to.
+// and the memory note. A build comes here from its landing step
+// (`designGate.ts`).
 export async function finishThreadBuild(
   ctx: ActionCtx,
   trace: ProviderTrace,
@@ -943,6 +943,16 @@ export class ReplyStopped extends Error {
   }
 }
 
+// A reply the caller called off because nothing it wrote could be kept any
+// more: another part of the same build already stopped it. Nothing is noted
+// and nothing is tried again.
+export class CalledOff extends Error {
+  constructor() {
+    super("The reply was called off: the build had already stopped");
+    this.name = "CalledOff";
+  }
+}
+
 function stoppedMessage(stop: StreamStopped) {
   if (stop.reason === "looping") return "The model got stuck repeating itself instead of writing your website. Try again.";
   if (stop.reason === "provider_error") {
@@ -1013,7 +1023,8 @@ async function complete(
   trace?: ProviderTrace,
   // `keepPartial`: a build written a page at a time wants a page its clock
   // stopped part way back as far as it got, not a failure (callProviderPart).
-  meta?: { continuation?: number; keepPartial?: boolean },
+  // `cancel` calls the reply off (CalledOff).
+  meta?: { continuation?: number; keepPartial?: boolean; cancel?: AbortSignal },
 ): Promise<{ content: string; truncated: boolean; outOfTime?: boolean; stats?: StreamStats }> {
   let limit = maxTokens;
   // The most this provider will take, once it has said so itself. Widening
@@ -1027,6 +1038,7 @@ async function complete(
   let host = route.baseUrl;
   try { host = new URL(route.baseUrl).host; } catch { /* keep the raw base if it is not a URL */ }
   for (let attempt = 0; attempt < MAX_COMPLETE_LOOPS; attempt += 1) {
+    if (meta?.cancel?.aborted) throw new CalledOff();
     const started = Date.now();
     await trace?.note({
       phase: "provider_request",
@@ -1052,6 +1064,12 @@ async function complete(
     // what gets recorded -- still writing, still thinking, or never started.
     const clock = new AbortController();
     let outOfTime = false;
+    let calledOff = false;
+    const callOff = () => { calledOff = true; clock.abort(); };
+    meta?.cancel?.addEventListener("abort", callOff, { once: true });
+    // Called off while this attempt was still being noted: the abort has
+    // already fired, so the listener above never will.
+    if (meta?.cancel?.aborted) callOff();
     const timer = setTimeout(() => { outOfTime = true; clock.abort(); }, Math.max(1000, deadline - Date.now()));
     let response: Response | undefined;
     let bodyText = "";
@@ -1089,7 +1107,9 @@ async function complete(
       } else unreachable = error;
     } finally {
       clearTimeout(timer);
+      meta?.cancel?.removeEventListener("abort", callOff);
     }
+    if (calledOff) throw new CalledOff();
     if (unreachable !== undefined) {
       await trace?.note({
         phase: "provider_error",
@@ -1178,7 +1198,10 @@ async function complete(
         phase: "provider_error",
         label: `The model provider answered ${response.status}`,
         level: "error",
-        detail: { httpStatus: response.status, attempt, durationMs: Date.now() - started, host, model: route.model, errorClass: "provider_http" },
+        detail: {
+          httpStatus: response.status, attempt, durationMs: Date.now() - started, host, model: route.model, errorClass: "provider_http",
+          providerError: scrubKeys(excerpt(bodyText).replace(/^:\s*/, "")).slice(0, 160) || undefined,
+        },
       });
       throw new Error(`The model provider answered ${response.status}${excerpt(bodyText)}`);
     }
@@ -1310,20 +1333,22 @@ export async function callProvider(
 // writing comes back as far as it got, marked cut, instead of failing -- the
 // next step carries it on from that character. `resuming` is a reply that is
 // itself carrying a page on, so it starts mid-page rather than at a fence.
+// `cancel` calls the reply off once nothing it writes could be kept.
 export async function callProviderPart(
   messages: ChatMessage[],
   budgetMs: number,
   trace?: ProviderTrace,
   resuming = false,
+  cancel?: AbortSignal,
 ) {
-  return await provide(messages, { budgetMs, trace, purpose: "build", keepPartial: true, resuming });
+  return await provide(messages, { budgetMs, trace, purpose: "build", keepPartial: true, resuming, cancel });
 }
 
 async function provide(
   messages: ChatMessage[],
-  options: { tokenLimit?: number; budgetMs: number; trace?: ProviderTrace; purpose: Purpose; keepPartial?: boolean; resuming?: boolean },
+  options: { tokenLimit?: number; budgetMs: number; trace?: ProviderTrace; purpose: Purpose; keepPartial?: boolean; resuming?: boolean; cancel?: AbortSignal },
 ): Promise<{ content: string; cut: boolean; outOfTime?: boolean; stats?: StreamStats }> {
-  const { trace, purpose, keepPartial, resuming } = options;
+  const { trace, purpose, keepPartial, resuming, cancel } = options;
   const route = chatRoute(purpose);
   if (!route.apiKey) {
     await trace?.note({
@@ -1337,7 +1362,7 @@ async function provide(
   const maxTokens = options.tokenLimit ?? maxTokensFor(purpose);
   const deadline = Date.now() + Math.min(options.budgetMs, TEXT_BUDGET_MS);
   const carried = resuming ? 1 : 0;
-  let reply = await complete(route, messages, maxTokens, deadline, trace, { continuation: carried || undefined, keepPartial });
+  let reply = await complete(route, messages, maxTokens, deadline, trace, { continuation: carried || undefined, keepPartial, cancel });
   let content = reply.content;
   for (
     let round = 0;
@@ -1361,9 +1386,10 @@ async function provide(
         maxTokens,
         deadline,
         trace,
-        { continuation: carried + round + 1, keepPartial },
+        { continuation: carried + round + 1, keepPartial, cancel },
       );
     } catch (error) {
+      if (error instanceof CalledOff) throw error;
       // What the reply had written stays written: a build that keeps its
       // pages carries it on in its next step rather than losing it here.
       if (keepPartial) {

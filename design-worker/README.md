@@ -37,10 +37,8 @@ LAYOUT.md, page screenshots and the `.skill` archive), including one that
 could not start Chromium. The model is never asked to invent a reference.
 
 What the builds do with it is in `convex/`: every page is written by its own
-crew -- a builder and an auditor for the header, two of each for the body, one
-of each for the footer -- and kept only once all four auditors agree it
-matches the extract (`convex/crew.ts`, `convex/buildDraft.ts`). Edits made in
-the thread are checked by the same auditors (`convex/designGate.ts`).
+crew of builders -- one for the header, two for the body, one for the footer --
+each working to the extract (`convex/crew.ts`, `convex/buildDraft.ts`).
 
 ## Deploy
 

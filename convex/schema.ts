@@ -22,7 +22,7 @@ export default defineSchema({
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
   // One design reference per site: the address SkillUI Ultra extracted it
   // from, the whole `.skill` package in file storage, the extract every
-  // builder and auditor reads (`prompt`), the foundation stylesheet made from
+  // builder reads (`prompt`), the foundation stylesheet made from
   // its tokens, and the pages the page discovery agent chose (five at most).
   // A row from before SkillUI Ultra -- no `format`, or the retired measured
   // one -- keeps its address, so the site is extracted again there with no
@@ -40,11 +40,11 @@ export default defineSchema({
     routes: v.optional(v.array(v.string())),
     foundation: v.optional(v.string()),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
-  // A build held for its design audit: the site as the builder last wrote it,
-  // until the auditors agree it matches the SkillUI Ultra reference, send it
-  // back, or stop it. A first build's pages were each audited by their crew
-  // while they were written (`audited`), so it only lands here. The verdicts
-  // stay after the site is gone, for `designGate:inspect`.
+  // A build on its way to being saved: the site as the builder wrote it, held
+  // while a step of its own makes its pictures and saves it (designGate.ts).
+  // The site leaves the row once it lands. Rows from before the design
+  // auditors were removed keep their rounds and verdicts, for
+  // `designGate:inspect`.
   designGates: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
@@ -65,8 +65,7 @@ export default defineSchema({
     shell: v.optional(v.string()),
     pages: v.optional(v.array(v.object({ path: v.string(), title: v.string(), body: v.string() }))),
     summary: v.string(),
-    // Every page already has its auditors' agreement: a first build, whose
-    // crews audited each part as it was written.
+    // Retired: set on rows from when a first build's crew audited its pages.
     audited: v.optional(v.boolean()),
     status: v.union(
       v.literal("checking"),
@@ -75,17 +74,17 @@ export default defineSchema({
       v.literal("failed"),
       v.literal("cancelled"),
     ),
-    // Round 1 is the first check; each rework adds one.
+    // Retired with the design auditors, and kept for the rows they wrote:
+    // the audit round, steps that came back with nothing to use, why the
+    // last rework could not be used, and the fixes the auditors sent back.
+    // A row written since starts at round 1 with none of them.
     round: v.number(),
-    // Steps in a row that came back with nothing to use.
     trouble: v.number(),
-    // Why the last rework could not be used, for the next one to put right.
     problem: v.optional(v.string()),
-    // The fixes the auditors sent back on the last round.
     fixes: v.array(v.string()),
-    // Each round's outcome: whether every auditor agreed, and the parts that
-    // did not, as `path part`. `lowest` is the retired layout check's score,
-    // kept only on rows from before the auditors.
+    // Each audit round's outcome: whether every auditor agreed, and the parts
+    // that did not, as `path part`. `lowest` is the retired layout check's
+    // score, kept only on rows from before the auditors.
     results: v.array(v.object({
       round: v.number(),
       passed: v.boolean(),
@@ -98,15 +97,13 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_user", ["userId"]).index("by_message", ["assistantId"]),
   // A first build or a rebuild, written a page at a time by a crew. Each page
-  // has one builder and one auditor for its header, two of each for its body
-  // and one of each for its footer; each part is saved here the moment its
-  // builder writes it and again when its auditor answers, and the page is
-  // kept only once every auditor agrees it matches the SkillUI Ultra
-  // reference. Each step is an action of its own, and the next is queued the
-  // moment one ends. A reply the step's clock stops part way through a part
-  // is kept as far as it got, and the next step carries it on from that
-  // character. Once every page is here the site lands (designGates,
-  // `audited`), and the markup leaves this row.
+  // has a builder for its header, two for its body and one for its footer;
+  // each part is saved here the moment its builder writes it, and the page is
+  // kept once every part is written. Each step is an action of its own, and
+  // the next is queued the moment one ends. A reply the step's clock stops
+  // part way through a part is kept as far as it got, and the next step
+  // carries it on from that character. Once every page is here the site lands
+  // (designGates), and the markup leaves this row.
   buildDrafts: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
@@ -119,7 +116,7 @@ export default defineSchema({
     epoch: v.number(),
     siteName: v.string(),
     rebuild: v.boolean(),
-    // The SkillUI Ultra package the draft is written and audited against. A
+    // The SkillUI Ultra package the draft is written against. A
     // step that finds the site holding any other package writes nothing.
     designId: v.id("siteDesignPackages"),
     designStorageId: v.id("_storage"),
@@ -128,31 +125,29 @@ export default defineSchema({
     model: v.string(),
     memory: v.optional(v.string()),
     // Every page the discovery agent chose (five at most), home first, and
-    // the pages whose auditors have all agreed.
+    // the pages written so far.
     routes: v.array(v.string()),
     shell: v.optional(v.string()),
     pages: v.array(v.object({ path: v.string(), title: v.string(), body: v.string() })),
     summary: v.optional(v.string()),
-    // The crew on the current page. Every part keeps what its builder last
-    // wrote and what its auditor last asked for.
+    // The crew on the current page. Every part keeps what its builder wrote.
     crew: v.optional(v.object({
       path: v.string(),
       parts: v.array(v.object({
         name: v.union(v.literal("header"), v.literal("body1"), v.literal("body2"), v.literal("footer")),
-        // Unset until the builder has written. After the home page the header
-        // and footer start as "": the shared ones as they stand, which their
-        // auditors check on this page before anything is written for it.
+        // Unset until the builder has written: written, the part is done.
+        // After the home page the header and footer start as "": the shared
+        // ones in the shell, with nothing to write.
         markup: v.optional(v.string()),
         // The page's title, as the builder for the top of the page named it.
         title: v.optional(v.string()),
-        agreed: v.boolean(),
-        // Audits run on this part so far, and replies in a row that could
-        // not be used.
-        round: v.number(),
+        // Replies in a row that could not be used.
         tries: v.number(),
-        // What the auditor asked for last, for the builder's next go, and --
-        // once the builder has made them -- for the auditor to check next.
-        fixes: v.array(v.string()),
+        // Retired with the design auditors, and kept for parts written before:
+        // whether the auditor agreed, its rounds, and what it asked for.
+        agreed: v.optional(v.boolean()),
+        round: v.optional(v.number()),
+        fixes: v.optional(v.array(v.string())),
         asked: v.optional(v.array(v.string())),
         // Why the last reply for this part could not be used.
         problem: v.optional(v.string()),
@@ -536,9 +531,13 @@ export default defineSchema({
       path: v.optional(v.string()),
       step: v.optional(v.number()),
       // Which part of the page a crew event is about (header, body1, body2,
-      // footer), and whether its auditor agreed.
+      // footer). `agree` is retired with the design auditors: whether one
+      // agreed, on events from before.
       part: v.optional(v.string()),
       agree: v.optional(v.boolean()),
+      // What went wrong, in Forge's own words: why a reply could not be used,
+      // or what stopped a call. Never a key, a prompt or a page.
+      reason: v.optional(v.string()),
     })),
   })
     .index("by_run", ["runId"])
