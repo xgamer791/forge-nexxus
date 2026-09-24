@@ -76,8 +76,8 @@ function stubProvider(respond: (body: any, call: number) => Response) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
-      // A build is saved only once its design auditors agree. Their calls, and
-      // the memory note that follows a saved turn, are not the builder's.
+      // Design research, and the memory note that follows a saved turn, are
+      // not the builder. A build is saved as it was written.
       const audit = await answerDesignResearch(url, init, async () => {
         throw new Error("This test does not research a design reference");
       });
