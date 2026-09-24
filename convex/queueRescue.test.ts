@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 // The design worker and the crew's builders, counted: a one-page site is one
-// crew of four builders (the auditors are the double's).
+// crew of four builders.
 function stubProviders(t: T) {
   process.env.AI_BASE_URL = "https://api.deepseek.com/v1";
   process.env.AI_API_KEY = "sk-test-secret-key";

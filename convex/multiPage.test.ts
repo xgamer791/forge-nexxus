@@ -264,7 +264,7 @@ describe("a build with pages, start to finish", () => {
     expect(handed).toContain('```html path="/about" title="Our story"');
     expect(handed).toContain("return the whole updated site, every block");
 
-    // The edit is saved when its auditors agree.
+    // The edit is saved as it was written.
     await t.finishAllScheduledFunctions(() => {});
     const versions = await t.run((ctx) => ctx.db.query("siteVersions").collect());
     expect(versions).toHaveLength(2);

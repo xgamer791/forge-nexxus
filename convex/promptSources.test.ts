@@ -20,15 +20,15 @@ const modules = readdirSync(new URL(".", here))
 // wrap, which is what makes it the single place design lives. The design
 // reviewer is the one writer that is not the building agent at all: a second
 // agent that judges the header, menu and footer against DESIGN_GOD and never
-// builds, so it adds no voice to the build. The crew adds none either: its
-// builders and auditors are held to the site's SkillUI Ultra reference, and
+// builds. It stays off, so it adds no voice to a build. The crew adds none
+// either: its builders are held to the site's SkillUI Ultra reference, and
 // every one of their turns says only which part of which page to match to it.
 const WRITERS = {
   "generate.ts": "the platform contract: reply format, shell and pages, what a published page can run, image markers",
   "onboarding.ts": "build/retry mechanics and the saved brief",
   "memory.ts": "what Forge remembers, carried as untrusted content",
-  "designCheck.ts": "the design reviewer's own turn, which reads DESIGN_GOD and the finished shell and never builds",
-  "crew.ts": "the crew's turns: which part of which page a builder writes, and an auditor's check of it against the SkillUI Ultra reference",
+  "designCheck.ts": "the retired design reviewer's own turn, which reads DESIGN_GOD and the finished shell and never builds",
+  "crew.ts": "the crew's turns: which part of which page a builder writes, matched to the SkillUI Ultra reference",
 };
 
 describe("only the sanctioned files steer the agent", () => {
