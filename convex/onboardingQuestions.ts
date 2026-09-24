@@ -31,6 +31,38 @@ export function answerTo(answers: readonly string[], id: QuestionId) {
   return answers[QUESTIONS.findIndex(question => question.id === id)] ?? "";
 }
 
+// The pages a first build or a rebuild writes come from what the member said
+// people should be able to do on the site (`sitePages`, pages.ts). A choice
+// that needs a page of its own names one, and every builder is told what each
+// page is for (crew.ts). The home page comes first and carries everything
+// else: a choice with no page of its own, or one past the fifth page, is a
+// section there. The order here decides which pages come first: selling and
+// booking, then finding and reaching the business, then the rest.
+const HOME_PAGE = "The home page: what the business does and who it is for, and what customers love about it. Anything the brief asks for that has no page of its own is a section here, and the home page leads into every page that does.";
+export const FEATURE_PAGES: readonly { path: string; choices: readonly string[]; purpose: string }[] = [
+  { path: "/shop", choices: ["Buy products"],
+    purpose: "The shop: the products in the brief's catalogue, each with its price and a way to buy it. Buy buttons go to the online shop the brief links, when it links one." },
+  { path: "/book", choices: ["Book an appointment"],
+    purpose: "Booking: the services in the brief's catalogue with their prices, and a way to book one. Book buttons go to the booking page the brief links, when it links one." },
+  { path: "/order", choices: ["Order for pickup or delivery"],
+    purpose: "Ordering for pickup or delivery: what can be ordered, with its prices from the brief's catalogue, and how to place an order." },
+  { path: "/menu", choices: ["See a menu or price list"],
+    purpose: "The menu or price list: everything in the brief's catalogue with its price, grouped the way the business would group it." },
+  { path: "/contact", choices: ["Find you on a map", "Send you a message"],
+    purpose: "Finding and reaching the business: where it is, when it is open and how to get in touch, from the brief." },
+  { path: "/gallery", choices: ["Browse a photo gallery"],
+    purpose: "A gallery of photographs of the place, the products, the people or the work." },
+  { path: "/reviews", choices: ["Read reviews"],
+    purpose: "What customers say about the business, from the brief." },
+  { path: "/news", choices: ["Read news or articles"],
+    purpose: "News and articles from the business." },
+];
+
+// What a page of the plan is for, or nothing for a page the plan never makes.
+export function pagePurpose(path: string) {
+  return path === "/" ? HOME_PAGE : FEATURE_PAGES.find(page => page.path === path)?.purpose;
+}
+
 // The first set of questions, by position: what a brief saved without a
 // question set was answered under.
 const FIRST_SET = ["name", "offer", "audience", "goal", "difference", "features", "feel", "brand", "references", "content", "catalogue"] as const;

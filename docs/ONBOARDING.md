@@ -99,13 +99,16 @@ no site, and one that cannot be made is replaced with a quiet placeholder.
 
 A build is a site in pages: one shell — the head, the stylesheet, the nav and
 the footer every page shares — and a page for each part of the site the nav
-links to, each at its own address: `/about`, `/menu`, `/contact`. Every page
+links to, each at its own address: `/shop`, `/menu`, `/contact`. Every page
 answers at the site's address and in the preview, where a strip of the site's
 pages moves between them.
 
 What those pages are is decided by the brief, not by a fixed running order.
-Every job the member picks in *What does your website need to do?* gets a real
-home on the site: someone who sells products gets a storefront with its cart
+Each choice in *What should people be able to do on your site?* that needs a
+page of its own gets one after the home page, five pages at most, and anything
+else is a section of the home page (`FEATURE_PAGES` in
+`convex/onboardingQuestions.ts`). Every job the member picks gets a real home
+on the site: someone who sells products gets a storefront with its cart
 and checkout, someone who takes bookings gets a booking flow, and forms,
 payments, member accounts and third-party integrations can be built whenever
 the brief calls for them. Published sites and previews both run their scripts

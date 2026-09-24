@@ -15,7 +15,7 @@ import { memoryEnabled, memoryNote } from "./memory";
 import { hasPages, normalizePath, serializeSite, siteParts, withParts, type BuiltSite, type SitePage } from "./pages";
 import { REQUEST_COSTS, requestKind, type RequestKind } from "./plans";
 import { publishBuild } from "./sites";
-import { assertDesignRules, gateInFlight, isSkillUI, NOT_EXTRACTED } from "./siteDesign";
+import { assertDesignRules, gateInFlight } from "./siteDesign";
 import { isEventStream, readStream, StreamStopped, type Milestone, type StopReason, type StreamPhase, type StreamStats } from "./stream";
 
 // How much of the thread the model sees, and how long a page it may write.
@@ -297,7 +297,7 @@ What this platform can serve, which is not a matter of taste:
 
 ${pictures}
 
-Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change. The saved SkillUI Ultra design reference is required for every build and edit. Match it, but never reuse its source copy, images, logos or brand identity. The Type, Icons, accessibility and Anti-slop rules in DESIGN_GOD win over it.
+Reply with one sentence saying what you built or changed, then the shell in a \`\`\`html shell block, then each page in its own \`\`\`html path="/about" title="About" block, and nothing after. A one-page site is a shell and one page at /. The shell must end with </html> inside its block or the build is rejected. When the user asks for a change, apply it to the current site and return the whole updated site, every block, keeping everything they did not ask to change.
 
 TALK — when they ask a question, want an opinion, or are still working out what they want.
 Reply in plain prose: short, concrete, and about their site. Do not return HTML, and do not open a code block of any kind. Say what you would do and offer to make the change, rather than making it. A build costs the user credits and a reply like this barely does, so do not rebuild the page to answer a question.
@@ -361,7 +361,6 @@ export const run = action({
         status: "calling",
       });
       const trace = providerTrace(ctx, runId, userId);
-      if (job.requestKind !== "chat") await trace.note({ phase: "design_loaded", label: "Using this site's saved design reference" });
       await trace.note({
         phase: "held",
         label: job.requestKind === "chat" ? "Credits held for a conversation" : "Credits held for a build",
@@ -376,9 +375,7 @@ export const run = action({
       const parsed = parseReply(reply);
       const site = builtSite(parsed);
       if (site && job.requestKind !== "chat") {
-        const reference = await ctx.runQuery(internal.siteDesign.forSite, { siteId: job.siteId });
-        if (!reference || reference.buildEpoch !== job.epoch || !isSkillUI(reference)) throw new Error(NOT_EXTRACTED);
-        assertDesignRules(site, reference.referenceUrl);
+        assertDesignRules(site);
         // A built site is saved by a landing step of its own
         // (designGate.ts), which makes its pictures and finishes the turn.
         await ctx.runMutation(internal.designGate.open, {
@@ -555,12 +552,6 @@ export const begin = internalMutation({
     const talkOnly = mayBuild
       ? null
       : { needed: check.needed, available: check.available ?? 0 };
-    const design = mayBuild
-      ? await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", site._id)).first()
-      : null;
-    if (mayBuild && (!design || design.buildEpoch !== (site.buildEpoch ?? 0) || !isSkillUI(design))) {
-      throw new ConvexError(NOT_EXTRACTED);
-    }
     const { holdId } = await holdCredits(ctx, userId, kind, now);
     const recent = await ctx.db
       .query("messages")
@@ -579,7 +570,6 @@ export const begin = internalMutation({
     await ctx.scheduler.runAfter(RUN_WATCHDOG_MS, internal.generate.expire, { assistantId, holdId });
     const setup = await ctx.db.query("siteOnboarding").withIndex("by_site", q => q.eq("siteId", site._id)).first();
     const messages = buildMessages(site.name, current ?? null, recent.reverse(), prompt, talkOnly, kind === "chat" ? "chat" : "build", await memoryNote(ctx, userId));
-    if (design) messages.splice(4, 0, { role: "system", content: design.prompt });
     if (setup) messages.splice(3, 0, { role: "system", content: `Saved project context:\n${briefFile(currentBrief(setup).answers, setup.strategy ?? "", [])}` });
     return {
       siteId: site._id,
@@ -612,8 +602,6 @@ export const beginOnboarding = internalMutation({
     if (!row?.siteId || row.attempt !== attempt || row.status !== "building" || row.holdId) throw new ConvexError("This build is no longer active");
     const site = await ctx.db.get(row.siteId);
     if (!site || site.userId !== row.userId) throw new ConvexError("Site not found");
-    const design = await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", site._id)).first();
-    if (!design || design.buildEpoch !== (site.buildEpoch ?? 0) || !isSkillUI(design)) throw new ConvexError(NOT_EXTRACTED);
     if ((await currentPlan(ctx, row.userId)).key === "free") throw new ConvexError("Choose a paid plan to build");
     const { holdId } = await holdCredits(ctx, row.userId, "generate");
     const assistantId = await ctx.db.insert("messages", { conversationId: site.conversationId, role: "assistant", body: "Building your website from your answers…", status: "pending" });
@@ -691,11 +679,6 @@ export const finish = internalMutation({
     // The site was deleted while the build ran: nothing to attach it to, and
     // the user is not charged for a page they can never see.
     if (!site) {
-      await releaseHold(ctx, holdId, now);
-      return "cancelled" as const;
-    }
-    const design = await ctx.db.query("siteDesignPackages").withIndex("by_site", q => q.eq("siteId", siteId)).first();
-    if (!design || design.buildEpoch !== (site.buildEpoch ?? 0)) {
       await releaseHold(ctx, holdId, now);
       return "cancelled" as const;
     }
@@ -826,7 +809,7 @@ function buildMessages(
   if (shown) {
     messages.push({
       role: "system",
-      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form. Keep it matching its saved SkillUI Ultra design reference.\n\n${shown}`,
+      content: `The site "${siteName}" currently looks like this. Apply the user's next request to it and return the whole updated site, every block, in the same form.\n\n${shown}`,
     });
   }
   if (talkOnly) {
@@ -848,12 +831,9 @@ function buildMessages(
 }
 
 // The design agent's turn when its work is sent back: the same instructions a
-// build reads, the SkillUI Ultra reference where a build reads it, the site as
-// it stands, and the fixes as the request.
-export function designAgentTurn(siteName: string, site: BuiltSite, clones: string | undefined, request: string, design?: string) {
-  const messages = buildMessages(siteName, { ...site, clones }, [], request, null, "build", null);
-  if (design) messages.splice(4, 0, { role: "system", content: design });
-  return messages;
+// build reads, the site as it stands, and the fixes as the request.
+export function designAgentTurn(siteName: string, site: BuiltSite, clones: string | undefined, request: string) {
+  return buildMessages(siteName, { ...site, clones }, [], request, null, "build", null);
 }
 
 type Route = ReturnType<typeof chatRoute>;

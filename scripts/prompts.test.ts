@@ -189,8 +189,9 @@ describe("the contract sets a floor, not a mould", () => {
     expect(DESIGN_GOD).not.toContain("at least 44px");
   });
 
-  test("the reply follows the saved SkillUI Ultra design reference instead of naming Awwwards clones", () => {
-    expect(contract).toContain("The saved SkillUI Ultra design reference is required for every build and edit");
+  test("the reply is held to no design reference and names no Awwwards clones", () => {
+    expect(contract).not.toMatch(/SkillUI|design reference/);
+    expect(generate).not.toMatch(/SkillUI|DESIGN_WORKER/);
     expect(contract).not.toContain("```clones");
     expect(contract).not.toContain("https://www.awwwards.com/");
     expect(DESIGN_GOD).not.toContain("https://www.awwwards.com/");

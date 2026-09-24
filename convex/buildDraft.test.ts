@@ -4,13 +4,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { joinCarry, MOST_RESUMES, nextPage, STEP_TRIES } from "./buildDraft";
-import { builderTurn, newCrew, nextFor, pageFrom, readPart, shellFrom, type CrewPart } from "./crew";
-import {
-  answerDesignResearch, crewCall, DESIGN_FOUNDATION, DESIGN_PROMPT, designPrompt, partReply, resetDesignRoutes,
-  setDesignRoutes, storeDesignPackage, type CrewCall,
-} from "./designWorkerMock";
+import { builderTurn, FOUNDATION, newCrew, nextFor, pageFrom, readPart, shellFrom, type CrewPart } from "./crew";
+import { crewCall, partReply, type CrewCall } from "./crewMock";
 import { CARRY_ON, MOST_RESTARTS, NEW_IMAGERY, PAGE_STEP_MS } from "./onboarding";
-import { QUESTIONS } from "./onboardingQuestions";
+import { pagePurpose, QUESTION_SET, QUESTIONS } from "./onboardingQuestions";
 import { MAX_PAGES, pagePlan } from "./pages";
 import { REQUEST_COSTS } from "./plans";
 import schema from "./schema";
@@ -18,31 +15,34 @@ import schema from "./schema";
 // Every first build and rebuild is written a page at a time by a crew: a
 // builder for the header, two for the body and one for the footer. These
 // drive the real chain -- the scheduler, the builders' replies and the save --
-// against a reference whose pages the discovery agent capped at five.
+// for a member who asked for more pages than a site has room for, which the
+// plan caps at five.
 const modules = import.meta.glob("./**/*.*s");
 function makeTest() {
   return convexTest(schema, modules);
 }
 type T = ReturnType<typeof makeTest>;
-let active: T;
-const fresh = () => (active = makeTest());
+const fresh = () => makeTest();
 
-const SEVEN = ["/", "/food-menu", "/drink-menu", "/specials", "/events", "/party", "/cater"];
-const FIVE = SEVEN.slice(0, MAX_PAGES);
+// Every choice of what people can do on the site: more pages than a build
+// writes, so the plan keeps the first five. A test that wants fewer sets
+// `features` before it answers.
+const EVERY_CHOICE = (QUESTIONS.find((question) => question.id === "features") as { options: readonly string[] }).options.join("\n");
+const FIVE = ["/", "/shop", "/book", "/order", "/menu"];
 const KEY = "sk-test-secret-key";
 const PNG = btoa("not really a png, but bytes are bytes");
-const ANSWERS = [
+let features = EVERY_CHOICE;
+const answers = () => [
   "Taquería El Farolito",
-  "Tacos, burritos and aguas frescas, made to order",
-  "Families and lunch crowds in Plano",
-  "Visit you",
+  "Tacos, burritos and aguas frescas, made to order, for families and lunch crowds in Plano",
+  features,
+  "Tacos al pastor — $3.50\nHorchata — $4",
   "",
-  "Show the menu",
+  "",
+  "",
   "Warm and welcoming",
   "",
   "",
-  "",
-  "Tacos al pastor — $3.50\nHorchata — $4",
 ];
 
 const encoder = new TextEncoder();
@@ -81,16 +81,14 @@ const outlivesStep = (init: RequestInit, ...events: string[]) =>
 // Which build a page came from, so a rebuild is a different design.
 let edition = "first";
 
-// One fetch for the worker, the pictures, the strategist, the memory note and
-// the crew's builders, which `answer` speaks for. Every builder call is
+// One fetch for the pictures, the strategist, the memory note and the crew's
+// builders, which `answer` speaks for. Every builder call is
 // recorded, and any other call -- one no builder made -- fails the test.
 function stubProviders(answer: (call: CrewCall, init: RequestInit) => Response = (call) => said(partReply(call, edition))) {
   const builders: CrewCall[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
-      const worker = await answerDesignResearch(url, init, () => storeDesignPackage(active));
-      if (worker) return worker;
       if (/generateContent/.test(url)) {
         return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: PNG } }] } }] });
       }
@@ -121,7 +119,7 @@ type Member = Awaited<ReturnType<typeof createBuilder>>;
 async function answerEverything(member: Member) {
   const id = await member.as.mutation(api.onboarding.start, {});
   for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.as.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index] ?? "", advance: true });
+    await member.as.mutation(api.onboarding.save, { id, index, answer: answers()[index] ?? "", advance: true, questionSet: QUESTION_SET });
   }
   return id;
 }
@@ -174,13 +172,12 @@ beforeEach(() => {
   process.env.AI_MODEL = "forge-test";
   process.env.AI_IMAGE_API_KEY = "img-test-secret-key";
   process.env.CONVEX_SITE_URL = "https://forge-test.convex.site";
-  setDesignRoutes(SEVEN);
+  features = EVERY_CHOICE;
   edition = "first";
 });
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
-  resetDesignRoutes();
   for (const name of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_IMAGE_API_KEY", "CONVEX_SITE_URL"]) delete process.env[name];
 });
 
@@ -189,7 +186,8 @@ const part = (fields: Partial<CrewPart> & Pick<CrewPart, "name">): CrewPart => (
 describe("the crew's pieces", () => {
   test("a build plans five pages at most, home first", () => {
     expect(MAX_PAGES).toBe(5);
-    expect(pagePlan(SEVEN)).toEqual(FIVE);
+    const seven = ["/", "/food-menu", "/drink-menu", "/specials", "/events", "/party", "/cater"];
+    expect(pagePlan(seven)).toEqual(seven.slice(0, MAX_PAGES));
     expect(pagePlan(["/cater", "/Food-Menu/", "/", "/food-menu", "/../x"])).toEqual(["/", "/cater", "/food-menu"]);
   });
 
@@ -222,14 +220,17 @@ describe("the crew's pieces", () => {
       .toMatch(/^the top half has a comment standing in for part of it/);
   });
 
-  test("a builder is handed the reference, the crew, the foundation and the brief, and a part it could not use is named on its next go", () => {
+  test("a builder is handed the crew, what each page is for, the foundation and the brief, and a part it could not use is named on its next go", () => {
     const base = [{ role: "system" as const, content: "RULES" }, { role: "user" as const, content: "Build the website from the saved onboarding brief." }];
-    const common = { base, extract: DESIGN_PROMPT, foundation: DESIGN_FOUNDATION, brief: "BRIEF", siteName: "Taquería El Farolito", routes: FIVE };
+    const common = { base, brief: "BRIEF", siteName: "Taquería El Farolito", routes: FIVE };
     const header = builderTurn({ ...common, path: "/", part: part({ name: "header" }) });
     expect(header[0].content).toBe("RULES");
-    expect(header.some((m) => m.role === "system" && m.content === DESIGN_PROMPT)).toBe(true);
     expect(header.some((m) => m.role === "system" && /This turn is page 1 of 5: \/\./.test(m.content) && /written one page at a time by a crew/.test(m.content))).toBe(true);
-    expect(header.some((m) => m.role === "system" && m.content.includes(DESIGN_FOUNDATION))).toBe(true);
+    const crew = header.find((m) => m.role === "system" && m.content.includes("What each page is for:"))!.content;
+    for (const path of FIVE) expect(crew).toContain(`- ${path}: ${pagePurpose(path)}`);
+    expect(header.some((m) => m.role === "system" && m.content.includes(FOUNDATION))).toBe(true);
+    // Nothing is built to a design reference any more.
+    expect(header.some((m) => /SkillUI|reference/i.test(m.content))).toBe(false);
     expect(header.some((m) => m.content === "File: website-build-brief.md\n\nBRIEF")).toBe(true);
     expect(header.at(-1)!.content).toMatch(/^You are the header builder\./);
     expect(header.at(-1)!.content).toContain(`every page of this site by its path: ${FIVE.join(", ")}`);
@@ -253,7 +254,7 @@ describe("the crew's pieces", () => {
 
   test("a part its step's clock stopped goes back as the builder's own words, with the ask to carry on after anything to put right", () => {
     const base = [{ role: "system" as const, content: "RULES" }];
-    const common = { base, extract: DESIGN_PROMPT, foundation: DESIGN_FOUNDATION, brief: "BRIEF", siteName: "Taquería El Farolito", routes: FIVE, path: "/" };
+    const common = { base, brief: "BRIEF", siteName: "Taquería El Farolito", routes: FIVE, path: "/" };
     const carry = 'Built the opening.\n\n```html part="body1" title="Home"\n<section class="a-open"><h1>Al pastor';
     const turn = builderTurn({ ...common, part: part({ name: "body1", partial: carry, problem: "the top half came back empty. Write it out in full." }), carry });
     expect(turn.slice(-2)).toEqual([{ role: "assistant", content: carry }, { role: "user", content: CARRY_ON }]);
@@ -274,7 +275,6 @@ describe("the crew's pieces", () => {
 
   test("the shell is Forge's head, the foundation and the parts' own styles, and a page is its two halves in its <main>", () => {
     const shell = shellFrom({
-      foundation: DESIGN_FOUNDATION,
       header: '<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=switzer@400&display=swap"><meta name="description" content="Tacos in Plano"><style>:root{--font-display:x;--font-body:y}.site-header{}</style><header class="site-header">H</header><script>menu()</script>',
       footer: '<style>.site-footer{}</style><footer class="site-footer">F</footer>',
       siteName: "Taquería El Farolito",
@@ -283,7 +283,7 @@ describe("the crew's pieces", () => {
     expect(shell).toContain('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
     expect(shell).toContain("<title><!--forge-title--></title>");
     expect(shell).toContain('<meta name="description" content="Tacos in Plano">');
-    expect(shell).toContain(DESIGN_FOUNDATION);
+    expect(shell).toContain(FOUNDATION);
     // The header chose its own families for both roles, so Satoshi is not loaded.
     expect(shell).not.toContain("f[]=satoshi");
     const head = shell.slice(0, shell.indexOf("</head>"));
@@ -291,7 +291,7 @@ describe("the crew's pieces", () => {
     expect(head).toContain(".site-footer{}");
     expect(shell).toMatch(/<body>\n<header class="site-header">H<\/header><script>menu\(\)<\/script>\n<!--forge-page-->\n<footer class="site-footer">F<\/footer>\n<\/body>\n<\/html>$/);
     // No families of its own: the foundation's Satoshi, and the site's name for a description.
-    const plain = shellFrom({ foundation: undefined, header: "<header>H</header>", footer: "<footer>F</footer>", siteName: "Harbor & Co" });
+    const plain = shellFrom({ header: "<header>H</header>", footer: "<footer>F</footer>", siteName: "Harbor & Co" });
     expect(plain).toContain("f[]=satoshi");
     expect(plain).toContain('<meta name="description" content="Harbor &amp; Co">');
 
@@ -310,7 +310,7 @@ describe("the crew's pieces", () => {
 });
 
 describe("a site written by its crews, start to finish", () => {
-  test("seven discovered pages become five, each written by its crew and kept once every part is written", async () => {
+  test("every choice of what people can do becomes five pages at most, each written by its crew and kept once every part is written", async () => {
     const t = fresh();
     const member = await createBuilder(t);
     const builders = stubProviders();
@@ -334,20 +334,20 @@ describe("a site written by its crews, start to finish", () => {
       expect(call.messages.at(-1)!.content).toContain("The top of this page, as written:");
       expect(call.messages.at(-1)!.content).toContain(`first ${call.path === "/" ? "home" : call.path.slice(1)}</h1>`);
     }
-    // Every builder is handed the SkillUI Ultra extract and its foundation.
+    // Every builder is told what each page is for, and handed the foundation.
     for (const call of builders) {
-      expect(call.messages.some((m) => m.role === "system" && m.content === designPrompt(SEVEN))).toBe(true);
-      expect(call.messages.some((m) => m.role === "system" && m.content.includes(DESIGN_FOUNDATION))).toBe(true);
+      expect(call.messages.some((m) => m.role === "system" && m.content.includes(`- ${call.path}: ${pagePurpose(call.path)}`))).toBe(true);
+      expect(call.messages.some((m) => m.role === "system" && m.content.includes(FOUNDATION))).toBe(true);
     }
 
     // Saved once: the home page's header and footer in the shell, and every
-    // page in the order it was discovered.
+    // page in the order it was planned.
     const all = await versions(t);
     expect(all).toHaveLength(1);
     const [version] = all;
     expect(version.shell).toContain('<header class="site-header">');
     expect(version.shell).toContain('<footer class="site-footer">');
-    expect(version.shell).toContain(DESIGN_FOUNDATION);
+    expect(version.shell).toContain(FOUNDATION);
     expect(version.pages!.map((page) => page.path)).toEqual(FIVE);
     for (const page of version.pages!) {
       expect(page.body.startsWith(`<main id="main" data-forge-route="${page.path}">`)).toBe(true);
@@ -365,25 +365,24 @@ describe("a site written by its crews, start to finish", () => {
 
     const labels = (await events(t)).map((event) => event.label);
     expect(labels).toEqual(expect.arrayContaining([
-      "Chose 5 pages from the reference",
       "Writing your 5 pages, one at a time",
       "Page 1 of 5, home: writing the header, the page and the footer",
       "Page 1 of 5: writing the header",
       "Page 1 of 5: the header is written",
       "Wrote page 1 of 5, home",
-      "Page 2 of 5, /food-menu: writing the page",
-      "Wrote page 5 of 5, /events",
+      "Page 2 of 5, /shop: writing the page",
+      "Wrote page 5 of 5, /menu",
       "Wrote all 5 pages",
     ]));
     expect(labels.some((label) => /^Header builder: calling the model$/.test(label))).toBe(true);
-    expect(labels.filter((label) => /audit|agreed|reference before/i.test(label))).toEqual([]);
+    expect(labels.filter((label) => /audit|agreed|reference|research/i.test(label))).toEqual([]);
   });
 
   // The build that failed on its header: the parts still being written when
   // one stopped it went on thinking, and on writing into the log, for minutes
   // after it had failed.
   test("once one part stops the build, the replies still being written for the others are called off", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     const t = fresh();
     const member = await createBuilder(t);
     const calledOff: string[] = [];
@@ -441,7 +440,7 @@ describe("a site written by its crews, start to finish", () => {
   });
 
   test("a part that keeps coming back unusable is traced with every reason it could not be used", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     const t = fresh();
     const member = await createBuilder(t);
     stubProviders((call) => call.part === "footer"
@@ -465,7 +464,7 @@ describe("a site written by its crews, start to finish", () => {
   });
 
   test("a builder's reply that cannot be used is named in the log, and its next turn is told what to put right", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     const t = fresh();
     const member = await createBuilder(t);
     let first = true;
@@ -485,7 +484,7 @@ describe("a site written by its crews, start to finish", () => {
   });
 
   test("a rebuild's home page must ask for new pictures", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     const t = fresh();
     const member = await createBuilder(t);
     stubProviders();
@@ -512,7 +511,7 @@ describe("a site written by its crews, start to finish", () => {
 
 describe("when a crew cannot go on", () => {
   test("a part whose replies keep dropping stops the build after a few tries, says why, and gives the credits back", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     const t = fresh();
     const member = await createBuilder(t);
     const builders = stubProviders((call) => (call.part === "body1" ? streamed(delta({ reasoning_content: "Planning the opening." })) : said(partReply(call))));
@@ -533,7 +532,7 @@ describe("when a crew cannot go on", () => {
   });
 
   test("a provider that refuses the request stops the build at once rather than asking again", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     const t = fresh();
     const member = await createBuilder(t);
     const builders = stubProviders((call) =>
@@ -545,7 +544,7 @@ describe("when a crew cannot go on", () => {
   });
 
   test("a step whose clock runs short saves what its crew finished and queues the next, which carries on from there", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
     const t = fresh();
     const member = await createBuilder(t);
@@ -580,7 +579,7 @@ describe("when a crew cannot go on", () => {
   });
 
   test("a part the step's clock stopped part way is carried on from that character, not started again", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     hold();
     const t = fresh();
     const member = await createBuilder(t);
@@ -630,7 +629,7 @@ describe("when a crew cannot go on", () => {
   });
 
   test("a step whose clock runs out while the builders are still thinking is tried again, and the build lands", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     hold();
     const t = fresh();
     const member = await createBuilder(t);
@@ -657,7 +656,7 @@ describe("when a crew cannot go on", () => {
   });
 
   test("once its tries are spent, a draft whose clock kept running out while the builders thought says so, in the words any build uses", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     hold();
     const t = fresh();
     const member = await createBuilder(t);
@@ -683,7 +682,7 @@ describe("when a crew cannot go on", () => {
   });
 
   test("a step the platform lost is started again from the last saved part, and a draft that keeps going quiet stops", async () => {
-    setDesignRoutes(["/", "/food-menu"]);
+    features = "See a menu or price list";
     hold();
     const t = fresh();
     const member = await createBuilder(t);
@@ -804,23 +803,11 @@ describe("when a crew cannot go on", () => {
     expect(JSON.stringify(inspected)).not.toContain("Al pastor");
   });
 
-  test("a step that finds the site holding another design package writes nothing against the old one", async () => {
-    hold();
-    const t = fresh();
-    const member = await createBuilder(t);
-    const builders = stubProviders();
-    const { id, draft } = await toDraft(t, member);
-    const other = await storeDesignPackage(t);
-    await t.run((ctx) => ctx.db.patch(draft.designId, { storageId: other }));
-    await t.action(internal.buildDraft.write, { id: draft._id });
-    expect(builders).toEqual([]);
-    expect(await brief(t, id)).toMatchObject({ status: "failed", error: "The saved design reference disappeared during the build. Your answers are saved." });
-  });
 });
 
-describe("a one-page reference", () => {
+describe("a one-page site", () => {
   test("is written by its crew like any other: four builders, one page", async () => {
-    setDesignRoutes(["/"]);
+    features = "";
     const t = fresh();
     const member = await createBuilder(t);
     const builders = stubProviders();

@@ -20,13 +20,11 @@ export default defineSchema({
     prompt: v.string(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]).index("by_site", ["siteId"]),
-  // One design reference per site: the address SkillUI Ultra extracted it
-  // from, the whole `.skill` package in file storage, the extract every
-  // builder reads (`prompt`), the foundation stylesheet made from
-  // its tokens, and the pages the page discovery agent chose (five at most).
-  // A row from before SkillUI Ultra -- no `format`, or the retired measured
-  // one -- keeps its address, so the site is extracted again there with no
-  // new search.
+  // Retired with the design worker that researched them: one design reference
+  // per site, with its `.skill` package in file storage. Nothing reads or
+  // writes these any more. The table stays so the rows already saved still
+  // match the schema, and a site's row goes when the site is rebuilt or
+  // deleted.
   siteDesignPackages: defineTable({
     userId: v.id("users"),
     siteId: v.id("sites"),
@@ -116,16 +114,16 @@ export default defineSchema({
     epoch: v.number(),
     siteName: v.string(),
     rebuild: v.boolean(),
-    // The SkillUI Ultra package the draft is written against. A
-    // step that finds the site holding any other package writes nothing.
-    designId: v.id("siteDesignPackages"),
-    designStorageId: v.id("_storage"),
+    // Retired: the design package a draft from the design worker's time was
+    // written against. A draft written since has neither.
+    designId: v.optional(v.id("siteDesignPackages")),
+    designStorageId: v.optional(v.id("_storage")),
     // What every step is told the same way: the model the draft began on,
     // which alone may carry on a page it stopped, and the member's memory note.
     model: v.string(),
     memory: v.optional(v.string()),
-    // Every page the discovery agent chose (five at most), home first, and
-    // the pages written so far.
+    // Every page the build planned (five at most), home first, and the pages
+    // written so far.
     routes: v.array(v.string()),
     shell: v.optional(v.string()),
     pages: v.array(v.object({ path: v.string(), title: v.string(), body: v.string() })),
@@ -218,6 +216,8 @@ export default defineSchema({
     // still holds it. Only the attempt it names reads it.
     queueStep: v.optional(v.object({
       attempt: v.number(),
+      // `research` is the step before the build, named for the design
+      // research it ran while there was a design worker.
       step: v.union(v.literal("research"), v.literal("build")),
       // Set while one copy of the step holds it.
       lease: v.optional(v.string()),
@@ -444,6 +444,7 @@ export default defineSchema({
     status: v.union(
       v.literal("queued"),
       v.literal("started"),
+      // Retired with the design worker; runs from its time keep it.
       v.literal("researching"),
       v.literal("calling"),
       v.literal("reviewing"),

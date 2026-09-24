@@ -2,7 +2,6 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { answerDesignResearch, insertDesignPackage } from "./designWorkerMock";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { SUPPORT_EMAIL, wantsReport } from "./support";
@@ -52,7 +51,6 @@ async function seedBuiltSite(t: T, userId: Id<"users">) {
     const siteId = await ctx.db.insert("sites", { userId, conversationId, name: "Bakery on Main", status: "draft", createdAt: Date.now(), updatedAt: Date.now() });
     const versionId = await ctx.db.insert("siteVersions", { userId, siteId, html: PAGE, summary: "First", requestKind: "generate", createdAt: Date.now() });
     await ctx.db.patch(siteId, { currentVersionId: versionId });
-    await insertDesignPackage(ctx, userId, siteId);
     return { siteId, conversationId };
   });
 }
@@ -63,10 +61,6 @@ function stub(build: (call: number) => Response, mail: () => Response = () => js
   const builds: any[] = [];
   const emails: { url: string; auth: string; body: any }[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
-    const layout = await answerDesignResearch(url, init, async () => {
-      throw new Error("This test does not research a design reference");
-    });
-    if (layout) return layout;
     const body = JSON.parse(String(init.body));
     if (url.startsWith("https://api.resend.com")) {
       emails.push({ url, auth: String((init.headers as Record<string, string>).authorization), body });

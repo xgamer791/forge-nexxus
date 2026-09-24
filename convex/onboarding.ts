@@ -5,7 +5,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireMemberId } from "./access";
-import { designSource, pagePlan, siteParts, withParts, type BuiltSite } from "./pages";
+import { designSource, sitePages, siteParts, withParts, type BuiltSite } from "./pages";
 import { currentPlan, holdCredits, releaseHold, settleHold } from "./billing";
 import type { RequestKind } from "./plans";
 import { failOpenRun, openRun, providerTrace, recordEvent, recordLastSign, type ProviderTrace } from "./diagnostics";
@@ -16,7 +16,7 @@ import { inventSample, sampleRebuilds } from "./sampleBusiness";
 import { isAdminEmail } from "./admins";
 import { FORGE_MD } from "./forgeMd";
 import { fulfilImages, wantsImages, imageRoute } from "./images";
-import { isSkillUI, NOT_EXTRACTED, researchDesign } from "./siteDesign";
+import { discardSiteDesign } from "./siteDesign";
 import { answerTo, briefFile, currentBrief, FINAL_STEP, QUESTION_SET, QUESTIONS, type SavedBrief } from "./onboardingQuestions";
 
 // The watchdog sits just inside an action's ten minutes, so it only ever
@@ -89,8 +89,9 @@ async function scrapSiteBuild(ctx: MutationCtx, siteId: Id<"sites"> | undefined,
   if (!siteId) return { hashes: [] };
   const site = await ctx.db.get(siteId);
   if (!site || site.userId !== userId) return { hashes: [] };
-  // The design reference stays: a rebuild extracts the same address again
-  // with SkillUI Ultra, with no new search, and replaces it (siteDesign.save).
+  // A design package from the retired design worker is read by nothing, so
+  // it goes with the rest of the old build.
+  await discardSiteDesign(ctx, siteId);
   const images = await ctx.db.query("siteImages").withIndex("by_site", q => q.eq("siteId", siteId)).collect();
   for (const image of images) {
     await ctx.storage.delete(image.storageId);
@@ -162,7 +163,7 @@ async function queueOnboardingBuild(
 
 // A step's heartbeat while its action runs. A step the platform killed stops
 // beating and the rescue starts it again; one that is only slow -- a long
-// crawl, a quiet stretch in the worker, a long page -- keeps its hold.
+// page -- keeps its hold.
 export function heartbeat(send: () => Promise<unknown>) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -184,50 +185,35 @@ export function heartbeat(send: () => Promise<unknown>) {
   };
 }
 
-// Research has its own action clock. A large reference crawl must not spend
-// the writing action's 480-second budget before the model has even started.
+// The step before the build, on an action clock of its own: a tester's rebuild
+// invents its business here (sample-business block), so that call never
+// spends the writing action's budget, and every other build goes straight on.
+// It keeps the name it had while it researched a design reference with the
+// retired design worker, so a step queued before a deploy still finds it.
 export const research = internalAction({
   args: { id: v.id("siteOnboarding"), attempt: v.number() },
   handler: async (ctx, { id, attempt }): Promise<void> => {
     const row = await ctx.runQuery(internal.onboarding.load, { id });
     if (!row?.siteId || row.attempt !== attempt || row.status !== "queued") return;
-    // One copy researches an attempt. Any other -- a restart, a retry, a
+    // One copy runs an attempt's step. Any other -- a restart, a retry, a
     // manual run -- stops here, and nothing it does can end the attempt.
     const lease = await ctx.runMutation(internal.onboarding.claimStep, { id, attempt, step: "research" });
     if (!lease) return;
     const stop = heartbeat(() => ctx.runMutation(internal.onboarding.beat, { id, attempt, lease }));
     try {
-      const runId = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
-      if (!runId) throw new Error("The build activity log is missing");
-      const trace = providerTrace(ctx, runId, row.userId);
-      let answers = currentBrief(row).answers;
       if (row.discardedDesignHashes !== undefined && sampleRebuilds()) {
-        await trace.note({ phase: "sample", label: "Inventing a San Antonio business for this rebuild" });
-        const sample = await inventSample(row.answers[0] ?? "");
-        answers = sample.answers;
+        const runId = await ctx.runQuery(internal.diagnostics.findOpen, { onboardingId: id, attempt });
+        if (!runId) throw new Error("The build activity log is missing");
+        await providerTrace(ctx, runId, row.userId).note({ phase: "sample", label: "Inventing a San Antonio business for this rebuild" });
+        const { answers, draw } = await inventSample(row.answers[0] ?? "");
         if (!await ctx.runMutation(internal.onboarding.adoptSample, {
-          id, attempt, answers, label: `Answers replaced with ${answers[0]} in ${sample.draw.neighbourhood}`,
+          id, attempt, answers, label: `Answers replaced with ${answers[0]} in ${draw.neighbourhood}`,
         })) return;
-      }
-      const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
-      const saved = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (saved && saved.buildEpoch === epoch && isSkillUI(saved)) {
-        await trace.note({ phase: "research_reused", label: "Using the saved design reference" });
-      } else {
-        // A site that already has a reference -- from before a rebuild, or
-        // from before SkillUI Ultra -- is extracted again there, with no
-        // search.
-        await researchDesign(ctx, {
-          siteId: row.siteId, onboardingId: id, attempt, epoch,
-          offer: answerTo(answers, "offer"), audience: "", feel: answerTo(answers, "feel"),
-          references: answerTo(answers, "references"),
-          ...(saved?.referenceUrl ? { referenceUrl: saved.referenceUrl } : {}),
-        }, trace, lease);
       }
       await ctx.runMutation(internal.onboarding.researched, { id, attempt, lease });
     } catch (error) {
       const reason = describe(error);
-      console.error("Forge design research failed:", reason);
+      console.error("Forge could not start the build:", reason);
       await ctx.runMutation(internal.onboarding.stepFailed, { id, attempt, step: "research", lease, reason });
     } finally {
       stop();
@@ -923,10 +909,6 @@ export const build = internalAction({
       }
       // Past its checkpoint the attempt is building, and the watchdog speaks for it.
       stop();
-      const epoch = await ctx.runQuery(internal.siteDesign.siteEpoch, { siteId: row.siteId });
-      const savedDesign = await ctx.runQuery(internal.siteDesign.forSite, { siteId: row.siteId });
-      if (!savedDesign || savedDesign.buildEpoch !== epoch || !isSkillUI(savedDesign)) throw new Error(NOT_EXTRACTED);
-      await trace.note({ phase: "design_loaded", label: "Loaded the saved design reference" });
       const job = await ctx.runMutation(internal.generate.beginOnboarding, { id, attempt });
       await ctx.runMutation(internal.diagnostics.attach, {
         runId,
@@ -942,7 +924,8 @@ export const build = internalAction({
       });
       // Every build is written a page at a time by a crew of builders, each
       // step its own action, five pages at most; the site lands once every
-      // page is written (buildDraft.ts).
+      // page is written (buildDraft.ts). The pages are the ones the member's
+      // answer about what people should be able to do on the site asks for.
       const draftId = await ctx.runMutation(internal.buildDraft.start, {
         onboardingId: id,
         attempt,
@@ -953,11 +936,9 @@ export const build = internalAction({
         epoch: job.result.epoch,
         siteName: job.siteName,
         rebuild: row.discardedDesignHashes !== undefined,
-        designId: savedDesign._id,
-        designStorageId: savedDesign.storageId,
         model: route.model,
         ...(job.memory ? { memory: job.memory } : {}),
-        routes: pagePlan(savedDesign.routes),
+        routes: sitePages(answerTo(answers, "features")),
       });
       if (!draftId) throw new Error("This build is no longer active");
     } catch (error) {

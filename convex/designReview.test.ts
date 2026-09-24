@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import { answerDesignResearch, crewCall, DESIGN_PROMPT, partReply, storeDesignPackage } from "./designWorkerMock";
+import { crewCall, partReply } from "./crewMock";
 import {
   chromeHash,
   designReviewOn,
@@ -13,7 +13,7 @@ import {
   unnamedParts,
 } from "./designCheck";
 import { parseReply, parseShellReply } from "./generate";
-import { QUESTIONS } from "./onboardingQuestions";
+import { QUESTION_SET, QUESTIONS } from "./onboardingQuestions";
 import schema from "./schema";
 
 // The second agent. A build's header, dropdown menu and footer go to a
@@ -25,8 +25,7 @@ function makeTest() {
   return convexTest(schema, modules);
 }
 type T = ReturnType<typeof makeTest>;
-let active: T;
-const fresh = () => (active = makeTest());
+const fresh = () => makeTest();
 
 async function createBuilder(t: T, email: string) {
   const { userId, sessionId } = await t.run(async (ctx) => {
@@ -39,24 +38,24 @@ async function createBuilder(t: T, email: string) {
 }
 type Member = Awaited<ReturnType<typeof createBuilder>>;
 
+// No choice of what visitors can do, so the site is the home page alone.
 const ANSWERS = [
   "Harbor Roasters",
-  "Small-batch coffee roasted on the pier",
-  "Neighbours and visitors in Port Ellen",
-  "Contact you",
+  "Small-batch coffee roasted on the pier, for neighbours and visitors in Port Ellen",
   "",
-  "Collect inquiries",
+  "Pier Roast 250g — £11",
+  "",
+  "",
+  "",
   "Warm and welcoming",
   "",
   "",
-  "",
-  "Pier Roast 250g — £11",
 ];
 
 async function answerEverything(member: Member) {
   const id = await member.as.mutation(api.onboarding.start, {});
   for (let index = 0; index < QUESTIONS.length; index += 1) {
-    await member.as.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index], advance: true });
+    await member.as.mutation(api.onboarding.save, { id, index, answer: ANSWERS[index], advance: true, questionSet: QUESTION_SET });
   }
   return id;
 }
@@ -119,8 +118,6 @@ function stubAgents(agents: { build: (call: number) => string; review: (call: nu
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
-      const research = await answerDesignResearch(url, init, () => storeDesignPackage(active));
-      if (research) return research;
       const body = JSON.parse(String(init.body));
       const call = { url, body };
       calls.push(call);
@@ -138,6 +135,7 @@ function stubAgents(agents: { build: (call: number) => string; review: (call: nu
   );
   const chat = () => calls.filter((call) => /chat\/completions/.test(call.url));
   return {
+    all: () => calls,
     builds: () => chat().filter((call) => !crewCall(call.body) && !/You are Forge's design reviewer|private website strategist|You maintain Forge's memory/.test(systemOf(call))),
     crew: () => chat().filter((call) => crewCall(call.body)),
     reviews: () => chat().filter((call) => /You are Forge's design reviewer/.test(systemOf(call))),
@@ -166,7 +164,7 @@ afterEach(() => {
   process.env.DESIGN_REVIEW = "off";
 });
 
-// A member's first site, researched and saved. The Awwwards reviewer is retired.
+// A member's first site, built and saved. The Awwwards reviewer is retired.
 async function firstSite(t: T, member: Member) {
   const id = await answerEverything(member);
   await member.as.mutation(api.onboarding.submit, { id });
@@ -176,8 +174,8 @@ async function firstSite(t: T, member: Member) {
   return { id, site };
 }
 
-describe("a first build researches a SkillUI Ultra design reference and saves", () => {
-  test("the worker runs once, the package is kept, the crew builds it, and the retired reviewer is not called", async () => {
+describe("a first build is written from the brief and saved", () => {
+  test("the crew builds it, nothing but the model and the pictures is called, and the retired reviewer is not asked", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const agents = stubAgents({ build: () => siteReply(), review: () => AGREE });
@@ -190,55 +188,34 @@ describe("a first build researches a SkillUI Ultra design reference and saves", 
     expect(agents.crew()).toHaveLength(4);
     expect(agents.reviews()).toHaveLength(0);
     expect(await reviews(t)).toEqual([]);
+    // No design worker, and no reference saved for the site.
+    for (const call of agents.all()) expect(call.url).toMatch(/\/chat\/completions$|:generateContent$/);
+    expect(await t.run((ctx) => ctx.db.query("siteDesignPackages").collect())).toEqual([]);
     const brief = (await t.run((ctx) => ctx.db.get(id)))!;
     expect(brief).toMatchObject({ status: "complete" });
     expect(brief.error).toBeUndefined();
-    const design = await t.run((ctx) => ctx.db.query("siteDesignPackages").withIndex("by_site", (q) => q.eq("siteId", brief.siteId!)).unique());
-    expect(design).toMatchObject({ prompt: DESIGN_PROMPT, inspectedPages: 1, format: "skillui-ultra-v1" });
     const events = await t.run((ctx) => ctx.db.query("buildEvents").collect());
     expect(events.map((event) => event.phase)).toEqual(expect.arrayContaining([
-      "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
-      "design_loaded", "draft_start", "crew_page", "crew_built", "crew_page_done", "draft_done", "complete",
+      "draft_start", "crew_page", "crew_built", "crew_page_done", "draft_done", "complete",
     ]));
-    for (const retired of ["layout_check", "crew_audit", "crew_agreed", "crew_sent_back", "crew_exhausted", "design_audit", "design_verdict"]) {
+    for (const retired of [
+      "research", "research_searching", "research_candidate", "research_discovering", "research_skillui", "research_uploading", "research_done",
+      "design_loaded", "layout_check", "crew_audit", "crew_agreed", "crew_sent_back", "crew_exhausted", "design_audit", "design_verdict",
+    ]) {
       expect(events.map((event) => event.phase)).not.toContain(retired);
     }
     expect(await versions(t)).toHaveLength(1);
     expect((await holds(t)).filter(([kind]) => kind === "generate")).toEqual([["generate", "settled"]]);
     for (const call of agents.crew()) {
-      expect(systemOf(call)).toContain(DESIGN_PROMPT);
+      expect(systemOf(call)).not.toMatch(/SkillUI|design reference/);
       expect(systemOf(call)).not.toContain("```clones");
     }
     expect(brief.events.map((event) => event.label)).not.toContain("Header, menu and footer sent back for changes");
   });
-
-  test("a missing worker fails the build before the model is asked and spends nothing", async () => {
-    const t = fresh();
-    const member = await createBuilder(t, "m@example.com");
-    delete process.env.DESIGN_WORKER_URL;
-    delete process.env.DESIGN_WORKER_TOKEN;
-    const agents = stubAgents({ build: () => siteReply(), review: () => AGREE });
-    const id = await answerEverything(member);
-    await drain(t);
-    const before = (await member.as.query(api.billing.summary, {}))!.credits;
-    try {
-      await member.as.mutation(api.onboarding.submit, { id });
-      await drain(t);
-      expect(agents.builds()).toHaveLength(0);
-      const brief = (await t.run((ctx) => ctx.db.get(id)))!;
-      expect(brief.status).toBe("failed");
-      expect(brief.error).toContain("Design research is not configured");
-      expect(await versions(t)).toEqual([]);
-      expect((await member.as.query(api.billing.summary, {}))!.credits).toBe(before);
-    } finally {
-      process.env.DESIGN_WORKER_URL = "https://design-worker.test";
-      process.env.DESIGN_WORKER_TOKEN = "test-design-worker-token";
-    }
-  });
 });
 
-describe("an edit uses the saved SkillUI Ultra design reference", () => {
-  test("an edit is told to follow the reference, and saved as it was written", async () => {
+describe("an edit is made to the site as it stands", () => {
+  test("an edit is handed the saved site, never a design package from the retired worker, and saved as it was written", async () => {
     const t = fresh();
     const member = await createBuilder(t, "m@example.com");
     const agents = stubAgents({
@@ -247,6 +224,15 @@ describe("an edit uses the saved SkillUI Ultra design reference", () => {
     });
     const { site } = await firstSite(t, member);
     expect(agents.reviews()).toHaveLength(0);
+    // A package the design worker saved for this site before it was retired.
+    const RETIRED = "SkillUI Ultra design reference for this site. Build every page to its layout.";
+    await t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob(["PK skillui-ultra"], { type: "application/zip" }));
+      await ctx.db.insert("siteDesignPackages", {
+        userId: member.userId, siteId: site._id, storageId, referenceUrl: "https://harbor-reference.example/", prompt: RETIRED,
+        inspectedPages: 1, buildEpoch: site.buildEpoch ?? 0, createdAt: Date.now(), format: "skillui-ultra-v1", routes: ["/"],
+      });
+    });
 
     await member.as.action(api.generate.run, { conversationId: site.conversationId, prompt: "Add this week's roast" });
     await drain(t);
@@ -255,7 +241,9 @@ describe("an edit uses the saved SkillUI Ultra design reference", () => {
     expect(await reviews(t)).toEqual([]);
     expect(await versions(t)).toHaveLength(2);
     expect(agents.builds()).toHaveLength(1);
-    expect(systemOf(agents.builds()[0])).toContain(DESIGN_PROMPT);
+    expect(systemOf(agents.builds()[0])).toContain(`The site "${site.name}" currently looks like this.`);
+    expect(systemOf(agents.builds()[0])).not.toContain(RETIRED);
+    expect(systemOf(agents.builds()[0])).not.toMatch(/SkillUI|design reference/);
     // One call for the edit and nothing after it: no second agent is asked
     // whether the change matches before it is saved.
     expect(agents.crew()).toHaveLength(4);
