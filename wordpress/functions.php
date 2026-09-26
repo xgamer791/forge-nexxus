@@ -30,6 +30,8 @@ define(
 				'assets/js/onboarding.js',
 				'assets/video/forge-viking-loop.mp4',
 				'assets/video/forge-viking-login.mp4',
+				'assets/video/forge-viking-fwd.mp4',
+				'assets/video/forge-viking-yo.mp4',
 				'assets/video/forge-viking-poster.jpg',
 			]
 		)
